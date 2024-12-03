@@ -8,11 +8,20 @@ OPTIONS += -DENABLE_QT6=OFF
 OPTIONS += -DENABLE_BOOST=OFF
 OPTIONS += -DENABLE_LIBOPENJPEG=unmaintained
 OPTIONS += -DENABLE_LCMS=OFF
-all: build/Makefile
+BUILD := build
+UTILS := $(BUILD)/utils
+TARGET := $(UTILS)/pdftotext
+
+all: $(TARGET)
+$(TARGET): $(BUILD)/Makefile
 	$(MAKE) -C $(<D)
-build/Makefile: build
+$(BUILD)/Makefile: $(BUILD)
 	cd $< && cmake .. $(OPTIONS)
-build:
-	mkdir build
-install: build/bin/pdftotext
-	cd $$(dirname ($$dirname $<)) && $(MAKE) install
+$(BUILD):
+	mkdir $<
+install: $(TARGET)
+	cd $(BUILD) && $(MAKE) install
+push:
+	git push origin master
+	git push github master
+	git push githost master
