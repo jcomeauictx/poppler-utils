@@ -105,3 +105,17 @@ rendering in a closed source product, please contact Glyph & Cog
 (www.glyphandcog.com) for commercial licensing options. Note that
 this only allows you to use xpdf in a closed source product,
 not poppler itself.
+
+# jc's addendum
+
+I forked this repo with the mistaken idea that latin1 had representations
+of mdash, left and right double quotes, and other glyphs that I thought were
+incorrectly being converted into ascii7. But now that I found the table used,
+latin1UnicodeMapRanges in poppler/UnicodeMapTables.h, I'm finding I was wrong;
+none of the improvements I had hoped to make are possible, except possibly
+to change U+2019 (right single quote) to B4 (accute accent), instead of 27
+(apostrophe), as it is now. But that's still wrong, and possible even *more*
+wrong, depending on the context.
+
+But I'm keeping it around in case I happen to pop back into the universe that
+incorporated those glyphs into Latin-1... I'll be ready.
