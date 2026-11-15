@@ -1,7 +1,8 @@
 /*
  * Copyright (C) 2008-2009, Pino Toscano <pino@kde.org>
  * Copyright (C) 2013, Fabio D'Urso <fabiodurso@hotmail.it>
- * Copyright (C) 2019, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2019, 2025, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2025 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,13 +29,13 @@
 
 NavigationToolBar::NavigationToolBar(QWidget *parent) : QToolBar(parent)
 {
-    m_firstAct = addAction(tr("First"), this, SLOT(slotGoFirst()));
-    m_prevAct = addAction(tr("Previous"), this, SLOT(slotGoPrev()));
+    m_firstAct = addAction(tr("First"), this, &NavigationToolBar::slotGoFirst);
+    m_prevAct = addAction(tr("Previous"), this, &NavigationToolBar::slotGoPrev);
     m_pageCombo = new QComboBox(this);
     connect(m_pageCombo, &QComboBox::activated, this, &NavigationToolBar::slotComboActivated);
     addWidget(m_pageCombo);
-    m_nextAct = addAction(tr("Next"), this, SLOT(slotGoNext()));
-    m_lastAct = addAction(tr("Last"), this, SLOT(slotGoLast()));
+    m_nextAct = addAction(tr("Next"), this, &NavigationToolBar::slotGoNext);
+    m_lastAct = addAction(tr("Last"), this, &NavigationToolBar::slotGoLast);
 
     addSeparator();
 
@@ -68,7 +69,7 @@ NavigationToolBar::NavigationToolBar(QWidget *parent) : QToolBar(parent)
     documentClosed();
 }
 
-NavigationToolBar::~NavigationToolBar() { }
+NavigationToolBar::~NavigationToolBar() = default;
 
 void NavigationToolBar::documentLoaded()
 {
@@ -124,18 +125,18 @@ void NavigationToolBar::slotComboActivated(int index)
     setPage(index);
 }
 
-void NavigationToolBar::slotZoomComboActivated(int index)
+void NavigationToolBar::slotZoomComboActivated(int /*index*/)
 {
     QString text = m_zoomCombo->currentText();
     text.remove(QLatin1Char('%'));
     bool ok = false;
     int value = text.toInt(&ok);
     if (ok && value >= 10) {
-        emit zoomChanged(qreal(value) / 100);
+        Q_EMIT zoomChanged(static_cast<qreal>(value) / 100);
     }
 }
 
 void NavigationToolBar::slotRotationComboChanged(int idx)
 {
-    emit rotationChanged(idx * 90);
+    Q_EMIT rotationChanged(idx * 90);
 }

@@ -150,7 +150,7 @@ GtkWidget *pgd_info_create_widget(PopplerDocument *document)
     vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
 
     backend = poppler_get_backend();
-    enum_value = g_enum_get_value((GEnumClass *)g_type_class_ref(POPPLER_TYPE_BACKEND), backend);
+    enum_value = g_enum_get_value(static_cast<GEnumClass *>(g_type_class_ref(POPPLER_TYPE_BACKEND)), backend);
     str = g_strdup_printf("<span weight='bold' size='larger'>Poppler %s (%s)</span>", poppler_get_version(), enum_value->value_name);
     label = gtk_label_new(nullptr);
     gtk_label_set_markup(GTK_LABEL(label), str);
@@ -168,13 +168,8 @@ GtkWidget *pgd_info_create_widget(PopplerDocument *document)
     table = gtk_grid_new();
     gtk_widget_set_margin_top(table, 5);
     gtk_widget_set_margin_bottom(table, 5);
-#if GTK_CHECK_VERSION(3, 12, 0)
     gtk_widget_set_margin_start(table, 12);
     gtk_widget_set_margin_end(table, 5);
-#else
-    gtk_widget_set_margin_left(table, 12);
-    gtk_widget_set_margin_right(table, 5);
-#endif
     gtk_grid_set_column_spacing(GTK_GRID(table), 6);
     gtk_grid_set_row_spacing(GTK_GRID(table), 6);
 
@@ -211,10 +206,10 @@ GtkWidget *pgd_info_create_widget(PopplerDocument *document)
     g_clear_pointer(&mod_date, g_date_time_unref);
     g_free(str);
 
-    enum_value = g_enum_get_value((GEnumClass *)g_type_class_peek(POPPLER_TYPE_PAGE_MODE), mode);
+    enum_value = g_enum_get_value(static_cast<GEnumClass *>(g_type_class_peek(POPPLER_TYPE_PAGE_MODE)), mode);
     pgd_table_add_property(GTK_GRID(table), "<b>Page Mode:</b>", enum_value->value_name, &row);
 
-    enum_value = g_enum_get_value((GEnumClass *)g_type_class_peek(POPPLER_TYPE_PAGE_LAYOUT), layout);
+    enum_value = g_enum_get_value(static_cast<GEnumClass *>(g_type_class_peek(POPPLER_TYPE_PAGE_LAYOUT)), layout);
     pgd_table_add_property(GTK_GRID(table), "<b>Page Layout:</b>", enum_value->value_name, &row);
 
     if (poppler_document_get_id(document, &perm_id, &up_id)) {

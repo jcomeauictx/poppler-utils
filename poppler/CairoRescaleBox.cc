@@ -33,7 +33,7 @@
 // Copyright (C) 2012 Hib Eris <hib@hiberis.nl>
 // Copyright (C) 2012, 2017 Adrian Johnson <ajohnson@redneon.com>
 // Copyright (C) 2018 Adam Reichold <adam.reichold@t-online.de>
-// Copyright (C) 2019 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2019, 2025, 2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2019 Marek Kasik <mkasik@redhat.com>
 //
 // To see a description of the changes please see the Changelog file that
@@ -46,8 +46,6 @@
 #include <config.h>
 
 #include <cstdint>
-#include <cstdint>
-#include <cstdio>
 #include <cassert>
 #include <cstdlib>
 #include <cmath>
@@ -55,7 +53,7 @@
 #include "CairoRescaleBox.h"
 
 /* we work in fixed point where 1. == 1 << 24 */
-#define FIXED_SHIFT 24
+constexpr int FIXED_SHIFT = 24;
 
 static void downsample_row_box_filter(int start, int width, uint32_t *src, const uint32_t *src_limit, uint32_t *dest, const int coverage[], int pixel_coverage)
 {
@@ -196,7 +194,7 @@ static int compute_coverage(int coverage[], int src_length, int dest_length)
        pixel * 1/num == pixel * dest_length / src_length
     */
     /* the average contribution of each source pixel */
-    int ratio = ((1 << 24) * (long long int)dest_length) / src_length;
+    int ratio = ((1 << 24) * static_cast<long long int>(dest_length)) / src_length;
     /* because ((1 << 24)*(long long int)dest_length) won't always be divisible by src_length
      * we'll need someplace to put the other bits.
      *
@@ -205,7 +203,7 @@ static int compute_coverage(int coverage[], int src_length, int dest_length)
      * 1<<24
      * */
 
-    double scale = (double)src_length / dest_length;
+    double scale = static_cast<double>(src_length) / dest_length;
 
     /* for each destination pixel compute the coverage of the left most pixel included in the box */
     /* I have a proof of this, which this margin is too narrow to contain */
@@ -238,7 +236,7 @@ static int compute_coverage(int coverage[], int src_length, int dest_length)
         }
 
         /* compute how much the right-most pixel contributes */
-        overage = ratio * (right_fract);
+        overage = ratio * right_fract;
 
         /* the remainder is the amount that the left-most pixel
          * contributes */
@@ -252,7 +250,7 @@ bool CairoRescaleBox::downScaleImage(unsigned orig_width, unsigned orig_height, 
                                      cairo_surface_t *dest_surface)
 {
     int pixel_coverage_x, pixel_coverage_y;
-    int dest_y;
+    unsigned int dest_y;
     int src_y = 0;
     uint32_t *scanline;
     int *x_coverage = nullptr;
@@ -265,10 +263,10 @@ bool CairoRescaleBox::downScaleImage(unsigned orig_width, unsigned orig_height, 
     dest = reinterpret_cast<unsigned int *>(cairo_image_surface_get_data(dest_surface));
     dst_stride = cairo_image_surface_get_stride(dest_surface);
 
-    scanline = (uint32_t *)gmallocn(orig_width, sizeof(int));
+    scanline = static_cast<uint32_t *>(gmallocn(orig_width, sizeof(int)));
 
-    x_coverage = (int *)gmallocn(orig_width, sizeof(int));
-    y_coverage = (int *)gmallocn(orig_height, sizeof(int));
+    x_coverage = static_cast<int *>(gmallocn(orig_width, sizeof(int)));
+    y_coverage = static_cast<int *>(gmallocn(orig_height, sizeof(int)));
 
     /* we need to allocate enough room for ceil(src_height/dest_height)+1
        Example:
@@ -285,7 +283,7 @@ bool CairoRescaleBox::downScaleImage(unsigned orig_width, unsigned orig_height, 
        need to sample 4 pixels
     */
 
-    temp_buf = (uint32_t *)gmallocn3((orig_height + scaled_height - 1) / scaled_height + 1, scaled_width, sizeof(uint32_t));
+    temp_buf = static_cast<uint32_t *>(gmallocn3((orig_height + scaled_height - 1) / scaled_height + 1, scaled_width, sizeof(uint32_t)));
 
     if (!x_coverage || !y_coverage || !scanline || !temp_buf) {
         goto cleanup;
@@ -308,7 +306,7 @@ bool CairoRescaleBox::downScaleImage(unsigned orig_width, unsigned orig_height, 
         }
     }
 
-    for (; dest_y < start_row + height; dest_y++) {
+    for (; dest_y < start_row + static_cast<unsigned int>(height); dest_y++) {
         int columns = 0;
         int box = 1 << FIXED_SHIFT;
         int start_coverage_y = y_coverage[dest_y];

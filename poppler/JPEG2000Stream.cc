@@ -4,14 +4,18 @@
 //
 // A JPX stream decoder using OpenJPEG
 //
-// Copyright 2008-2010, 2012, 2017-2023 Albert Astals Cid <aacid@kde.org>
+// Copyright 2008-2010, 2012, 2017-2023, 2025, 2026 Albert Astals Cid <aacid@kde.org>
 // Copyright 2011 Daniel Glöckner <daniel-gl@gmx.net>
 // Copyright 2014, 2016 Thomas Freitag <Thomas.Freitag@alfa.de>
 // Copyright 2013, 2014 Adrian Johnson <ajohnson@redneon.com>
 // Copyright 2015 Adam Reichold <adam.reichold@t-online.de>
 // Copyright 2015 Jakub Wilk <jwilk@jwilk.net>
 // Copyright 2022 Oliver Sander <oliver.sander@tu-dresden.de>
-// Copyright 2024 Nelson Benítez León <nbenitezl@gmail.com>
+// Copyright 2024, 2025 Nelson Benítez León <nbenitezl@gmail.com>
+// Copyright 2025, 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2025 Arnav V <arnav0872@gmail.com>
+// Copyright (C) 2026 Adam Sampson <ats@offog.org>
+// Copyright (C) 2026 William Bader <williambader@hotmail.com>
 //
 // Licensed under GPLv2 or later
 //
@@ -54,7 +58,7 @@ static inline int doLookChar(JPXStreamPrivate *priv)
         return EOF;
     }
 
-    return ((unsigned char *)priv->image->comps[priv->ccounter].data)[priv->counter];
+    return (reinterpret_cast<unsigned char *>(priv->image->comps[priv->ccounter].data))[priv->counter];
 }
 
 static inline int doGetChar(JPXStreamPrivate *priv)
@@ -67,7 +71,7 @@ static inline int doGetChar(JPXStreamPrivate *priv)
     return result;
 }
 
-JPXStream::JPXStream(Stream *strA) : FilterStream(strA)
+JPXStream::JPXStream(std::unique_ptr<Stream> strA) : OwnedFilterStream(std::move(strA))
 {
     priv = new JPXStreamPrivate;
     handleJPXtransparency = false;
@@ -75,15 +79,24 @@ JPXStream::JPXStream(Stream *strA) : FilterStream(strA)
 
 JPXStream::~JPXStream()
 {
-    delete str;
     close();
     delete priv;
 }
 
-void JPXStream::reset()
+bool JPXStream::rewind()
 {
+    // close() frees the decoded image without clearing inited, so without this
+    // every read after a close() would return EOF while rewind() still
+    // reported success.  Decoding is expensive, so only re-init when the image
+    // is actually gone; otherwise resetting the counters is enough.
+    if (priv->image == nullptr) {
+        priv->inited = false;
+    }
+
     priv->counter = 0;
     priv->ccounter = 0;
+
+    return true;
 }
 
 void JPXStream::close()
@@ -135,12 +148,12 @@ int JPXStream::lookChar()
     return doLookChar(priv);
 }
 
-GooString *JPXStream::getPSFilter(int psLevel, const char *indent)
+std::optional<std::string> JPXStream::getPSFilter(int /*psLevel*/, const char * /*indent*/)
 {
-    return nullptr;
+    return {};
 }
 
-bool JPXStream::isBinary(bool last) const
+bool JPXStream::isBinary(bool /*last*/) const
 {
     return str->isBinary(true);
 }
@@ -187,21 +200,21 @@ static void libopenjpeg_warning_callback(const char *msg, void * /*client_data*/
     error(errSyntaxWarning, -1, "{0:s}", msg);
 }
 
-typedef struct JPXData_s
+struct JPXData
 {
     const unsigned char *data;
     int size;
     OPJ_OFF_T pos;
-} JPXData;
+};
 
-#define BUFFER_INITIAL_SIZE 4096
+constexpr int BUFFER_INITIAL_SIZE = 4096;
 
 static OPJ_SIZE_T jpxRead_callback(void *p_buffer, OPJ_SIZE_T p_nb_bytes, void *p_user_data)
 {
-    JPXData *jpxData = (JPXData *)p_user_data;
+    auto *jpxData = static_cast<JPXData *>(p_user_data);
 
     if (unlikely(jpxData->size <= jpxData->pos)) {
-        return (OPJ_SIZE_T)-1; /* End of file! */
+        return static_cast<OPJ_SIZE_T>(-1); /* End of file! */
     }
     OPJ_SIZE_T len = jpxData->size - jpxData->pos;
     if (len > p_nb_bytes) {
@@ -214,7 +227,7 @@ static OPJ_SIZE_T jpxRead_callback(void *p_buffer, OPJ_SIZE_T p_nb_bytes, void *
 
 static OPJ_OFF_T jpxSkip_callback(OPJ_OFF_T skip, void *p_user_data)
 {
-    JPXData *jpxData = (JPXData *)p_user_data;
+    auto *jpxData = static_cast<JPXData *>(p_user_data);
 
     jpxData->pos += (skip > jpxData->size - jpxData->pos) ? jpxData->size - jpxData->pos : skip;
     /* Always return input value to avoid "Problem with skipping JPEG2000 box, stream error" */
@@ -223,7 +236,7 @@ static OPJ_OFF_T jpxSkip_callback(OPJ_OFF_T skip, void *p_user_data)
 
 static OPJ_BOOL jpxSeek_callback(OPJ_OFF_T seek_pos, void *p_user_data)
 {
-    JPXData *jpxData = (JPXData *)p_user_data;
+    auto *jpxData = static_cast<JPXData *>(p_user_data);
 
     if (seek_pos > jpxData->size) {
         return OPJ_FALSE;
@@ -247,7 +260,7 @@ void JPXStream::init()
     }
 
     bool indexed = false;
-    if (cspace.isArray() && cspace.arrayGetLength() > 0) {
+    if (cspace.isArrayOfLengthAtLeast(1)) {
         const Object cstype = cspace.arrayGet(0);
         if (cstype.isName("Indexed")) {
             indexed = true;
@@ -292,7 +305,7 @@ void JPXStream::init()
                 close();
                 break;
             }
-            unsigned char *cdata = (unsigned char *)priv->image->comps[component].data;
+            auto *cdata = reinterpret_cast<unsigned char *>(priv->image->comps[component].data);
             int adjust = 0;
             int depth = priv->image->comps[component].prec;
             if (priv->image->comps[component].prec > 8) {

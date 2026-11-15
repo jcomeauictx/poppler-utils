@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2008, Pino Toscano <pino@kde.org>
  * Copyright (C) 2018, Adam Reichold <adam.reichold@t-online.de>
- * Copyright (C) 2019, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2019, 2025, Albert Astals Cid <aacid@kde.org>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -79,9 +79,8 @@ public:
         Node *n = static_cast<Node *>(child.internalPointer());
         if (n->m_parent == nullptr) {
             return QModelIndex();
-        } else {
-            return createIndex(n->m_parent->m_row, 0, n->m_parent);
         }
+        return createIndex(n->m_parent->m_row, 0, n->m_parent);
     }
 
     int rowCount(const QModelIndex &parent) const override
@@ -111,7 +110,7 @@ public:
         return n->m_item.hasChildren();
     }
 
-    int columnCount(const QModelIndex &parent) const override { return 1; }
+    int columnCount(const QModelIndex & /*parent*/) const override { return 1; }
 
 private:
     QVector<Node *> m_topItems;
@@ -127,11 +126,11 @@ TocDock::TocDock(QWidget *parent) : AbstractInfoDock(parent)
     m_tree->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
 }
 
-TocDock::~TocDock() { }
+TocDock::~TocDock() = default;
 
 void TocDock::expandItemModels(const QModelIndex &parent)
 {
-    TocModel *model = static_cast<TocModel *>(m_tree->model());
+    auto *model = static_cast<TocModel *>(m_tree->model());
     for (int i = 0; i < model->rowCount(parent); ++i) {
         QModelIndex index = model->index(i, 0, parent);
         Node *n = static_cast<Node *>(index.internalPointer());
@@ -146,13 +145,13 @@ void TocDock::fillInfo()
 {
     auto outline = document()->outline();
     if (!outline.isEmpty()) {
-        TocModel *model = new TocModel(std::move(outline), this);
+        auto *model = new TocModel(std::move(outline), this);
         m_tree->setModel(model);
 
         expandItemModels(QModelIndex());
     } else {
-        QStandardItemModel *model = new QStandardItemModel(this);
-        QStandardItem *item = new QStandardItem(tr("No TOC"));
+        auto *model = new QStandardItemModel(this);
+        auto *item = new QStandardItem(tr("No TOC"));
         item->setFlags(item->flags() & ~Qt::ItemIsEnabled);
         model->appendRow(item);
         m_tree->setModel(model);

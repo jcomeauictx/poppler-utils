@@ -6,12 +6,15 @@
 //
 // Copyright 2009 Stefan Thomas <thomas@eload24.com>
 // Copyright 2010, 2011 Hib Eris <hib@hiberis.nl>
-// Copyright 2010, 2019, 2021, 2022 Albert Astals Cid <aacid@kde.org>
+// Copyright 2010, 2019, 2021, 2022, 2025 Albert Astals Cid <aacid@kde.org>
 // Copyright 2024 Oliver Sander <oliver.sander@tu-dresden.de>
+// Copyright 2026 Stefan Brüns <stefan.bruens@rwth-aachen.de>
 //
 //========================================================================
 
 #include <config.h>
+
+#include <utility>
 
 #include "CurlCachedFile.h"
 
@@ -19,7 +22,7 @@
 
 //------------------------------------------------------------------------
 
-CurlCachedFileLoader::CurlCachedFileLoader(const std::string &urlA) : url(urlA)
+CurlCachedFileLoader::CurlCachedFileLoader(std::string urlA) : url(std::move(urlA))
 {
     cachedFile = nullptr;
     curl = nullptr;
@@ -30,7 +33,7 @@ CurlCachedFileLoader::~CurlCachedFileLoader()
     curl_easy_cleanup(curl);
 }
 
-static size_t noop_cb(char *ptr, size_t size, size_t nmemb, void *ptr2)
+static size_t noop_cb(char * /*ptr*/, size_t size, size_t nmemb, void * /*ptr2*/)
 {
     return size * nmemb;
 }
@@ -54,7 +57,7 @@ size_t CurlCachedFileLoader::init(CachedFile *cachedFileA)
         curl_easy_getinfo(curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &contentLength);
         size = contentLength;
     } else {
-        error(errInternal, -1, "Failed to get size of '{0:s}'.", url.c_str());
+        error(errInternal, -1, "Failed to get size of '{0:r}'.", &url);
         size = -1;
     }
     curl_easy_reset(curl);
@@ -64,7 +67,7 @@ size_t CurlCachedFileLoader::init(CachedFile *cachedFileA)
 
 static size_t load_cb(const char *ptr, size_t size, size_t nmemb, void *data)
 {
-    CachedFileWriter *writer = (CachedFileWriter *)data;
+    auto *writer = static_cast<CachedFileWriter *>(data);
     return (writer->write)(ptr, size * nmemb);
 }
 

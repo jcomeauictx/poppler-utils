@@ -1,8 +1,9 @@
 /* poppler-sound.cc: qt interface to poppler
  * Copyright (C) 2008, 2010, Pino Toscano <pino@kde.org>
- * Copyright (C) 2008, 2018, 2022, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2008, 2018, 2022, 2025, Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2010, Carlos Garcia Campos <carlosgc@gnome.org>
  * Copyright (C) 2012, Tobias Koenig <tobias.koenig@kdab.com>
+ * Copyright (C) 2026, g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,7 +22,6 @@
 
 #include "poppler-qt5.h"
 
-#include "Object.h"
 #include "Annot.h"
 #include "Movie.h"
 
@@ -59,7 +59,7 @@ MovieObject::MovieObject(AnnotMovie *ann)
     m_movieData->m_size = QSize(width, height);
     m_movieData->m_rotation = m_movieData->m_movieObj->getRotationAngle();
     m_movieData->m_showControls = mp->showControls;
-    m_movieData->m_playMode = (MovieObject::PlayMode)mp->repeatMode;
+    m_movieData->m_playMode = static_cast<MovieObject::PlayMode>(mp->repeatMode);
 }
 
 MovieObject::~MovieObject()
@@ -69,8 +69,8 @@ MovieObject::~MovieObject()
 
 QString MovieObject::url() const
 {
-    const GooString *goo = m_movieData->m_movieObj->getFileName();
-    return goo ? QString(goo->c_str()) : QString();
+    const std::optional<std::string> &goo = m_movieData->m_movieObj->getFileName();
+    return goo ? QString::fromStdString(goo.value()) : QString();
 }
 
 QSize MovieObject::size() const
@@ -95,7 +95,7 @@ MovieObject::PlayMode MovieObject::playMode() const
 
 bool MovieObject::showPosterImage() const
 {
-    return (m_movieData->m_movieObj->getShowPoster() == true);
+    return (m_movieData->m_movieObj->getShowPoster());
 }
 
 QImage MovieObject::posterImage() const

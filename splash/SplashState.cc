@@ -13,8 +13,10 @@
 //
 // Copyright (C) 2009, 2011, 2012, 2015 Thomas Freitag <Thomas.Freitag@alfa.de>
 // Copyright (C) 2017 Adrian Johnson <ajohnson@redneon.com>
-// Copyright (C) 2019, 2021, 2022 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2019, 2021, 2022, 2025, 2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2020 Peter Wang <novalazy@gmail.com>
+// Copyright (C) 2026 Taufeeque Sifat <entity069@protonmail.com>
+// Copyright (C) 2026 Stefan Brüns <stefan.bruens@rwth-aachen.de>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -24,7 +26,6 @@
 #include <config.h>
 
 #include <cstring>
-#include "goo/gmem.h"
 #include "SplashPattern.h"
 #include "SplashScreen.h"
 #include "SplashClip.h"
@@ -38,7 +39,7 @@
 // number of components in each color mode
 int splashColorModeNComps[] = { 1, 1, 3, 3, 4, 4, 4 + SPOT_NCOMPS };
 
-SplashState::SplashState(int width, int height, bool vectorAntialias, SplashScreenParams *screenParams)
+SplashState::SplashState(int width, int height, bool vectorAntialias, const SplashScreen &screenA)
 {
     SplashColor color;
     int i;
@@ -52,7 +53,7 @@ SplashState::SplashState(int width, int height, bool vectorAntialias, SplashScre
     memset(&color, 0, sizeof(SplashColor));
     strokePattern = new SplashSolidColor(color);
     fillPattern = new SplashSolidColor(color);
-    screen = new SplashScreen(screenParams);
+    screen = screenA.copy();
     blendFunc = nullptr;
     strokeAlpha = 1;
     fillAlpha = 1;
@@ -60,83 +61,31 @@ SplashState::SplashState(int width, int height, bool vectorAntialias, SplashScre
     patternStrokeAlpha = 1;
     patternFillAlpha = 1;
     lineWidth = 1;
-    lineCap = splashLineCapButt;
-    lineJoin = splashLineJoinMiter;
+    lineCap = SplashLineCap::Butt;
+    lineJoin = SplashLineJoin::Miter;
     miterLimit = 10;
     flatness = 1;
     lineDashPhase = 0;
     strokeAdjust = false;
-    clip = new SplashClip(0, 0, width - 0.001, height - 0.001, vectorAntialias);
+    clip = std::make_unique<SplashClip>(0, 0, width - 0.001, height - 0.001, vectorAntialias);
     softMask = nullptr;
     deleteSoftMask = false;
     inNonIsolatedGroup = false;
+    inKnockoutGroup = false;
     fillOverprint = false;
     strokeOverprint = false;
     overprintMode = 0;
     for (i = 0; i < 256; ++i) {
-        rgbTransferR[i] = (unsigned char)i;
-        rgbTransferG[i] = (unsigned char)i;
-        rgbTransferB[i] = (unsigned char)i;
-        grayTransfer[i] = (unsigned char)i;
-        cmykTransferC[i] = (unsigned char)i;
-        cmykTransferM[i] = (unsigned char)i;
-        cmykTransferY[i] = (unsigned char)i;
-        cmykTransferK[i] = (unsigned char)i;
+        rgbTransferR[i] = static_cast<unsigned char>(i);
+        rgbTransferG[i] = static_cast<unsigned char>(i);
+        rgbTransferB[i] = static_cast<unsigned char>(i);
+        grayTransfer[i] = static_cast<unsigned char>(i);
+        cmykTransferC[i] = static_cast<unsigned char>(i);
+        cmykTransferM[i] = static_cast<unsigned char>(i);
+        cmykTransferY[i] = static_cast<unsigned char>(i);
+        cmykTransferK[i] = static_cast<unsigned char>(i);
         for (auto &cp : deviceNTransfer) {
-            cp[i] = (unsigned char)i;
-        }
-    }
-    overprintMask = 0xffffffff;
-    overprintAdditive = false;
-    next = nullptr;
-}
-
-SplashState::SplashState(int width, int height, bool vectorAntialias, SplashScreen *screenA)
-{
-    SplashColor color;
-    int i;
-
-    matrix[0] = 1;
-    matrix[1] = 0;
-    matrix[2] = 0;
-    matrix[3] = 1;
-    matrix[4] = 0;
-    matrix[5] = 0;
-    memset(&color, 0, sizeof(SplashColor));
-    strokePattern = new SplashSolidColor(color);
-    fillPattern = new SplashSolidColor(color);
-    screen = screenA->copy();
-    blendFunc = nullptr;
-    strokeAlpha = 1;
-    fillAlpha = 1;
-    multiplyPatternAlpha = false;
-    patternStrokeAlpha = 1;
-    patternFillAlpha = 1;
-    lineWidth = 1;
-    lineCap = splashLineCapButt;
-    lineJoin = splashLineJoinMiter;
-    miterLimit = 10;
-    flatness = 1;
-    lineDashPhase = 0;
-    strokeAdjust = false;
-    clip = new SplashClip(0, 0, width - 0.001, height - 0.001, vectorAntialias);
-    softMask = nullptr;
-    deleteSoftMask = false;
-    inNonIsolatedGroup = false;
-    fillOverprint = false;
-    strokeOverprint = false;
-    overprintMode = 0;
-    for (i = 0; i < 256; ++i) {
-        rgbTransferR[i] = (unsigned char)i;
-        rgbTransferG[i] = (unsigned char)i;
-        rgbTransferB[i] = (unsigned char)i;
-        grayTransfer[i] = (unsigned char)i;
-        cmykTransferC[i] = (unsigned char)i;
-        cmykTransferM[i] = (unsigned char)i;
-        cmykTransferY[i] = (unsigned char)i;
-        cmykTransferK[i] = (unsigned char)i;
-        for (auto &cp : deviceNTransfer) {
-            cp[i] = (unsigned char)i;
+            cp[i] = static_cast<unsigned char>(i);
         }
     }
     overprintMask = 0xffffffff;
@@ -146,7 +95,7 @@ SplashState::SplashState(int width, int height, bool vectorAntialias, SplashScre
 
 SplashState::SplashState(const SplashState *state)
 {
-    memcpy(matrix, state->matrix, 6 * sizeof(SplashCoord));
+    matrix = state->matrix;
     strokePattern = state->strokePattern->copy();
     fillPattern = state->fillPattern->copy();
     screen = state->screen->copy();
@@ -168,6 +117,7 @@ SplashState::SplashState(const SplashState *state)
     softMask = state->softMask;
     deleteSoftMask = false;
     inNonIsolatedGroup = state->inNonIsolatedGroup;
+    inKnockoutGroup = state->inKnockoutGroup;
     fillOverprint = state->fillOverprint;
     strokeOverprint = state->strokeOverprint;
     overprintMode = state->overprintMode;
@@ -192,7 +142,6 @@ SplashState::~SplashState()
     delete strokePattern;
     delete fillPattern;
     delete screen;
-    delete clip;
     if (deleteSoftMask && softMask) {
         delete softMask;
     }
@@ -210,15 +159,9 @@ void SplashState::setFillPattern(SplashPattern *fillPatternA)
     fillPattern = fillPatternA;
 }
 
-void SplashState::setScreen(SplashScreen *screenA)
+void SplashState::setLineDash(std::vector<double> &&lineDashA, double lineDashPhaseA)
 {
-    delete screen;
-    screen = screenA;
-}
-
-void SplashState::setLineDash(std::vector<SplashCoord> &&lineDashA, SplashCoord lineDashPhaseA)
-{
-    lineDash = lineDashA;
+    lineDash = std::move(lineDashA);
     lineDashPhase = lineDashPhaseA;
 }
 

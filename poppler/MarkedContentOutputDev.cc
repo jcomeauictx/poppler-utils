@@ -5,9 +5,12 @@
 // This file is licensed under the GPLv2 or later
 //
 // Copyright 2013 Igalia S.L.
-// Copyright 2018-2020, 2022 Albert Astals Cid <aacid@kde.org>
+// Copyright 2018-2020, 2022, 2025 Albert Astals Cid <aacid@kde.org>
 // Copyright 2021, 2023 Adrian Johnson <ajohnson@redneon.com>
 // Copyright 2022 Oliver Sander <oliver.sander@tu-dresden.de>
+// Copyright 2025 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2025 Jonathan Hähne <jonathan.haehne@hotmail.com>
+// Copyright 2026 Stefan Brüns <stefan.bruens@rwth-aachen.de>
 //
 //========================================================================
 
@@ -20,28 +23,25 @@
 #include <cmath>
 #include <vector>
 
-MarkedContentOutputDev::MarkedContentOutputDev(int mcidA, const Object &stmObj) : currentFont(nullptr), currentText(nullptr), mcid(mcidA), pageWidth(0.0), pageHeight(0.0), unicodeMap(nullptr)
+MarkedContentOutputDev::MarkedContentOutputDev(int mcidA, const Object &stmObj) : currentFont(nullptr), currentText(nullptr), mcid(mcidA)
 {
     stmRef = stmObj.copy();
     currentColor.r = currentColor.g = currentColor.b = 0;
 }
 
-MarkedContentOutputDev::~MarkedContentOutputDev()
-{
-    delete currentText;
-}
+MarkedContentOutputDev::~MarkedContentOutputDev() = default;
 
 void MarkedContentOutputDev::endSpan()
 {
-    if (currentText && currentText->getLength()) {
+    if (currentText && !currentText->empty()) {
         // The TextSpan takes ownership of currentText and
         // increases the reference count for currentFont.
-        textSpans.push_back(TextSpan(currentText, currentFont, currentColor));
+        textSpans.push_back(TextSpan(std::move(currentText), currentFont, currentColor));
     }
-    currentText = nullptr;
+    currentText.reset();
 }
 
-void MarkedContentOutputDev::startPage(int pageNum, GfxState *state, XRef *xref)
+void MarkedContentOutputDev::startPage(int /*pageNum*/, GfxState *state, XRef * /*xref*/)
 {
     if (state) {
         pageWidth = state->getPageWidth();
@@ -61,7 +61,7 @@ void MarkedContentOutputDev::beginForm(Object * /* obj */, Ref id)
     formStack.push_back(id);
 }
 
-void MarkedContentOutputDev::endForm(Object * /* obj */, Ref id)
+void MarkedContentOutputDev::endForm(Object * /* obj */, Ref /*id*/)
 {
     formStack.pop_back();
 }
@@ -77,11 +77,11 @@ bool MarkedContentOutputDev::contentStreamMatch()
     return formStack.empty();
 }
 
-void MarkedContentOutputDev::beginMarkedContent(const char *name, Dict *properties)
+void MarkedContentOutputDev::beginMarkedContent(const std::string & /*name*/, Dict *properties)
 {
     int id = -1;
     if (properties) {
-        properties->lookupInt("MCID", nullptr, &id);
+        properties->lookupInt("MCID", {}, &id);
     }
 
     if (id == -1) {
@@ -94,7 +94,7 @@ void MarkedContentOutputDev::beginMarkedContent(const char *name, Dict *properti
     }
 }
 
-void MarkedContentOutputDev::endMarkedContent(GfxState *state)
+void MarkedContentOutputDev::endMarkedContent(GfxState * /*state*/)
 {
     if (inMarkedContent()) {
         mcidStack.pop_back();
@@ -128,7 +128,7 @@ bool MarkedContentOutputDev::needFontChange(const std::shared_ptr<const GfxFont>
     return true;
 }
 
-void MarkedContentOutputDev::drawChar(GfxState *state, double xx, double yy, double dx, double dy, double ox, double oy, CharCode c, int nBytes, const Unicode *u, int uLen)
+void MarkedContentOutputDev::drawChar(GfxState *state, double xx, double yy, double dx, double dy, double /*ox*/, double /*oy*/, CharCode c, int /*nBytes*/, const Unicode *u, int uLen)
 {
     if (!inMarkedContent() || !uLen) {
         return;
@@ -168,7 +168,7 @@ void MarkedContentOutputDev::drawChar(GfxState *state, double xx, double yy, dou
 
     // Subtract char and word spacing from the (dx,dy) values
     sp = state->getCharSpace();
-    if (c == (CharCode)0x20) {
+    if (c == static_cast<CharCode>(0x20)) {
         sp += state->getWordSpace();
     }
     state->textTransformDelta(sp * state->getHorizScaling(), 0, &dx2, &dy2);
@@ -200,7 +200,7 @@ void MarkedContentOutputDev::drawChar(GfxState *state, double xx, double yy, dou
             int n = unicodeMap->mapUnicode(u[i], buf, sizeof(buf));
             if (n > 0) {
                 if (currentText == nullptr) {
-                    currentText = new GooString();
+                    currentText = std::make_unique<GooString>();
                 }
                 currentText->append(buf, n);
             }

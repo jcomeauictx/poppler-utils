@@ -15,8 +15,9 @@
  All changes made under the Poppler project to this file are licensed
  under GPL version 2 or later
 
- Copyright (C) 2008, 2009, 2018 Albert Astals Cid <aacid@kde.org>
+ Copyright (C) 2008, 2009, 2018, 2025, 2026 Albert Astals Cid <aacid@kde.org>
  Copyright (C) 2011, 2012 Adrian Johnson <ajohnson@redneon.com>
+ Copyright (C) 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
 
  To see a description of the changes please see the Changelog file that
  came with your tarball or type make ChangeLog if you are building from git
@@ -24,10 +25,11 @@
 ========================================================================*/
 
 #include <cstdio>
-#include <cstddef>
 #include <cstring>
 #include <cstdlib>
 #include <cctype>
+#include <string>
+#include <vector>
 #include "parseargs.h"
 
 #include "goo/gstrtod.h"
@@ -51,7 +53,8 @@ bool parseArgs(const ArgDesc *args, int *argc, char *argv[])
                 argv[j] = argv[j + 1];
             }
             break;
-        } else if ((arg = findArg(args, argv[i]))) {
+        }
+        if ((arg = findArg(args, argv[i]))) {
             if (!grabArg(arg, i, argc, argv)) {
                 ok = false;
             }
@@ -86,20 +89,19 @@ void printUsage(const char *program, const char *otherArgs, const ArgDesc *args)
         w1 = 9 + w - strlen(arg->arg);
         switch (arg->kind) {
         case argInt:
-        case argIntDummy:
             typ = " <int>";
             break;
         case argFP:
-        case argFPDummy:
             typ = " <fp>";
             break;
         case argString:
-        case argStringDummy:
         case argGooString:
             typ = " <string>";
             break;
+        case argStringList:
+            typ = " <int> <string>...";
+            break;
         case argFlag:
-        case argFlagDummy:
         default:
             typ = "";
             break;
@@ -117,7 +119,7 @@ static const ArgDesc *findArg(const ArgDesc *args, char *arg)
     const ArgDesc *p;
 
     for (p = args; p->arg; ++p) {
-        if (p->kind < argFlagDummy && !strcmp(p->arg, arg)) {
+        if (!strcmp(p->arg, arg)) {
             return p;
         }
     }
@@ -134,12 +136,12 @@ static bool grabArg(const ArgDesc *arg, int i, int *argc, char *argv[])
     n = 0;
     switch (arg->kind) {
     case argFlag:
-        *(bool *)arg->val = true;
+        *static_cast<bool *>(arg->val) = true;
         n = 1;
         break;
     case argInt:
         if (i + 1 < *argc && isInt(argv[i + 1])) {
-            *(int *)arg->val = atoi(argv[i + 1]);
+            *static_cast<int *>(arg->val) = atoi(argv[i + 1]);
             n = 2;
         } else {
             ok = false;
@@ -148,7 +150,7 @@ static bool grabArg(const ArgDesc *arg, int i, int *argc, char *argv[])
         break;
     case argFP:
         if (i + 1 < *argc && isFP(argv[i + 1])) {
-            *(double *)arg->val = gatof(argv[i + 1]);
+            *static_cast<double *>(arg->val) = gatof(argv[i + 1]);
             n = 2;
         } else {
             ok = false;
@@ -157,8 +159,8 @@ static bool grabArg(const ArgDesc *arg, int i, int *argc, char *argv[])
         break;
     case argString:
         if (i + 1 < *argc) {
-            strncpy((char *)arg->val, argv[i + 1], arg->size - 1);
-            ((char *)arg->val)[arg->size - 1] = '\0';
+            strncpy(static_cast<char *>(arg->val), argv[i + 1], arg->size - 1);
+            (static_cast<char *>(arg->val))[arg->size - 1] = '\0';
             n = 2;
         } else {
             ok = false;
@@ -167,8 +169,28 @@ static bool grabArg(const ArgDesc *arg, int i, int *argc, char *argv[])
         break;
     case argGooString:
         if (i + 1 < *argc) {
-            ((GooString *)arg->val)->Set(argv[i + 1]);
+            (static_cast<GooString *>(arg->val))->assign(argv[i + 1]);
             n = 2;
+        } else {
+            ok = false;
+            n = 1;
+        }
+        break;
+    case argStringList:
+        if (i + 1 < *argc && isInt(argv[i + 1])) {
+            const int count = atoi(argv[i + 1]);
+            if (count >= 0 && count <= *argc - i - 2) {
+                auto *values = static_cast<std::vector<std::string> *>(arg->val);
+                values->clear();
+                values->reserve(count);
+                for (int k = 0; k < count; ++k) {
+                    values->emplace_back(argv[i + 2 + k]);
+                }
+                n = count + 2;
+            } else {
+                ok = false;
+                n = 1;
+            }
         } else {
             ok = false;
             n = 1;
@@ -196,10 +218,7 @@ bool isInt(const char *s)
     while (isdigit(*s)) {
         ++s;
     }
-    if (*s) {
-        return false;
-    }
-    return true;
+    return *s == 0;
 }
 
 bool isFP(const char *s)

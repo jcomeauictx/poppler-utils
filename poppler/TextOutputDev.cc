@@ -20,7 +20,7 @@
 // Copyright (C) 2006 Jeff Muizelaar <jeff@infidigm.net>
 // Copyright (C) 2007, 2008, 2012, 2017 Adrian Johnson <ajohnson@redneon.com>
 // Copyright (C) 2008 Koji Otani <sho@bbr.jp>
-// Copyright (C) 2008, 2010-2012, 2014-2022, 2024 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2008, 2010-2012, 2014-2022, 2024-2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2008 Pino Toscano <pino@kde.org>
 // Copyright (C) 2008, 2010 Hib Eris <hib@hiberis.nl>
 // Copyright (C) 2009 Ross Moore <ross@maths.mq.edu.au>
@@ -39,19 +39,24 @@
 // Copyright (C) 2018 Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>. Work sponsored by the LiMux project of the city of Munich
 // Copyright (C) 2018 Sanchit Anand <sanxchit@gmail.com>
 // Copyright (C) 2018 Adam Reichold <adam.reichold@t-online.de>
-// Copyright (C) 2018-2022, 2024 Nelson Benítez León <nbenitezl@gmail.com>
+// Copyright (C) 2018-2022, 2024, 2025 Nelson Benítez León <nbenitezl@gmail.com>
 // Copyright (C) 2019 Christian Persch <chpe@src.gnome.org>
 // Copyright (C) 2019, 2022 Oliver Sander <oliver.sander@tu-dresden.de>
 // Copyright (C) 2019 Dan Shea <dan.shea@logical-innovations.com>
 // Copyright (C) 2021 Peter Williams <peter@newton.cx>
 // Copyright (C) 2024 Adam Sampson <ats@offog.org>
-// Copyright (C) 2024 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
-// Copyright (C) 2024 Stefan Brüns <stefan.bruens@rwth-aachen.de>
+// Copyright (C) 2024-2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2024-2026 Stefan Brüns <stefan.bruens@rwth-aachen.de>
+// Copyright (C) 2025 Hagen Möbius <hagen.moebius@googlemail.com>
+// Copyright (C) 2026 Aditya Tiwari <suntiwari3495@gmail.com>
+// Copyright (C) 2026 Diego Costa R. <diegocostar@gmail.com>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
 //
 //========================================================================
+
+#define ENABLE_TEXTDEVOUTPUT_DEBUGGING 0
 
 #include <config.h>
 
@@ -60,8 +65,8 @@
 #include <cstddef>
 #include <cmath>
 #include <cfloat>
-#include <cctype>
 #include <algorithm>
+#include <functional>
 #if defined(_WIN32) || defined(__CYGWIN__)
 #    include <fcntl.h> // for O_BINARY
 #    include <io.h> // for _setmode
@@ -69,7 +74,6 @@
 #include "goo/gfile.h"
 #include "goo/gmem.h"
 #include "goo/GooString.h"
-#include "poppler-config.h"
 #include "Error.h"
 #include "GlobalParams.h"
 #include "UnicodeMap.h"
@@ -86,43 +90,39 @@
 
 // Each bucket in a text pool includes baselines within a range of
 // this many points.
-#define textPoolStep 4
+constexpr int textPoolStep = 4;
 
 // Inter-character space width which will cause addChar to start a new
 // word.
-#define minWordBreakSpace 0.1
+constexpr double minWordBreakSpace = 0.1;
 
 // Negative inter-character space width, i.e., overlap, which will
 // cause addChar to start a new word.
-#define minDupBreakOverlap 0.2
+constexpr double minDupBreakOverlap = 0.2;
 
 // Max distance between baselines of two lines within a block, as a
 // fraction of the font size.
-#define maxLineSpacingDelta 1.5
+constexpr double maxLineSpacingDelta = 1.5;
 
 // Max difference in primary font sizes on two lines in the same
 // block.  Delta1 is used when examining new lines above and below the
 // current block; delta2 is used when examining text that overlaps the
 // current block; delta3 is used when examining text to the left and
 // right of the current block.
-#define maxBlockFontSizeDelta1 0.05
-#define maxBlockFontSizeDelta2 0.6
-#define maxBlockFontSizeDelta3 0.2
+constexpr double maxBlockFontSizeDelta1 = 0.05;
+constexpr double maxBlockFontSizeDelta2 = 0.6;
+constexpr double maxBlockFontSizeDelta3 = 0.2;
 
 // Max difference in font sizes inside a word.
-#define maxWordFontSizeDelta 0.05
+constexpr double maxWordFontSizeDelta = 0.05;
 
 // Maximum distance between baselines of two words on the same line,
 // e.g., distance between subscript or superscript and the primary
 // baseline, as a fraction of the font size.
-#define maxIntraLineDelta 0.5
-
-// Minimum inter-word spacing, as a fraction of the font size.  (Only
-// used for raw ordering.)
-#define minWordSpacing 0.15
+constexpr double maxIntraLineDelta = 0.5;
 
 // Maximum inter-word spacing, as a fraction of the font size.
-#define maxWordSpacing 1.5
+constexpr double maxWordSpacing = 1.5;
 
 // Maximum horizontal spacing which will allow a word to be pulled
 // into a block, as a fraction of the font size.
@@ -130,67 +130,67 @@
 double TextOutputDev::minColSpacing1_default = 0.7;
 
 // Minimum spacing between columns, as a fraction of the font size.
-#define minColSpacing2 1.0
+constexpr double minColSpacing2 = 1.0;
 
 // Maximum vertical spacing between blocks within a flow, as a
 // multiple of the font size.
-#define maxBlockSpacing 2.5
+constexpr double maxBlockSpacing = 2.5;
 
 // Minimum spacing between characters within a word, as a fraction of
 // the font size.
-#define minCharSpacing -0.5
+constexpr double minCharSpacing = -0.5;
 
 // Maximum spacing between characters within a word, as a fraction of
 // the font size, when there is no obvious extra-wide character
 // spacing.
-#define maxCharSpacing 0.03
+constexpr double maxCharSpacing = 0.03;
 
 // When extra-wide character spacing is detected, the inter-character
 // space threshold is set to the minimum inter-character space
 // multiplied by this constant.
-#define maxWideCharSpacingMul 1.3
+constexpr double maxWideCharSpacingMul = 1.3;
 
 // Upper limit on spacing between characters in a word.
-#define maxWideCharSpacing 0.4
+constexpr double maxWideCharSpacing = 0.4;
 
 // Max difference in primary,secondary coordinates (as a fraction of
 // the font size) allowed for duplicated text (fake boldface, drop
 // shadows) which is to be discarded.
-#define dupMaxPriDelta 0.1
-#define dupMaxSecDelta 0.2
+constexpr double dupMaxPriDelta = 0.1;
+constexpr double dupMaxSecDelta = 0.2;
 
 // Max width of underlines (in points).
-#define maxUnderlineWidth 3
+constexpr int maxUnderlineWidth = 3;
 
 // Min distance between baseline and underline (in points).
 //~ this should be font-size-dependent
-#define minUnderlineGap -2
+constexpr int minUnderlineGap = -2;
 
 // Max distance between baseline and underline (in points).
 //~ this should be font-size-dependent
-#define maxUnderlineGap 4
+constexpr int maxUnderlineGap = 4;
 
 // Max horizontal distance between edge of word and start of underline
 // (in points).
 //~ this should be font-size-dependent
-#define underlineSlack 1
+constexpr int underlineSlack = 1;
 
 // Max distance between edge of text and edge of link border
-#define hyperlinkSlack 2
+constexpr int hyperlinkSlack = 2;
 
 // Max distance between characters when combining a base character and
 // combining character
-#define combMaxMidDelta 0.3
-#define combMaxBaseDelta 0.4
+constexpr double combMaxMidDelta = 0.3;
+constexpr double combMaxBaseDelta = 0.4;
 
 // Text is considered diagonal if abs(tan(angle)) > diagonalThreshold.
 // (Or 1/tan(angle) for 90/270 degrees.)
-#define diagonalThreshold 0.1
+constexpr double diagonalThreshold = 0.1;
 
 // How opaque a selection on a glyphless font should be. Since the font is
 // glyphless and overlaid over text in image form, this must enable users
 // to read the underlying image. Issue #157
-#define glyphlessSelectionOpacity 0.4
+constexpr double glyphlessSelectionOpacity = 0.4;
 
 // Returns whether x is between a and b or equal to a or b.
 // a and b don't need to be sorted.
@@ -333,7 +333,7 @@ public:
         y1 = y1A;
         horiz = y0 == y1;
     }
-    ~TextUnderline() { }
+    ~TextUnderline() = default;
 
     double x0, y0, x1, y1;
     bool horiz;
@@ -354,7 +354,7 @@ public:
         yMax = yMaxA;
         link = linkA;
     }
-    ~TextLink() { }
+    ~TextLink() = default;
 
     int xMin, yMin, xMax, yMax;
     AnnotLink *link;
@@ -367,19 +367,22 @@ public:
 TextFontInfo::TextFontInfo(const GfxState *state)
 {
     gfxFont = state->getFont();
-#ifdef TEXTOUT_WORD_LIST
-    fontName = (gfxFont && gfxFont->getName()) ? new GooString(*gfxFont->getName()) : nullptr;
+    if (gfxFont) {
+        const std::optional<std::string> &gfxFontName = gfxFont->getName();
+        if (gfxFontName) {
+            fontName = new GooString(*gfxFontName);
+        } else {
+            fontName = nullptr;
+        }
+    } else {
+        fontName = nullptr;
+    }
     flags = gfxFont ? gfxFont->getFlags() : 0;
-#endif
 }
 
 TextFontInfo::~TextFontInfo()
 {
-#ifdef TEXTOUT_WORD_LIST
-    if (fontName) {
-        delete fontName;
-    }
-#endif
+    delete fontName;
 }
 
 bool TextFontInfo::matches(const GfxState *state) const
@@ -407,9 +410,9 @@ double TextFontInfo::getDescent() const
     return gfxFont ? gfxFont->getDescent() : -0.35;
 }
 
-int TextFontInfo::getWMode() const
+GfxFont::WritingMode TextFontInfo::getWMode() const
 {
-    return gfxFont ? gfxFont->getWMode() : 0;
+    return gfxFont ? gfxFont->getWMode() : GfxFont::WritingMode::Horizontal;
 }
 
 //------------------------------------------------------------------------
@@ -424,7 +427,6 @@ TextWord::TextWord(const GfxState *state, int rotA, double fontSizeA)
     next = nullptr;
     invisible = state->getRender() == 3;
 
-#ifdef TEXTOUT_WORD_LIST
     GfxRGB rgb;
 
     if ((state->getRender() & 3) == 1) {
@@ -435,24 +437,23 @@ TextWord::TextWord(const GfxState *state, int rotA, double fontSizeA)
     colorR = colToDbl(rgb.r);
     colorG = colToDbl(rgb.g);
     colorB = colToDbl(rgb.b);
-#endif
 
     underlined = false;
     link = nullptr;
 }
 
-TextWord::~TextWord() { }
+TextWord::~TextWord() = default;
 
-void TextWord::addChar(const GfxState *state, TextFontInfo *fontA, double x, double y, double dx, double dy, int charPosA, int charLen, CharCode c, Unicode u, const Matrix &textMatA)
+void TextWord::addChar(TextFontInfo *fontA, double x, double y, double dx, double dy, int charPosA, int charLen, CharCode c, Unicode u, const Matrix &textMatA)
 {
-    chars.push_back(CharInfo { u, c, charPosA, 0.0, fontA, textMatA });
+    chars.push_back(CharInfo { .text = u, .charcode = c, .charPos = charPosA, .edge = 0.0, .font = fontA, .textMat = textMatA });
     charPosEnd = charPosA + charLen;
 
     if (len() == 1) {
         setInitialBounds(fontA, x, y);
     }
 
-    if (wMode) { // vertical writing mode
+    if (wMode == GfxFont::WritingMode::Vertical) { // vertical writing mode
         // NB: the rotation value has been incremented by 1 (in
         // TextPage::beginWord()) for vertical writing mode
         switch (rot) {
@@ -501,7 +502,7 @@ void TextWord::setInitialBounds(TextFontInfo *fontA, double x, double y)
     double descent = fontA->getDescent() * fontSize;
     wMode = fontA->getWMode();
 
-    if (wMode) { // vertical writing mode
+    if (wMode == GfxFont::WritingMode::Vertical) { // vertical writing mode
         // NB: the rotation value has been incremented by 1 (in
         // TextPage::beginWord()) for vertical writing mode
         switch (rot) {
@@ -591,18 +592,18 @@ struct CombiningTable
 };
 
 static const struct CombiningTable combiningTable[] = {
-    { 0x0060, 0x0300 }, // grave
-    { 0x00a8, 0x0308 }, // dieresis
-    { 0x00af, 0x0304 }, // macron
-    { 0x00b4, 0x0301 }, // acute
-    { 0x00b8, 0x0327 }, // cedilla
-    { 0x02c6, 0x0302 }, // circumflex
-    { 0x02c7, 0x030c }, // caron
-    { 0x02d8, 0x0306 }, // breve
-    { 0x02d9, 0x0307 }, // dotaccent
-    { 0x02da, 0x030a }, // ring
-    { 0x02dc, 0x0303 }, // tilde
-    { 0x02dd, 0x030b } // hungarumlaut (double acute accent)
+    { .base = 0x0060, .comb = 0x0300 }, // grave
+    { .base = 0x00a8, .comb = 0x0308 }, // dieresis
+    { .base = 0x00af, .comb = 0x0304 }, // macron
+    { .base = 0x00b4, .comb = 0x0301 }, // acute
+    { .base = 0x00b8, .comb = 0x0327 }, // cedilla
+    { .base = 0x02c6, .comb = 0x0302 }, // circumflex
+    { .base = 0x02c7, .comb = 0x030c }, // caron
+    { .base = 0x02d8, .comb = 0x0306 }, // breve
+    { .base = 0x02d9, .comb = 0x0307 }, // dotaccent
+    { .base = 0x02da, .comb = 0x030a }, // ring
+    { .base = 0x02dc, .comb = 0x0303 }, // tilde
+    { .base = 0x02dd, .comb = 0x030b } // hungarumlaut (double acute accent)
 };
 
 // returning combining versions of characters
@@ -616,9 +617,9 @@ static Unicode getCombiningChar(Unicode u)
     return 0;
 }
 
-bool TextWord::addCombining(const GfxState *state, TextFontInfo *fontA, double fontSizeA, double x, double y, double dx, double dy, int charPosA, int charLen, CharCode c, Unicode u, const Matrix &textMatA)
+bool TextWord::addCombining(TextFontInfo *fontA, double fontSizeA, double x, double y, double dx, double dy, int charPosA, int charLen, CharCode c, Unicode u, const Matrix &textMatA)
 {
-    if (chars.empty() || wMode != 0 || fontA->getWMode() != 0) {
+    if (chars.empty() || wMode != GfxFont::WritingMode::Horizontal || fontA->getWMode() != GfxFont::WritingMode::Horizontal) {
         return false;
     }
 
@@ -646,7 +647,7 @@ bool TextWord::addCombining(const GfxState *state, TextFontInfo *fontA, double f
 
         // Add character, but don't adjust edge / bounding box because
         // combining character's positioning could be odd.
-        chars.emplace_back(CharInfo { cCurrent, c, charPosA, edgeMid, fontA, textMatA });
+        chars.emplace_back(CharInfo { .text = cCurrent, .charcode = c, .charPos = charPosA, .edge = edgeMid, .font = fontA, .textMat = textMatA });
         charPosEnd = charPosA + charLen;
 
         return true;
@@ -676,7 +677,7 @@ bool TextWord::addCombining(const GfxState *state, TextFontInfo *fontA, double f
 
         fontSize = fontSizeA;
         // move combining character to after base character
-        chars.emplace_back(CharInfo { cPrev, chars.back().charcode, charPosA, edgeMid, chars.back().font, chars.back().textMat });
+        chars.emplace_back(CharInfo { .text = cPrev, .charcode = chars.back().charcode, .charPos = charPosA, .edge = edgeMid, .font = chars.back().font, .textMat = chars.back().textMat });
 
         auto &lastChar = chars[chars.size() - 2];
 
@@ -692,7 +693,7 @@ bool TextWord::addCombining(const GfxState *state, TextFontInfo *fontA, double f
 
         // Updated edges / bounding box because we changed the base
         // character.
-        if (wMode) {
+        if (wMode == GfxFont::WritingMode::Vertical) {
             // FIXME unreachable, wMode == 0
             switch (rot) {
             case 0:
@@ -756,6 +757,9 @@ void TextWord::merge(TextWord *word)
     chars.insert(chars.end(), word->chars.begin(), word->chars.end());
     edgeEnd = word->edgeEnd;
     charPosEnd = word->charPosEnd;
+    if (!link) {
+        link = word->link;
+    }
 }
 
 inline int TextWord::primaryCmp(const TextWord *word) const
@@ -802,28 +806,23 @@ double TextWord::primaryDelta(const TextWord *word) const
     return delta;
 }
 
-int TextWord::cmpYX(const void *p1, const void *p2)
+bool TextWord::cmpYX(const TextWord *const word1, const TextWord *const word2)
 {
-    TextWord *word1 = *(TextWord **)p1;
-    TextWord *word2 = *(TextWord **)p2;
     double cmp;
 
     cmp = word1->yMin - word2->yMin;
     if (cmp == 0) {
         cmp = word1->xMin - word2->xMin;
     }
-    return cmp < 0 ? -1 : cmp > 0 ? 1 : 0;
+    return cmp < 0;
 }
 
-#ifdef TEXTOUT_WORD_LIST
-
-GooString *TextWord::getText() const
+std::unique_ptr<std::string> TextWord::getText() const
 {
-    GooString *s;
     const UnicodeMap *uMap;
     char buf[8];
 
-    s = new GooString();
+    auto s = std::make_unique<std::string>();
     if (!(uMap = globalParams->getTextEncoding())) {
         return s;
     }
@@ -873,8 +872,6 @@ void TextWord::getCharBBox(int charIdx, double *xMinA, double *yMinA, double *xM
     }
 }
 
-#endif // TEXTOUT_WORD_LIST
-
 //------------------------------------------------------------------------
 // TextPool
 //------------------------------------------------------------------------
@@ -883,23 +880,14 @@ TextPool::TextPool()
 {
     minBaseIdx = 0;
     maxBaseIdx = -1;
-    pool = nullptr;
-    cursor = nullptr;
-    cursorBaseIdx = -1;
 }
 
 TextPool::~TextPool()
 {
-    int baseIdx;
-    TextWord *word, *word2;
-
-    for (baseIdx = minBaseIdx; baseIdx <= maxBaseIdx; ++baseIdx) {
-        for (word = pool[baseIdx - minBaseIdx]; word; word = word2) {
-            word2 = word->next;
-            delete word;
-        }
+    for (auto &wordList : pool) {
+        delete wordList.head;
     }
-    gfree(pool);
+    pool.resize(0);
 }
 
 int TextPool::getBaseIdx(double base) const
@@ -911,77 +899,136 @@ int TextPool::getBaseIdx(double base) const
     if (baseIdxDouble > maxBaseIdx) {
         return maxBaseIdx;
     }
-    return (int)baseIdxDouble;
+    return static_cast<int>(baseIdxDouble);
+}
+
+void TextPool::sort()
+{
+    const auto SplitWordList = [](TextWord *list) -> TextWord * {
+        auto *slow = list;
+        auto *fast = list->next;
+
+        // fast is advanced twice as often as slow, so when
+        // fast reaches the end slow points to the midpoint.
+        while (fast) {
+            fast = fast->next;
+            if (fast) {
+                slow = slow->next;
+                fast = fast->next;
+            }
+        }
+        auto *back = slow->next;
+        slow->next = nullptr;
+        return back;
+    };
+
+    const auto PosCmp = [](const TextWord &a, const TextWord &b) -> bool {
+        if (a.rot == 0) {
+            return ((a.xMin + a.xMax) <= (b.xMin + b.xMax));
+        }
+        if (a.rot == 1) {
+            return ((a.yMin + a.yMax) <= (b.yMin + b.yMax));
+        }
+        if (a.rot == 2) {
+            return ((b.xMin + b.xMax) <= (a.xMin + a.xMax));
+        }
+        return ((b.yMin + b.yMax) <= (a.yMin + a.yMax));
+    };
+
+    const auto SortedMerge = [PosCmp](TextWord *a, TextWord *b) {
+        if (!a) {
+            return b;
+        }
+        if (!b) {
+            return a;
+        }
+
+        TextWord *head = nullptr;
+        TextWord *cursor = nullptr;
+
+        if (PosCmp(*a, *b)) {
+            head = cursor = a;
+            a = a->next;
+        } else {
+            head = cursor = b;
+            b = b->next;
+        }
+
+        while (a && b) {
+            if (PosCmp(*a, *b)) {
+                cursor->next = a;
+                cursor = cursor->next;
+                a = a->next;
+            } else {
+                cursor->next = b;
+                cursor = cursor->next;
+                b = b->next;
+            }
+        }
+
+        if (a) {
+            cursor->next = a;
+        } else {
+            cursor->next = b;
+        }
+
+        return head;
+    };
+
+    const std::function<void(TextWord **)> SortWordList = [&](TextWord **list) -> void {
+        if ((*list == nullptr) || ((*list)->next == nullptr)) {
+            return;
+        }
+
+        TextWord *second = SplitWordList(*list);
+
+        SortWordList(list);
+        SortWordList(&second);
+
+        *list = SortedMerge(*list, second);
+    };
+
+    for (WordList &list : pool) {
+        if (!list.head) {
+            continue;
+        }
+        SortWordList(&list.head);
+    }
 }
 
 void TextPool::addWord(TextWord *word)
 {
-    int wordBaseIdx, newMinBaseIdx, newMaxBaseIdx, baseIdx;
-    TextWord *w0, *w1;
-
     // expand the array if needed
-    wordBaseIdx = (int)(word->base / textPoolStep);
+    int wordBaseIdx = static_cast<int>(word->base / textPoolStep);
+
     if (unlikely(wordBaseIdx <= INT_MIN + 128 || wordBaseIdx >= INT_MAX - 128)) {
         error(errSyntaxWarning, -1, "wordBaseIdx out of range");
         delete word;
         return;
     }
-    if (minBaseIdx > maxBaseIdx) {
+
+    if (pool.empty()) {
         minBaseIdx = wordBaseIdx - 128;
         maxBaseIdx = wordBaseIdx + 128;
-        pool = (TextWord **)gmallocn(maxBaseIdx - minBaseIdx + 1, sizeof(TextWord *));
-        for (baseIdx = minBaseIdx; baseIdx <= maxBaseIdx; ++baseIdx) {
-            pool[baseIdx - minBaseIdx] = nullptr;
-        }
-    } else if (wordBaseIdx < minBaseIdx) {
-        newMinBaseIdx = wordBaseIdx - 128;
-        TextWord **newPool = (TextWord **)gmallocn_checkoverflow(maxBaseIdx - newMinBaseIdx + 1, sizeof(TextWord *));
-        if (unlikely(!newPool)) {
-            error(errSyntaxWarning, -1, "newPool would overflow");
-            delete word;
-            return;
-        }
-        for (baseIdx = newMinBaseIdx; baseIdx < minBaseIdx; ++baseIdx) {
-            newPool[baseIdx - newMinBaseIdx] = nullptr;
-        }
-        memcpy(&newPool[minBaseIdx - newMinBaseIdx], pool, (maxBaseIdx - minBaseIdx + 1) * sizeof(TextWord *));
-        gfree(pool);
-        pool = newPool;
-        minBaseIdx = newMinBaseIdx;
-    } else if (wordBaseIdx > maxBaseIdx) {
-        newMaxBaseIdx = wordBaseIdx + 128;
-        TextWord **reallocatedPool = (TextWord **)greallocn(pool, newMaxBaseIdx - minBaseIdx + 1, sizeof(TextWord *), true /*checkoverflow*/, false /*free_pool*/);
-        if (!reallocatedPool) {
-            error(errSyntaxWarning, -1, "new pool size would overflow");
-            delete word;
-            return;
-        }
-        pool = reallocatedPool;
-        for (baseIdx = maxBaseIdx + 1; baseIdx <= newMaxBaseIdx; ++baseIdx) {
-            pool[baseIdx - minBaseIdx] = nullptr;
-        }
-        maxBaseIdx = newMaxBaseIdx;
+        pool.resize(257);
+    }
+    while (wordBaseIdx < minBaseIdx) {
+        pool.insert(pool.begin(), 128, {});
+        minBaseIdx -= 128;
+    }
+    while (wordBaseIdx > maxBaseIdx) {
+        pool.insert(pool.end(), 128, {});
+        maxBaseIdx += 128;
     }
 
-    // insert the new word
-    if (cursor && wordBaseIdx == cursorBaseIdx && word->primaryCmp(cursor) >= 0) {
-        w0 = cursor;
-        w1 = cursor->next;
+    // append the new word
+    auto &wordList = pool[wordBaseIdx - minBaseIdx];
+    if (wordList.tail) {
+        wordList.tail->next = word;
     } else {
-        w0 = nullptr;
-        w1 = pool[wordBaseIdx - minBaseIdx];
+        wordList.head = word;
     }
-    for (; w1 && word->primaryCmp(w1) > 0; w0 = w1, w1 = w1->next) {
-        ;
-    }
-    word->next = w1;
-    if (w0) {
-        w0->next = word;
-    } else {
-        pool[wordBaseIdx - minBaseIdx] = word;
-    }
-    cursor = word;
-    cursorBaseIdx = wordBaseIdx;
+    wordList.tail = word;
 }
 
 //------------------------------------------------------------------------
@@ -999,7 +1046,6 @@ TextLine::TextLine(TextBlock *blkA, int rotA, double baseA)
     col = nullptr;
     len = 0;
     convertedLen = 0;
-    hyphenated = false;
     next = nullptr;
     xMin = yMin = 0;
     xMax = yMax = -1;
@@ -1125,16 +1171,14 @@ int TextLine::cmpYX(const TextLine *line) const
     return primaryCmp(line);
 }
 
-int TextLine::cmpXY(const void *p1, const void *p2)
+bool TextLine::cmpXY(const TextLine *const line1, const TextLine *const line2)
 {
-    TextLine *line1 = *(TextLine **)p1;
-    TextLine *line2 = *(TextLine **)p2;
     int cmp;
 
     if ((cmp = line1->primaryCmp(line2))) {
-        return cmp;
+        return cmp < 0;
     }
-    return line1->secondaryCmp(line2);
+    return line1->secondaryCmp(line2) < 0;
 }
 
 void TextLine::coalesce(const UnicodeMap *uMap)
@@ -1170,8 +1214,8 @@ void TextLine::coalesce(const UnicodeMap *uMap)
         }
 
         // merge words
-        auto word0 = words;
-        auto word1 = words->next;
+        auto *word0 = words;
+        auto *word1 = words->next;
         while (word1) {
             if (word0->primaryDelta(word1) >= space) {
                 word0->spaceAfter = true;
@@ -1195,16 +1239,16 @@ void TextLine::coalesce(const UnicodeMap *uMap)
     // build the line text
     isUnicode = uMap ? uMap->isUnicode() : false;
     len = 0;
-    for (auto word1 = words; word1; word1 = word1->next) {
+    for (auto *word1 = words; word1; word1 = word1->next) {
         len += word1->len();
         if (word1->spaceAfter) {
             ++len;
         }
     }
-    text = (Unicode *)gmallocn(len, sizeof(Unicode));
-    edge = (double *)gmallocn(len + 1, sizeof(double));
+    text = static_cast<Unicode *>(gmallocn(len, sizeof(Unicode)));
+    edge = static_cast<double *>(gmallocn(len + 1, sizeof(double)));
     size_t i = 0;
-    for (auto word1 = words; word1; word1 = word1->next) {
+    for (auto *word1 = words; word1; word1 = word1->next) {
         for (size_t j = 0; j < word1->len(); ++j) {
             text[i] = word1->chars[j].text;
             edge[i] = word1->chars[j].edge;
@@ -1212,13 +1256,13 @@ void TextLine::coalesce(const UnicodeMap *uMap)
         }
         edge[i] = word1->edgeEnd;
         if (word1->spaceAfter) {
-            text[i] = (Unicode)0x0020;
+            text[i] = static_cast<Unicode>(0x0020);
             ++i;
         }
     }
 
     // compute convertedLen and set up the col array
-    col = (int *)gmallocn(len + 1, sizeof(int));
+    col = static_cast<int *>(gmallocn(len + 1, sizeof(int)));
     convertedLen = 0;
     for (int ci = 0; ci < len; ++ci) {
         col[ci] = convertedLen;
@@ -1229,10 +1273,6 @@ void TextLine::coalesce(const UnicodeMap *uMap)
         }
     }
     col[len] = convertedLen;
-
-    // check for hyphen at end of line
-    //~ need to check for other chars used as hyphens
-    hyphenated = text[len - 1] == (Unicode)'-';
 }
 
 //------------------------------------------------------------------------
@@ -1253,11 +1293,11 @@ public:
     void init(TextLine *lineA, int startA, int lenA);
     void computeCoords(bool oneRot);
 
-    static int cmpYXPrimaryRot(const void *p1, const void *p2);
-    static int cmpYXLineRot(const void *p1, const void *p2);
-    static int cmpXYLineRot(const void *p1, const void *p2);
-    static int cmpXYColumnPrimaryRot(const void *p1, const void *p2);
-    static int cmpXYColumnLineRot(const void *p1, const void *p2);
+    static bool cmpYXPrimaryRot(const TextLineFrag &frag1, const TextLineFrag &frag2);
+    static bool cmpYXLineRot(const TextLineFrag &frag1, const TextLineFrag &frag2);
+    static bool cmpXYLineRot(const TextLineFrag &frag1, const TextLineFrag &frag2);
+    static bool cmpXYColumnPrimaryRot(const TextLineFrag &frag1, const TextLineFrag &frag2);
+    static bool cmpXYColumnLineRot(const TextLineFrag &frag1, const TextLineFrag &frag2);
 };
 
 void TextLineFrag::init(TextLine *lineA, int startA, int lenA)
@@ -1397,160 +1437,149 @@ void TextLineFrag::computeCoords(bool oneRot)
     }
 }
 
-int TextLineFrag::cmpYXPrimaryRot(const void *p1, const void *p2)
+bool TextLineFrag::cmpYXPrimaryRot(const TextLineFrag &frag1, const TextLineFrag &frag2)
 {
-    TextLineFrag *frag1 = (TextLineFrag *)p1;
-    TextLineFrag *frag2 = (TextLineFrag *)p2;
-    double cmp;
+    double cmp = 0; // make gcc happy
 
-    cmp = 0; // make gcc happy
-    switch (frag1->line->blk->page->primaryRot) {
+    switch (frag1.line->blk->page->primaryRot) {
     case 0:
-        if (fabs(cmp = frag1->yMin - frag2->yMin) < 0.01) {
-            cmp = frag1->xMin - frag2->xMin;
+        if ((cmp = frag1.yMin - frag2.yMin) == 0) {
+            cmp = frag1.xMin - frag2.xMin;
         }
         break;
     case 1:
-        if (fabs(cmp = frag2->xMax - frag1->xMax) < 0.01) {
-            cmp = frag1->yMin - frag2->yMin;
+        if ((cmp = frag2.xMax - frag1.xMax) == 0) {
+            cmp = frag1.yMin - frag2.yMin;
         }
         break;
     case 2:
-        if (fabs(cmp = frag2->yMin - frag1->yMin) < 0.01) {
-            cmp = frag2->xMax - frag1->xMax;
+        if ((cmp = frag2.yMin - frag1.yMin) == 0) {
+            cmp = frag2.xMax - frag1.xMax;
         }
         break;
     case 3:
-        if (fabs(cmp = frag1->xMax - frag2->xMax) < 0.01) {
-            cmp = frag2->yMax - frag1->yMax;
+        if ((cmp = frag1.xMax - frag2.xMax) == 0) {
+            cmp = frag2.yMax - frag1.yMax;
         }
         break;
     }
-    return cmp < 0 ? -1 : cmp > 0 ? 1 : 0;
+    return cmp < 0;
 }
 
-int TextLineFrag::cmpYXLineRot(const void *p1, const void *p2)
+bool TextLineFrag::cmpYXLineRot(const TextLineFrag &frag1, const TextLineFrag &frag2)
 {
-    TextLineFrag *frag1 = (TextLineFrag *)p1;
-    TextLineFrag *frag2 = (TextLineFrag *)p2;
     double cmp;
 
     cmp = 0; // make gcc happy
-    switch (frag1->line->rot) {
+    switch (frag1.line->rot) {
     case 0:
-        if ((cmp = frag1->yMin - frag2->yMin) == 0) {
-            cmp = frag1->xMin - frag2->xMin;
+        if ((cmp = frag1.yMin - frag2.yMin) == 0) {
+            cmp = frag1.xMin - frag2.xMin;
         }
         break;
     case 1:
-        if ((cmp = frag2->xMax - frag1->xMax) == 0) {
-            cmp = frag1->yMin - frag2->yMin;
+        if ((cmp = frag2.xMax - frag1.xMax) == 0) {
+            cmp = frag1.yMin - frag2.yMin;
         }
         break;
     case 2:
-        if ((cmp = frag2->yMin - frag1->yMin) == 0) {
-            cmp = frag2->xMax - frag1->xMax;
+        if ((cmp = frag2.yMin - frag1.yMin) == 0) {
+            cmp = frag2.xMax - frag1.xMax;
         }
         break;
     case 3:
-        if ((cmp = frag1->xMax - frag2->xMax) == 0) {
-            cmp = frag2->yMax - frag1->yMax;
+        if ((cmp = frag1.xMax - frag2.xMax) == 0) {
+            cmp = frag2.yMax - frag1.yMax;
         }
         break;
     }
-    return cmp < 0 ? -1 : cmp > 0 ? 1 : 0;
+    return cmp < 0;
 }
 
-int TextLineFrag::cmpXYLineRot(const void *p1, const void *p2)
+bool TextLineFrag::cmpXYLineRot(const TextLineFrag &frag1, const TextLineFrag &frag2)
 {
-    TextLineFrag *frag1 = (TextLineFrag *)p1;
-    TextLineFrag *frag2 = (TextLineFrag *)p2;
     double cmp;
 
     cmp = 0; // make gcc happy
-    switch (frag1->line->rot) {
+    switch (frag1.line->rot) {
     case 0:
-        if ((cmp = frag1->xMin - frag2->xMin) == 0) {
-            cmp = frag1->yMin - frag2->yMin;
+        if ((cmp = frag1.xMin - frag2.xMin) == 0) {
+            cmp = frag1.yMin - frag2.yMin;
         }
         break;
     case 1:
-        if ((cmp = frag1->yMin - frag2->yMin) == 0) {
-            cmp = frag2->xMax - frag1->xMax;
+        if ((cmp = frag1.yMin - frag2.yMin) == 0) {
+            cmp = frag2.xMax - frag1.xMax;
         }
         break;
     case 2:
-        if ((cmp = frag2->xMax - frag1->xMax) == 0) {
-            cmp = frag2->yMin - frag1->yMin;
+        if ((cmp = frag2.xMax - frag1.xMax) == 0) {
+            cmp = frag2.yMin - frag1.yMin;
         }
         break;
     case 3:
-        if ((cmp = frag2->yMax - frag1->yMax) == 0) {
-            cmp = frag1->xMax - frag2->xMax;
+        if ((cmp = frag2.yMax - frag1.yMax) == 0) {
+            cmp = frag1.xMax - frag2.xMax;
         }
         break;
     }
-    return cmp < 0 ? -1 : cmp > 0 ? 1 : 0;
+    return cmp < 0;
 }
 
-int TextLineFrag::cmpXYColumnPrimaryRot(const void *p1, const void *p2)
+bool TextLineFrag::cmpXYColumnPrimaryRot(const TextLineFrag &frag1, const TextLineFrag &frag2)
 {
-    TextLineFrag *frag1 = (TextLineFrag *)p1;
-    TextLineFrag *frag2 = (TextLineFrag *)p2;
     double cmp;
 
     // if columns overlap, compare y values
-    if (frag1->col < frag2->col + (frag2->line->col[frag2->start + frag2->len] - frag2->line->col[frag2->start]) && frag2->col < frag1->col + (frag1->line->col[frag1->start + frag1->len] - frag1->line->col[frag1->start])) {
+    if (frag1.col < frag2.col + (frag2.line->col[frag2.start + frag2.len] - frag2.line->col[frag2.start]) && frag2.col < frag1.col + (frag1.line->col[frag1.start + frag1.len] - frag1.line->col[frag1.start])) {
         cmp = 0; // make gcc happy
-        switch (frag1->line->blk->page->primaryRot) {
+        switch (frag1.line->blk->page->primaryRot) {
         case 0:
-            cmp = frag1->yMin - frag2->yMin;
+            cmp = frag1.yMin - frag2.yMin;
             break;
         case 1:
-            cmp = frag2->xMax - frag1->xMax;
+            cmp = frag2.xMax - frag1.xMax;
             break;
         case 2:
-            cmp = frag2->yMin - frag1->yMin;
+            cmp = frag2.yMin - frag1.yMin;
             break;
         case 3:
-            cmp = frag1->xMax - frag2->xMax;
+            cmp = frag1.xMax - frag2.xMax;
             break;
         }
-        return cmp < 0 ? -1 : cmp > 0 ? 1 : 0;
+        return cmp < 0;
     }
 
     // otherwise, compare starting column
-    return frag1->col - frag2->col;
+    return frag1.col - frag2.col < 0;
 }
 
-int TextLineFrag::cmpXYColumnLineRot(const void *p1, const void *p2)
+bool TextLineFrag::cmpXYColumnLineRot(const TextLineFrag &frag1, const TextLineFrag &frag2)
 {
-    TextLineFrag *frag1 = (TextLineFrag *)p1;
-    TextLineFrag *frag2 = (TextLineFrag *)p2;
     double cmp;
 
     // if columns overlap, compare y values
-    if (frag1->col < frag2->col + (frag2->line->col[frag2->start + frag2->len] - frag2->line->col[frag2->start]) && frag2->col < frag1->col + (frag1->line->col[frag1->start + frag1->len] - frag1->line->col[frag1->start])) {
+    if (frag1.col < frag2.col + (frag2.line->col[frag2.start + frag2.len] - frag2.line->col[frag2.start]) && frag2.col < frag1.col + (frag1.line->col[frag1.start + frag1.len] - frag1.line->col[frag1.start])) {
         cmp = 0; // make gcc happy
-        switch (frag1->line->rot) {
+        switch (frag1.line->rot) {
         case 0:
-            cmp = frag1->yMin - frag2->yMin;
+            cmp = frag1.yMin - frag2.yMin;
             break;
         case 1:
-            cmp = frag2->xMax - frag1->xMax;
+            cmp = frag2.xMax - frag1.xMax;
             break;
         case 2:
-            cmp = frag2->yMin - frag1->yMin;
+            cmp = frag2.yMin - frag1.yMin;
             break;
         case 3:
-            cmp = frag1->xMax - frag2->xMax;
+            cmp = frag1.xMax - frag2.xMax;
             break;
         }
-        return cmp < 0 ? -1 : cmp > 0 ? 1 : 0;
+        return cmp < 0;
     }
 
     // otherwise, compare starting column
-    return frag1->col - frag2->col;
+    return frag1.col - frag2.col < 0;
 }
 
 //------------------------------------------------------------------------
@@ -1612,6 +1641,9 @@ void TextBlock::addWord(TextWord *word)
 
 void TextBlock::coalesce(const UnicodeMap *uMap, double fixedPitch)
 {
+    // Sort words topologically before coalescing
+    pool->sort();
+
     // discard duplicated text (fake boldface, drop shadows)
     for (int idx0 = pool->minBaseIdx; idx0 <= pool->maxBaseIdx; ++idx0) {
         // Get the first LHS word from the pool
@@ -1620,8 +1652,66 @@ void TextBlock::coalesce(const UnicodeMap *uMap, double fixedPitch)
         while (word0) {
             double priDelta = dupMaxPriDelta * word0->fontSize;
             double secDelta = dupMaxSecDelta * word0->fontSize;
-            double xDelta = ((rot == 0) || (rot == 2)) ? priDelta : secDelta;
-            double yDelta = ((rot == 0) || (rot == 2)) ? secDelta : priDelta;
+
+            // Helper to determine if the second word "matches" the first one
+            // Finds identical words with almost identical positions, but also
+            // partially overlapping words.
+            auto keepSecond = [&priDelta, &secDelta](const TextWord &w0, const TextWord &w1) -> std::pair<size_t, size_t> {
+                auto equalText = [](const TextWord &iw0, const TextWord &iw1, size_t len, size_t offset = 0) -> bool { //
+                    return std::equal(iw0.chars.begin() + offset, iw0.chars.begin() + offset + len, iw1.chars.begin(), iw1.chars.begin() + len, //
+                                      [](auto c1, auto c2) { return c1.text == c2.text; });
+                };
+                auto matchEdges = [priDelta](const TextWord &iw0, const TextWord &iw1, size_t len, size_t offset = 0) -> bool { //
+                    return fabs(iw0.chars[offset].edge - iw1.chars[0].edge) < priDelta //
+                            && fabs(iw0.chars[offset + len - 1].edge - iw1.chars[len - 1].edge) < priDelta;
+                };
+                auto matchBaseTop = [secDelta](const TextWord &iw0, const TextWord &iw1) -> bool { //
+                    if ((iw0.rot == 0) || (iw0.rot == 2)) {
+                        return (fabs(iw0.yMin - iw1.yMin) < secDelta && fabs(iw0.yMax - iw1.yMax) < secDelta);
+                    }
+                    return (fabs(iw0.xMin - iw1.xMin) < secDelta && fabs(iw0.xMax - iw1.xMax) < secDelta);
+
+                };
+
+                // Check if bounding boxes overlap, if not, keep both words
+                if (w0.xMin > w1.xMax || w0.xMax < w1.xMin || w0.yMin > w1.yMax || w0.yMax < w1.yMin) {
+                    return { 0, w1.len() };
+                }
+
+                if (w0.len() == w1.len() && equalText(w0, w1, w0.len())) {
+                    // Identical words
+                    if (matchEdges(w0, w1, w0.len()) && matchBaseTop(w0, w1)) {
+                        // Discard w1
+                        return { 0, 0 };
+                    }
+                    return { 0, w1.len() };
+                }
+                if (w0.len() < w1.len() && equalText(w0, w1, w0.len())) {
+                    // w0 is the prefix of w1 (e.g. if the bold word ends with a non-bold colon)
+                    if (matchEdges(w0, w1, w0.len()) && matchBaseTop(w0, w1)) {
+                        return { w0.len(), w1.len() };
+                    }
+                } else if (w0.len() > w1.len() && equalText(w0, w1, w1.len())) {
+                    // w1 is the prefix of w0 (e.g. if the bold word ends with a non-bold colon)
+                    if (matchEdges(w0, w1, w1.len()) && matchBaseTop(w0, w1)) {
+                        return { 0, 0 };
+                    }
+                }
+
+                // Check if the tail of w0 is the head of w1, (e.g. a "quoted" bold word)
+                // e.g.: '"quoted' + 'quoted"' -> '"quoted" + '"'
+                for (size_t offset = 1; offset < w0.len(); offset++) {
+                    auto len = std::min(w0.len() - offset, w1.len());
+                    if (len == 0) {
+                        break;
+                    }
+                    if (equalText(w0, w1, len, offset) && matchEdges(w0, w1, len, offset)) {
+                        return { len, w1.len() };
+                    }
+                }
+
+                return { 0, w1.len() };
+            };
 
             int maxBaseIdx = pool->getBaseIdx(word0->base + secDelta);
 
@@ -1642,23 +1732,26 @@ void TextBlock::coalesce(const UnicodeMap *uMap, double fixedPitch)
                 }
                 TextWord *word1 = prevWord->next;
 
-                auto equalText = [](const TextWord &w1, const TextWord &w2) -> bool { //
-                    return std::equal(w1.chars.begin(), w1.chars.end(), w2.chars.begin(), w2.chars.end(), //
-                                      [](auto c1, auto c2) { return c1.text == c2.text; });
-                };
-                auto match = [&equalText, xDelta, yDelta](const TextWord &w1, const TextWord &w2) -> bool {
-                    if (!equalText(w1, w2)) {
-                        return false;
-                    }
-                    return fabs(w1.xMin - w2.xMin) < xDelta && fabs(w1.xMax - w2.xMax) < xDelta //
-                            && fabs(w1.yMin - w2.yMin) < yDelta && fabs(w1.yMax - w2.yMax) < yDelta;
-                };
-
                 while (word1) {
-                    if (match(*word0, *word1)) {
+                    if (auto keep = keepSecond(*word0, *word1); keep.first == keep.second) {
                         prevWord->next = word1->next;
                         delete word1;
                         word1 = prevWord->next;
+                    } else if (keep.first != 0) {
+                        // Discard first part of second word
+                        word1->chars.erase(word1->chars.begin(), word1->chars.begin() + keep.first);
+                        if (word1->rot == 0) {
+                            word1->xMin = word0->xMax;
+                        } else if (word1->rot == 2) {
+                            word1->xMax = word0->xMin;
+                        } else if (word1->rot == 1) {
+                            word1->yMin = word0->yMax;
+                        } else {
+                            word1->yMax = word0->yMin;
+                        }
+
+                        prevWord = word1;
+                        word1 = word1->next;
                     } else {
                         prevWord = word1;
                         word1 = word1->next;
@@ -1669,9 +1762,15 @@ void TextBlock::coalesce(const UnicodeMap *uMap, double fixedPitch)
                 if (idx0 != idx1) {
                     word1 = pool->getPool(idx1);
                 }
-                if (word1 && match(*word0, *word1)) {
+                if (!word1) {
+                    continue;
+                }
+                if (auto keep = keepSecond(*word0, *word1); keep.first == keep.second) {
                     pool->setPool(idx1, word1->next);
                     delete word1;
+                } else if (keep.first != 0) {
+                    word1->chars.erase(word1->chars.begin(), word1->chars.begin() + keep.first);
+                    word1->xMin = word0->xMax;
                 }
             }
 
@@ -1749,14 +1848,13 @@ void TextBlock::coalesce(const UnicodeMap *uMap, double fixedPitch)
                         if (delta < minCharSpacing * fontSize) {
                             overlap = true;
                             break;
-                        } else {
-                            if (delta < wordSpacing && (!bestWord1 || word1->primaryCmp(bestWord1) < 0)) {
-                                bestWordBaseIdx = baseIdx;
-                                bestWord0 = word0;
-                                bestWord1 = word1;
-                            }
-                            break;
                         }
+                        if (delta < wordSpacing && (!bestWord1 || word1->primaryCmp(bestWord1) < 0)) {
+                            bestWordBaseIdx = baseIdx;
+                            bestWord0 = word0;
+                            bestWord1 = word1;
+                        }
+                        break;
                     }
                 }
             }
@@ -1799,11 +1897,11 @@ void TextBlock::coalesce(const UnicodeMap *uMap, double fixedPitch)
     }
 
     // sort lines into xy order for column assignment
-    lineArray = (TextLine **)gmallocn(nLines, sizeof(TextLine *));
+    lineArray = static_cast<TextLine **>(gmallocn(nLines, sizeof(TextLine *)));
     for (line = lines, i = 0; line; line = line->next, ++i) {
         lineArray[i] = line;
     }
-    qsort(lineArray, nLines, sizeof(TextLine *), &TextLine::cmpXY);
+    std::sort(lineArray, lineArray + nLines, &TextLine::cmpXY);
 
     // column assignment
     nColumns = 0;
@@ -1813,16 +1911,16 @@ void TextBlock::coalesce(const UnicodeMap *uMap, double fixedPitch)
             col1 = 0; // make gcc happy
             switch (rot) {
             case 0:
-                col1 = (int)((line0->xMin - xMin) / fixedPitch + 0.5);
+                col1 = static_cast<int>((line0->xMin - xMin) / fixedPitch + 0.5);
                 break;
             case 1:
-                col1 = (int)((line0->yMin - yMin) / fixedPitch + 0.5);
+                col1 = static_cast<int>((line0->yMin - yMin) / fixedPitch + 0.5);
                 break;
             case 2:
-                col1 = (int)((xMax - line0->xMax) / fixedPitch + 0.5);
+                col1 = static_cast<int>((xMax - line0->xMax) / fixedPitch + 0.5);
                 break;
             case 3:
-                col1 = (int)((yMax - line0->yMax) / fixedPitch + 0.5);
+                col1 = static_cast<int>((yMax - line0->yMax) / fixedPitch + 0.5);
                 break;
             }
             for (k = 0; k <= line0->len; ++k) {
@@ -1878,7 +1976,7 @@ void TextBlock::coalesce(const UnicodeMap *uMap, double fixedPitch)
             }
         }
     }
-    gfree(lineArray);
+    gfree(static_cast<void *>(lineArray));
 }
 
 void TextBlock::updatePriMinMax(const TextBlock *blk)
@@ -1934,10 +2032,8 @@ void TextBlock::updatePriMinMax(const TextBlock *blk)
     }
 }
 
-int TextBlock::cmpXYPrimaryRot(const void *p1, const void *p2)
+bool TextBlock::cmpXYPrimaryRot(const TextBlock *const blk1, const TextBlock *const blk2)
 {
-    TextBlock *blk1 = *(TextBlock **)p1;
-    TextBlock *blk2 = *(TextBlock **)p2;
     double cmp;
 
     cmp = 0; // make gcc happy
@@ -1963,39 +2059,7 @@ int TextBlock::cmpXYPrimaryRot(const void *p1, const void *p2)
         }
         break;
     }
-    return cmp < 0 ? -1 : cmp > 0 ? 1 : 0;
-}
-
-int TextBlock::cmpYXPrimaryRot(const void *p1, const void *p2)
-{
-    TextBlock *blk1 = *(TextBlock **)p1;
-    TextBlock *blk2 = *(TextBlock **)p2;
-    double cmp;
-
-    cmp = 0; // make gcc happy
-    switch (blk1->page->primaryRot) {
-    case 0:
-        if ((cmp = blk1->yMin - blk2->yMin) == 0) {
-            cmp = blk1->xMin - blk2->xMin;
-        }
-        break;
-    case 1:
-        if ((cmp = blk2->xMax - blk1->xMax) == 0) {
-            cmp = blk1->yMin - blk2->yMin;
-        }
-        break;
-    case 2:
-        if ((cmp = blk2->yMin - blk1->yMin) == 0) {
-            cmp = blk2->xMax - blk1->xMax;
-        }
-        break;
-    case 3:
-        if ((cmp = blk1->xMax - blk2->xMax) == 0) {
-            cmp = blk2->yMax - blk1->yMax;
-        }
-        break;
-    }
-    return cmp < 0 ? -1 : cmp > 0 ? 1 : 0;
+    return cmp < 0;
 }
 
 int TextBlock::primaryCmp(const TextBlock *blk) const
@@ -2140,9 +2204,8 @@ int TextBlock::visitDepthFirst(TextBlock *blkList, int pos1, TextBlock **sorted,
 
     blk1 = this;
 
-#if 0 // for debugging
-  printf("visited: %d %.2f..%.2f %.2f..%.2f\n",
-	 sortPos, blk1->ExMin, blk1->ExMax, blk1->EyMin, blk1->EyMax);
+#if ENABLE_TEXTDEVOUTPUT_DEBUGGING
+    printf("visited: %d %.2f..%.2f %.2f..%.2f\n", sortPos, blk1->ExMin, blk1->ExMax, blk1->EyMin, blk1->EyMax);
 #endif
     visited[pos1] = true;
     pos2 = -1;
@@ -2173,10 +2236,8 @@ int TextBlock::visitDepthFirst(TextBlock *blkList, int pos1, TextBlock **sorted,
             if (blk2->isBeforeByRule1(blk1)) {
                 // Rule (1) blk1 and blk2 overlap, and blk2 is above blk1.
                 before = true;
-#if 0 // for debugging
-        printf("rule1: %.2f..%.2f %.2f..%.2f %.2f..%.2f %.2f..%.2f\n",
-	       blk2->ExMin, blk2->ExMax, blk2->EyMin, blk2->EyMax,
-	       blk1->ExMin, blk1->ExMax, blk1->EyMin, blk1->EyMax);
+#if ENABLE_TEXTDEVOUTPUT_DEBUGGING
+                printf("rule1: %.2f..%.2f %.2f..%.2f %.2f..%.2f %.2f..%.2f\n", blk2->ExMin, blk2->ExMax, blk2->EyMin, blk2->EyMax, blk1->ExMin, blk1->ExMax, blk1->EyMin, blk1->EyMax);
 #endif
             } else if (blk2->isBeforeByRule2(blk1)) {
                 // Rule (2) blk2 left of blk1, and no intervening blk3
@@ -2204,12 +2265,10 @@ int TextBlock::visitDepthFirst(TextBlock *blkList, int pos1, TextBlock **sorted,
                         }
                     }
                 }
-#if 0 // for debugging
-        if (before) {
-	  printf("rule2: %.2f..%.2f %.2f..%.2f %.2f..%.2f %.2f..%.2f\n",
-	         blk1->ExMin, blk1->ExMax, blk1->EyMin, blk1->EyMax,
-	         blk2->ExMin, blk2->ExMax, blk2->EyMin, blk2->EyMax);
-        }
+#if ENABLE_TEXTDEVOUTPUT_DEBUGGING
+                if (before) {
+                    printf("rule2: %.2f..%.2f %.2f..%.2f %.2f..%.2f %.2f..%.2f\n", blk1->ExMin, blk1->ExMax, blk1->EyMin, blk1->EyMax, blk2->ExMin, blk2->ExMax, blk2->EyMin, blk2->EyMax);
+                }
 #endif
             }
         }
@@ -2219,9 +2278,8 @@ int TextBlock::visitDepthFirst(TextBlock *blkList, int pos1, TextBlock **sorted,
             sortPos = blk2->visitDepthFirst(blkList, pos2, sorted, sortPos, visited, cache, cacheSize);
         }
     }
-#if 0 // for debugging
-  printf("sorted: %d %.2f..%.2f %.2f..%.2f\n",
-	 sortPos, blk1->ExMin, blk1->ExMax, blk1->EyMin, blk1->EyMax);
+#if ENABLE_TEXTDEVOUTPUT_DEBUGGING
+    printf("sorted: %d %.2f..%.2f %.2f..%.2f\n", sortPos, blk1->ExMin, blk1->ExMax, blk1->EyMin, blk1->EyMax);
 #endif
     sorted[sortPos++] = blk1;
     return sortPos;
@@ -2285,7 +2343,7 @@ void TextFlow::addBlock(TextBlock *blk)
     }
 }
 
-bool TextFlow::blockFits(const TextBlock *blk, const TextBlock *prevBlk) const
+bool TextFlow::blockFits(const TextBlock *blk) const
 {
     bool fits;
 
@@ -2312,8 +2370,6 @@ bool TextFlow::blockFits(const TextBlock *blk, const TextBlock *prevBlk) const
     return fits;
 }
 
-#ifdef TEXTOUT_WORD_LIST
-
 //------------------------------------------------------------------------
 // TextWordList
 //------------------------------------------------------------------------
@@ -2324,8 +2380,6 @@ TextWordList::TextWordList(const TextPage *text, bool physLayout)
     TextBlock *blk;
     TextLine *line;
     TextWord *word;
-    TextWord **wordArray;
-    int nWords, i;
 
     if (text->rawOrder) {
         for (word = text->rawWords; word; word = word->next) {
@@ -2335,7 +2389,7 @@ TextWordList::TextWordList(const TextPage *text, bool physLayout)
     } else if (physLayout) {
         // this is inefficient, but it's also the least useful of these
         // three cases
-        nWords = 0;
+        int nWords = 0;
         for (flow = text->flows; flow; flow = flow->next) {
             for (blk = flow->blocks; blk; blk = blk->next) {
                 for (line = blk->lines; line; line = line->next) {
@@ -2345,22 +2399,17 @@ TextWordList::TextWordList(const TextPage *text, bool physLayout)
                 }
             }
         }
-        wordArray = (TextWord **)gmallocn(nWords, sizeof(TextWord *));
-        i = 0;
+        words.reserve(nWords);
         for (flow = text->flows; flow; flow = flow->next) {
             for (blk = flow->blocks; blk; blk = blk->next) {
                 for (line = blk->lines; line; line = line->next) {
                     for (word = line->words; word; word = word->next) {
-                        wordArray[i++] = word;
+                        words.push_back(word);
                     }
                 }
             }
         }
-        qsort(wordArray, nWords, sizeof(TextWord *), &TextWord::cmpYX);
-        for (i = 0; i < nWords; ++i) {
-            words.push_back(wordArray[i]);
-        }
-        gfree(wordArray);
+        std::ranges::sort(words, &TextWord::cmpYX);
 
     } else {
         for (flow = text->flows; flow; flow = flow->next) {
@@ -2375,22 +2424,7 @@ TextWordList::TextWordList(const TextPage *text, bool physLayout)
     }
 }
 
-TextWordList::~TextWordList() { }
-
-int TextWordList::getLength() const
-{
-    return words.size();
-}
-
-TextWord *TextWordList::get(int idx)
-{
-    if (idx < 0 || idx >= (int)words.size()) {
-        return nullptr;
-    }
-    return words[idx];
-}
-
-#endif // TEXTOUT_WORD_LIST
+TextWordList::~TextWordList() = default;
 
 //------------------------------------------------------------------------
 // TextPage
@@ -2400,7 +2434,6 @@ TextPage::TextPage(bool rawOrderA, bool discardDiagA)
 {
     int rot;
 
-    refCnt = 1;
     rawOrder = rawOrderA;
     discardDiag = discardDiagA;
     curWord = nullptr;
@@ -2430,18 +2463,6 @@ TextPage::~TextPage()
     clear();
 }
 
-void TextPage::incRefCnt()
-{
-    refCnt++;
-}
-
-void TextPage::decRefCnt()
-{
-    if (--refCnt == 0) {
-        delete this;
-    }
-}
-
 void TextPage::startPage(const GfxState *state)
 {
     clear();
@@ -2457,6 +2478,11 @@ void TextPage::endPage()
 {
     if (curWord) {
         endWord();
+    }
+    for (std::unique_ptr<TextPool> &pool : pools) {
+        if (pool) {
+            pool->sort();
+        }
     }
 }
 
@@ -2485,7 +2511,7 @@ void TextPage::clear()
             flows = flows->next;
             delete flow;
         }
-        gfree(blocks);
+        gfree(static_cast<void *>(blocks));
     }
     fonts.clear();
     underlines.clear();
@@ -2506,7 +2532,6 @@ void TextPage::clear()
 
 void TextPage::updateFont(const GfxState *state)
 {
-    const double *fm;
     const char *name;
     int code, mCode, letterCode, anyCode;
     double w;
@@ -2536,7 +2561,7 @@ void TextPage::updateFont(const GfxState *state)
         // subset that doesn't contain 'm').
         mCode = letterCode = anyCode = -1;
         for (code = 0; code < 256; ++code) {
-            name = ((Gfx8BitFont *)gfxFont)->getCharName(code);
+            name = (static_cast<Gfx8BitFont *>(gfxFont))->getCharName(code);
             int nameLen = name ? strlen(name) : 0;
             bool nameOneChar = nameLen == 1 || (nameLen > 1 && name[1] == '\0');
             if (nameOneChar && name[0] == 'm') {
@@ -2545,21 +2570,21 @@ void TextPage::updateFont(const GfxState *state)
             if (letterCode < 0 && nameOneChar && ((name[0] >= 'A' && name[0] <= 'Z') || (name[0] >= 'a' && name[0] <= 'z'))) {
                 letterCode = code;
             }
-            if (anyCode < 0 && name && ((Gfx8BitFont *)gfxFont)->getWidth(code) > 0) {
+            if (anyCode < 0 && name && (static_cast<Gfx8BitFont *>(gfxFont))->getWidth(code) > 0) {
                 anyCode = code;
             }
         }
-        if (mCode >= 0 && (w = ((Gfx8BitFont *)gfxFont)->getWidth(mCode)) > 0) {
+        if (mCode >= 0 && (w = (static_cast<Gfx8BitFont *>(gfxFont))->getWidth(mCode)) > 0) {
             // 0.6 is a generic average 'm' width -- yes, this is a hack
             curFontSize *= w / 0.6;
-        } else if (letterCode >= 0 && (w = ((Gfx8BitFont *)gfxFont)->getWidth(letterCode)) > 0) {
+        } else if (letterCode >= 0 && (w = (static_cast<Gfx8BitFont *>(gfxFont))->getWidth(letterCode)) > 0) {
             // even more of a hack: 0.5 is a generic letter width
             curFontSize *= w / 0.5;
-        } else if (anyCode >= 0 && (w = ((Gfx8BitFont *)gfxFont)->getWidth(anyCode)) > 0) {
+        } else if (anyCode >= 0 && (w = (static_cast<Gfx8BitFont *>(gfxFont))->getWidth(anyCode)) > 0) {
             // better than nothing: 0.5 is a generic character width
             curFontSize *= w / 0.5;
         }
-        fm = gfxFont->getFontMatrix();
+        const std::array<double, 6> &fm = gfxFont->getFontMatrix();
         if (fm[0] != 0) {
             curFontSize *= fabs(fm[3] / fm[0]);
         }
@@ -2568,7 +2593,6 @@ void TextPage::updateFont(const GfxState *state)
 
 void TextPage::beginWord(const GfxState *state)
 {
-    const double *fontm;
     double m[4], m2[4];
     int rot;
 
@@ -2582,9 +2606,9 @@ void TextPage::beginWord(const GfxState *state)
 
     // compute the rotation
     state->getFontTransMat(&m[0], &m[1], &m[2], &m[3]);
-    std::shared_ptr<GfxFont> gfxFont = state->getFont();
+    const std::shared_ptr<GfxFont> &gfxFont = state->getFont();
     if (gfxFont && gfxFont->getType() == fontType3) {
-        fontm = state->getFont()->getFontMatrix();
+        const std::array<double, 6> &fontm = state->getFont()->getFontMatrix();
         m2[0] = fontm[0] * m[0] + fontm[1] * m[2];
         m2[1] = fontm[0] * m[1] + fontm[1] * m[3];
         m2[2] = fontm[2] * m[0] + fontm[3] * m[2];
@@ -2607,7 +2631,7 @@ void TextPage::beginWord(const GfxState *state)
 
     // for vertical writing mode, the lines are effectively rotated 90
     // degrees
-    if (gfxFont && gfxFont->getWMode()) {
+    if (gfxFont && gfxFont->getWMode() == GfxFont::WritingMode::Vertical) {
         rot = (rot + 1) & 3;
     }
 
@@ -2619,12 +2643,11 @@ void TextPage::addChar(const GfxState *state, double x, double y, double dx, dou
     double x1, y1, w1, h1, dx2, dy2, base, sp, delta;
     bool overlap;
     int i;
-    int wMode;
     Matrix mat;
 
     // subtract char and word spacing from the dx,dy values
     sp = state->getCharSpace();
-    if (c == (CharCode)0x20) {
+    if (c == static_cast<CharCode>(0x20)) {
         sp += state->getWordSpace();
     }
     state->textTransformDelta(sp * state->getHorizScaling(), 0, &dx2, &dy2);
@@ -2653,19 +2676,20 @@ void TextPage::addChar(const GfxState *state, double x, double y, double dx, dou
         charPos += nBytes;
         endWord();
         return;
-    } else if (uLen == 1 && u[0] == (Unicode)0x0) {
+    }
+    if (uLen == 1 && u[0] == static_cast<Unicode>(0x0)) {
         // ignore null characters
         charPos += nBytes;
         return;
     }
 
-    state->getFontTransMat(&mat.m[0], &mat.m[1], &mat.m[2], &mat.m[3]);
+    state->getFontTransMat(mat.m.data(), &mat.m[1], &mat.m[2], &mat.m[3]);
     mat.m[0] *= state->getHorizScaling();
     mat.m[1] *= state->getHorizScaling();
     mat.m[4] = x1;
     mat.m[5] = y1;
 
-    if (mergeCombining && curWord && uLen == 1 && curWord->addCombining(state, curFont, curFontSize, x1, y1, w1, h1, charPos, nBytes, c, u[0], mat)) {
+    if (mergeCombining && curWord && uLen == 1 && curWord->addCombining(curFont, curFontSize, x1, y1, w1, h1, charPos, nBytes, c, u[0], mat)) {
         charPos += nBytes;
         return;
     }
@@ -2705,7 +2729,7 @@ void TextPage::addChar(const GfxState *state, double x, double y, double dx, dou
             break;
         }
         overlap = fabs(delta) < dupMaxPriDelta * curWord->fontSize && fabs(base - curWord->base) < dupMaxSecDelta * curWord->fontSize;
-        wMode = curFont->getWMode();
+        const GfxFont::WritingMode wMode = curFont->getWMode();
         if (overlap || lastCharOverlap || sp < -minDupBreakOverlap * curWord->fontSize || sp > minWordBreakSpace * curWord->fontSize || fabs(base - curWord->base) > 0.5 || curFontSize != curWord->fontSize || wMode != curWord->wMode) {
             endWord();
         }
@@ -2749,7 +2773,7 @@ void TextPage::addChar(const GfxState *state, double x, double y, double dx, dou
         w1 /= uLen;
         h1 /= uLen;
         for (i = 0; i < uLen; ++i) {
-            curWord->addChar(state, curFont, x1 + i * w1, y1 + i * h1, w1, h1, charPos, nBytes, c, u[i], mat);
+            curWord->addChar(curFont, x1 + i * w1, y1 + i * h1, w1, h1, charPos, nBytes, c, u[i], mat);
         }
     }
     charPos += nBytes;
@@ -2830,6 +2854,15 @@ void TextPage::coalesce(bool physLayout, double fixedPitch, bool doHTML, double 
     if (rawOrder) {
         primaryRot = 0;
         primaryLR = true;
+        if (inlineLinkURIs) {
+            for (TextWord *word = rawWords; word; word = word->next) {
+                for (const std::unique_ptr<TextLink> &link : links) {
+                    if (link->xMin < word->xMin + hyperlinkSlack && word->xMax - hyperlinkSlack < link->xMax && link->yMin < word->yMin + hyperlinkSlack && word->yMax - hyperlinkSlack < link->yMax) {
+                        word->link = link->link;
+                    }
+                }
+            }
+        }
         return;
     }
 
@@ -2839,32 +2872,28 @@ void TextPage::coalesce(bool physLayout, double fixedPitch, bool doHTML, double 
     nBlocks = 0;
     primaryRot = 0;
 
-#if 0 // for debugging
-  printf("*** initial words ***\n");
-  for (rot = 0; rot < 4; ++rot) {
-    pool = pools[rot];
-    for (baseIdx = pool->minBaseIdx; baseIdx <= pool->maxBaseIdx; ++baseIdx) {
-      for (word0 = pool->getPool(baseIdx); word0; word0 = word0->next) {
-	printf("    word: x=%.2f..%.2f y=%.2f..%.2f base=%.2f fontSize=%.2f rot=%d link=%p '",
-	       word0->xMin, word0->xMax, word0->yMin, word0->yMax,
-	       word0->base, word0->fontSize, rot*90, word0->link);
-	for (i = 0; i < word0->len; ++i) {
-	  fputc(word0->text[i] & 0xff, stdout);
-	}
-	printf("'\n");
-      }
+#if ENABLE_TEXTDEVOUTPUT_DEBUGGING
+    printf("*** initial words ***\n");
+    for (rot = 0; rot < 4; ++rot) {
+        pool = pools[rot];
+        for (baseIdx = pool->minBaseIdx; baseIdx <= pool->maxBaseIdx; ++baseIdx) {
+            for (word0 = pool->getPool(baseIdx); word0; word0 = word0->next) {
+                printf("    word: x=%.2f..%.2f y=%.2f..%.2f base=%.2f fontSize=%.2f rot=%d link=%p '", word0->xMin, word0->xMax, word0->yMin, word0->yMax, word0->base, word0->fontSize, rot * 90, word0->link);
+                for (i = 0; i < word0->len; ++i) {
+                    fputc(word0->text[i] & 0xff, stdout);
+                }
+                printf("'\n");
+            }
+        }
     }
-  }
-  printf("\n");
+    printf("\n");
 #endif
 
-#if 0 //~ for debugging
-  for (i = 0; i < underlines->getLength(); ++i) {
-    underline = (TextUnderline *)underlines->get(i);
-    printf("underline: x=%g..%g y=%g..%g horiz=%d\n",
-	   underline->x0, underline->x1, underline->y0, underline->y1,
-	   underline->horiz);
-  }
+#if ENABLE_TEXTDEVOUTPUT_DEBUGGING
+    for (i = 0; i < underlines->getLength(); ++i) {
+        underline = (TextUnderline *)underlines->get(i);
+        printf("underline: x=%g..%g y=%g..%g horiz=%d\n", underline->x0, underline->x1, underline->y0, underline->y1, underline->horiz);
+    }
 #endif
 
     if (doHTML) {
@@ -2926,6 +2955,9 @@ void TextPage::coalesce(bool physLayout, double fixedPitch, bool doHTML, double 
                 }
             }
         }
+    }
+
+    if (doHTML || inlineLinkURIs) {
 
         //----- handle links
         for (const std::unique_ptr<TextLink> &link : links) {
@@ -3162,10 +3194,9 @@ void TextPage::coalesce(bool physLayout, double fixedPitch, bool doHTML, double 
                                 }
                                 found = true;
                                 break;
-                            } else {
-                                word0 = word1;
-                                word1 = word1->next;
                             }
+                            word0 = word1;
+                            word1 = word1->next;
                         }
                     }
                 }
@@ -3210,10 +3241,9 @@ void TextPage::coalesce(bool physLayout, double fixedPitch, bool doHTML, double 
                                 }
                                 found = true;
                                 break;
-                            } else {
-                                word0 = word1;
-                                word1 = word1->next;
                             }
+                            word0 = word1;
+                            word1 = word1->next;
                         }
                     }
                 }
@@ -3240,35 +3270,31 @@ void TextPage::coalesce(bool physLayout, double fixedPitch, bool doHTML, double 
         }
     }
 
-#if 0 // for debugging
-  printf("*** rotation ***\n");
-  for (rot = 0; rot < 4; ++rot) {
-    printf("  %d: %6d\n", rot, count[rot]);
-  }
-  printf("  primary rot = %d\n", primaryRot);
-  printf("\n");
+#if ENABLE_TEXTDEVOUTPUT_DEBUGGING
+    printf("*** rotation ***\n");
+    for (rot = 0; rot < 4; ++rot) {
+        printf("  %d: %6d\n", rot, count[rot]);
+    }
+    printf("  primary rot = %d\n", primaryRot);
+    printf("\n");
 #endif
 
-#if 0 // for debugging
-  printf("*** blocks ***\n");
-  for (blk = blkList; blk; blk = blk->next) {
-    printf("block: rot=%d x=%.2f..%.2f y=%.2f..%.2f\n",
-	   blk->rot, blk->xMin, blk->xMax, blk->yMin, blk->yMax);
-    for (line = blk->lines; line; line = line->next) {
-      printf("  line: x=%.2f..%.2f y=%.2f..%.2f base=%.2f\n",
-	     line->xMin, line->xMax, line->yMin, line->yMax, line->base);
-      for (word0 = line->words; word0; word0 = word0->next) {
-	printf("    word: x=%.2f..%.2f y=%.2f..%.2f base=%.2f fontSize=%.2f space=%d: '",
-	       word0->xMin, word0->xMax, word0->yMin, word0->yMax,
-	       word0->base, word0->fontSize, word0->spaceAfter);
-	for (i = 0; i < word0->len; ++i) {
-	  fputc(word0->text[i] & 0xff, stdout);
-	}
-	printf("'\n");
-      }
+#if ENABLE_TEXTDEVOUTPUT_DEBUGGING
+    printf("*** blocks ***\n");
+    for (blk = blkList; blk; blk = blk->next) {
+        printf("block: rot=%d x=%.2f..%.2f y=%.2f..%.2f\n", blk->rot, blk->xMin, blk->xMax, blk->yMin, blk->yMax);
+        for (line = blk->lines; line; line = line->next) {
+            printf("  line: x=%.2f..%.2f y=%.2f..%.2f base=%.2f\n", line->xMin, line->xMax, line->yMin, line->yMax, line->base);
+            for (word0 = line->words; word0; word0 = word0->next) {
+                printf("    word: x=%.2f..%.2f y=%.2f..%.2f base=%.2f fontSize=%.2f space=%d: '", word0->xMin, word0->xMax, word0->yMin, word0->yMax, word0->base, word0->fontSize, word0->spaceAfter);
+                for (i = 0; i < word0->len; ++i) {
+                    fputc(word0->text[i] & 0xff, stdout);
+                }
+                printf("'\n");
+            }
+        }
     }
-  }
-  printf("\n");
+    printf("\n");
 #endif
 
     // determine the primary direction
@@ -3288,37 +3314,37 @@ void TextPage::coalesce(bool physLayout, double fixedPitch, bool doHTML, double 
     }
     primaryLR = lrCount >= 0;
 
-#if 0 // for debugging
-  printf("*** direction ***\n");
-  printf("lrCount = %d\n", lrCount);
-  printf("primaryLR = %d\n", primaryLR);
+#if ENABLE_TEXTDEVOUTPUT_DEBUGGING
+    printf("*** direction ***\n");
+    printf("lrCount = %d\n", lrCount);
+    printf("primaryLR = %d\n", primaryLR);
 #endif
 
     //----- column assignment
 
     // sort blocks into xy order for column assignment
     if (blocks) {
-        gfree(blocks);
+        gfree(static_cast<void *>(blocks));
     }
     if (physLayout && fixedPitch) {
 
-        blocks = (TextBlock **)gmallocn(nBlocks, sizeof(TextBlock *));
+        blocks = static_cast<TextBlock **>(gmallocn(nBlocks, sizeof(TextBlock *)));
         int i;
         for (blk = blkList, i = 0; blk; blk = blk->next, ++i) {
             blocks[i] = blk;
             col1 = 0; // make gcc happy
             switch (primaryRot) {
             case 0:
-                col1 = (int)(blk->xMin / fixedPitch + 0.5);
+                col1 = static_cast<int>(blk->xMin / fixedPitch + 0.5);
                 break;
             case 1:
-                col1 = (int)(blk->yMin / fixedPitch + 0.5);
+                col1 = static_cast<int>(blk->yMin / fixedPitch + 0.5);
                 break;
             case 2:
-                col1 = (int)((pageWidth - blk->xMax) / fixedPitch + 0.5);
+                col1 = static_cast<int>((pageWidth - blk->xMax) / fixedPitch + 0.5);
                 break;
             case 3:
-                col1 = (int)((pageHeight - blk->yMax) / fixedPitch + 0.5);
+                col1 = static_cast<int>((pageHeight - blk->yMax) / fixedPitch + 0.5);
                 break;
             }
             blk->col = col1;
@@ -3332,14 +3358,12 @@ void TextPage::coalesce(bool physLayout, double fixedPitch, bool doHTML, double 
     } else {
 
         // sort blocks into xy order for column assignment
-        blocks = (TextBlock **)gmallocn(nBlocks, sizeof(TextBlock *));
+        blocks = static_cast<TextBlock **>(gmallocn(nBlocks, sizeof(TextBlock *)));
         int i;
         for (blk = blkList, i = 0; blk; blk = blk->next, ++i) {
             blocks[i] = blk;
         }
-        if (blocks) {
-            qsort(blocks, nBlocks, sizeof(TextBlock *), &TextBlock::cmpXYPrimaryRot);
-        }
+        std::sort(blocks, blocks + nBlocks, &TextBlock::cmpXYPrimaryRot);
 
         // column assignment
         for (i = 0; i < nBlocks; ++i) {
@@ -3355,7 +3379,7 @@ void TextPage::coalesce(bool physLayout, double fixedPitch, bool doHTML, double 
                     } else if (blk1->xMax == blk1->xMin) {
                         col2 = blk1->col;
                     } else {
-                        col2 = blk1->col + (int)(((blk0->xMin - blk1->xMin) / (blk1->xMax - blk1->xMin)) * blk1->nColumns);
+                        col2 = blk1->col + static_cast<int>(((blk0->xMin - blk1->xMin) / (blk1->xMax - blk1->xMin)) * blk1->nColumns);
                     }
                     break;
                 case 1:
@@ -3364,7 +3388,7 @@ void TextPage::coalesce(bool physLayout, double fixedPitch, bool doHTML, double 
                     } else if (blk1->yMax == blk1->yMin) {
                         col2 = blk1->col;
                     } else {
-                        col2 = blk1->col + (int)(((blk0->yMin - blk1->yMin) / (blk1->yMax - blk1->yMin)) * blk1->nColumns);
+                        col2 = blk1->col + static_cast<int>(((blk0->yMin - blk1->yMin) / (blk1->yMax - blk1->yMin)) * blk1->nColumns);
                     }
                     break;
                 case 2:
@@ -3373,7 +3397,7 @@ void TextPage::coalesce(bool physLayout, double fixedPitch, bool doHTML, double 
                     } else if (blk1->xMin == blk1->xMax) {
                         col2 = blk1->col;
                     } else {
-                        col2 = blk1->col + (int)(((blk0->xMax - blk1->xMax) / (blk1->xMin - blk1->xMax)) * blk1->nColumns);
+                        col2 = blk1->col + static_cast<int>(((blk0->xMax - blk1->xMax) / (blk1->xMin - blk1->xMax)) * blk1->nColumns);
                     }
                     break;
                 case 3:
@@ -3382,7 +3406,7 @@ void TextPage::coalesce(bool physLayout, double fixedPitch, bool doHTML, double 
                     } else if (blk1->yMin == blk1->yMax) {
                         col2 = blk1->col;
                     } else {
-                        col2 = blk1->col + (int)(((blk0->yMax - blk1->yMax) / (blk1->yMin - blk1->yMax)) * blk1->nColumns);
+                        col2 = blk1->col + static_cast<int>(((blk0->yMax - blk1->yMax) / (blk1->yMin - blk1->yMax)) * blk1->nColumns);
                     }
                     break;
                 }
@@ -3399,26 +3423,22 @@ void TextPage::coalesce(bool physLayout, double fixedPitch, bool doHTML, double 
         }
     }
 
-#if 0 // for debugging
-  printf("*** blocks, after column assignment ***\n");
-  for (blk = blkList; blk; blk = blk->next) {
-    printf("block: rot=%d x=%.2f..%.2f y=%.2f..%.2f col=%d nCols=%d\n",
-	   blk->rot, blk->xMin, blk->xMax, blk->yMin, blk->yMax, blk->col,
-	   blk->nColumns);
-    for (line = blk->lines; line; line = line->next) {
-      printf("  line: col[0]=%d\n", line->col[0]);
-      for (word0 = line->words; word0; word0 = word0->next) {
-	printf("    word: x=%.2f..%.2f y=%.2f..%.2f base=%.2f fontSize=%.2f space=%d: '",
-	       word0->xMin, word0->xMax, word0->yMin, word0->yMax,
-	       word0->base, word0->fontSize, word0->spaceAfter);
-	for (i = 0; i < word0->len; ++i) {
-	  fputc(word0->text[i] & 0xff, stdout);
-	}
-	printf("'\n");
-      }
+#if ENABLE_TEXTDEVOUTPUT_DEBUGGING
+    printf("*** blocks, after column assignment ***\n");
+    for (blk = blkList; blk; blk = blk->next) {
+        printf("block: rot=%d x=%.2f..%.2f y=%.2f..%.2f col=%d nCols=%d\n", blk->rot, blk->xMin, blk->xMax, blk->yMin, blk->yMax, blk->col, blk->nColumns);
+        for (line = blk->lines; line; line = line->next) {
+            printf("  line: col[0]=%d\n", line->col[0]);
+            for (word0 = line->words; word0; word0 = word0->next) {
+                printf("    word: x=%.2f..%.2f y=%.2f..%.2f base=%.2f fontSize=%.2f space=%d: '", word0->xMin, word0->xMax, word0->yMin, word0->yMax, word0->base, word0->fontSize, word0->spaceAfter);
+                for (i = 0; i < word0->len; ++i) {
+                    fputc(word0->text[i] & 0xff, stdout);
+                }
+                printf("'\n");
+            }
+        }
     }
-  }
-  printf("\n");
+    printf("\n");
 #endif
 
     //----- reading order sort
@@ -3434,12 +3454,12 @@ void TextPage::coalesce(bool physLayout, double fixedPitch, bool doHTML, double 
         }
     }
 
-#if 0 // for debugging
-  printf("PAGE\n");
+#if ENABLE_TEXTDEVOUTPUT_DEBUGGING
+    printf("PAGE\n");
 #endif
 
     int sortPos = 0;
-    bool *visited = (bool *)gmallocn(nBlocks, sizeof(bool));
+    bool *visited = static_cast<bool *>(gmallocn(nBlocks, sizeof(bool)));
     for (int i = 0; i < nBlocks; i++) {
         visited[i] = false;
     }
@@ -3497,7 +3517,7 @@ void TextPage::coalesce(bool physLayout, double fixedPitch, bool doHTML, double 
         if (fblk2 != nullptr && fblk3 != nullptr && fblk4 != nullptr) {
             if (((fblk3->xMin <= fblk4->xMax && fblk3->xMax >= fblk4->xMin) || (fblk2->yMin <= fblk4->yMax && fblk2->yMax >= fblk4->yMin) || (fblk2->xMin <= fblk3->xMax && fblk2->xMax >= fblk3->xMin)
                  || (fblk2->yMin <= fblk3->yMax && fblk2->yMax >= fblk3->yMin))
-                || !(fblk4->xMin <= fblk2->xMax && fblk4->xMax >= fblk2->xMin && fblk4->yMin <= fblk3->yMax && fblk4->yMax >= fblk3->yMin)) {
+                || fblk4->xMin > fblk2->xMax || fblk4->xMax < fblk2->xMin || fblk4->yMin > fblk3->yMax || fblk4->yMax < fblk3->yMin) {
                 fblk2 = nullptr;
                 fblk3 = nullptr;
                 fblk4 = nullptr;
@@ -3597,8 +3617,8 @@ void TextPage::coalesce(bool physLayout, double fixedPitch, bool doHTML, double 
      *  (we need to process whole table size when comparing it
      *   with regular text blocks)
      */
-    PDFRectangle *envelopes = new PDFRectangle[numTables];
-    TextBlock **ending_blocks = new TextBlock *[numTables];
+    auto *envelopes = new PDFRectangle[numTables];
+    auto **ending_blocks = new TextBlock *[numTables];
 
     for (int i = 0; i < numTables; i++) {
         envelopes[i].x1 = DBL_MAX;
@@ -3695,28 +3715,24 @@ void TextPage::coalesce(bool physLayout, double fixedPitch, bool doHTML, double 
         gfree(visited);
     }
 
-#if 0 // for debugging
-  printf("*** blocks, after ro sort ***\n");
-  for (i = 0; i < nBlocks; ++i) {
-    blk = blocks[i];
-    printf("block: rot=%d x=%.2f..%.2f y=%.2f..%.2f space=%.2f..%.2f\n",
-	   blk->rot, blk->xMin, blk->xMax, blk->yMin, blk->yMax,
-	   blk->priMin, blk->priMax);
-    for (line = blk->lines; line; line = line->next) {
-      printf("  line:\n");
-      for (word0 = line->words; word0; word0 = word0->next) {
-	printf("    word: x=%.2f..%.2f y=%.2f..%.2f base=%.2f fontSize=%.2f space=%d: '",
-	       word0->xMin, word0->xMax, word0->yMin, word0->yMax,
-	       word0->base, word0->fontSize, word0->spaceAfter);
-	for (j = 0; j < word0->len; ++j) {
-	  fputc(word0->text[j] & 0xff, stdout);
-	}
-	printf("'\n");
-      }
+#if ENABLE_TEXTDEVOUTPUT_DEBUGGING
+    printf("*** blocks, after ro sort ***\n");
+    for (i = 0; i < nBlocks; ++i) {
+        blk = blocks[i];
+        printf("block: rot=%d x=%.2f..%.2f y=%.2f..%.2f space=%.2f..%.2f\n", blk->rot, blk->xMin, blk->xMax, blk->yMin, blk->yMax, blk->priMin, blk->priMax);
+        for (line = blk->lines; line; line = line->next) {
+            printf("  line:\n");
+            for (word0 = line->words; word0; word0 = word0->next) {
+                printf("    word: x=%.2f..%.2f y=%.2f..%.2f base=%.2f fontSize=%.2f space=%d: '", word0->xMin, word0->xMax, word0->yMin, word0->yMax, word0->base, word0->fontSize, word0->spaceAfter);
+                for (j = 0; j < word0->len; ++j) {
+                    fputc(word0->text[j] & 0xff, stdout);
+                }
+                printf("'\n");
+            }
+        }
     }
-  }
-  printf("\n");
-  fflush(stdout);
+    printf("\n");
+    fflush(stdout);
 #endif
 
     // build the flows
@@ -3737,7 +3753,7 @@ void TextPage::coalesce(bool physLayout, double fixedPitch, bool doHTML, double 
         if (flow) {
             blk1 = blocks[i - 1];
             blkSpace = maxBlockSpacing * blk1->lines->words->fontSize;
-            if (blk1->secondaryDelta(blk) <= blkSpace && blk->isBelow(blk1) && flow->blockFits(blk, blk1)) {
+            if (blk1->secondaryDelta(blk) <= blkSpace && blk->isBelow(blk1) && flow->blockFits(blk)) {
                 flow->addBlock(blk);
                 continue;
             }
@@ -3751,31 +3767,25 @@ void TextPage::coalesce(bool physLayout, double fixedPitch, bool doHTML, double 
         lastFlow = flow;
     }
 
-#if 0 // for debugging
-  printf("*** flows ***\n");
-  for (flow = flows; flow; flow = flow->next) {
-    printf("flow: x=%.2f..%.2f y=%.2f..%.2f pri:%.2f..%.2f\n",
-	   flow->xMin, flow->xMax, flow->yMin, flow->yMax,
-	   flow->priMin, flow->priMax);
-    for (blk = flow->blocks; blk; blk = blk->next) {
-      printf("  block: rot=%d x=%.2f..%.2f y=%.2f..%.2f pri=%.2f..%.2f\n",
-	     blk->rot, blk->ExMin, blk->ExMax, blk->EyMin, blk->EyMax,
-	     blk->priMin, blk->priMax);
-      for (line = blk->lines; line; line = line->next) {
-	printf("    line:\n");
-	for (word0 = line->words; word0; word0 = word0->next) {
-	  printf("      word: x=%.2f..%.2f y=%.2f..%.2f base=%.2f fontSize=%.2f space=%d: '",
-		 word0->xMin, word0->xMax, word0->yMin, word0->yMax,
-		 word0->base, word0->fontSize, word0->spaceAfter);
-	  for (i = 0; i < word0->len; ++i) {
-	    fputc(word0->text[i] & 0xff, stdout);
-	  }
-	  printf("'\n");
-	}
-      }
+#if ENABLE_TEXTDEVOUTPUT_DEBUGGING
+    printf("*** flows ***\n");
+    for (flow = flows; flow; flow = flow->next) {
+        printf("flow: x=%.2f..%.2f y=%.2f..%.2f pri:%.2f..%.2f\n", flow->xMin, flow->xMax, flow->yMin, flow->yMax, flow->priMin, flow->priMax);
+        for (blk = flow->blocks; blk; blk = blk->next) {
+            printf("  block: rot=%d x=%.2f..%.2f y=%.2f..%.2f pri=%.2f..%.2f\n", blk->rot, blk->ExMin, blk->ExMax, blk->EyMin, blk->EyMax, blk->priMin, blk->priMax);
+            for (line = blk->lines; line; line = line->next) {
+                printf("    line:\n");
+                for (word0 = line->words; word0; word0 = word0->next) {
+                    printf("      word: x=%.2f..%.2f y=%.2f..%.2f base=%.2f fontSize=%.2f space=%d: '", word0->xMin, word0->xMax, word0->yMin, word0->yMax, word0->base, word0->fontSize, word0->spaceAfter);
+                    for (i = 0; i < word0->len; ++i) {
+                        fputc(word0->text[i] & 0xff, stdout);
+                    }
+                    printf("'\n");
+                }
+            }
+        }
     }
-  }
-  printf("\n");
+    printf("\n");
 #endif
 }
 
@@ -3852,7 +3862,7 @@ bool TextPage::findText(const Unicode *s, int len, bool startAtTop, bool stopAtB
     }
 
     // handle right-to-left text
-    reordered = (Unicode *)gmallocn(len, sizeof(Unicode));
+    reordered = static_cast<Unicode *>(gmallocn(len, sizeof(Unicode)));
     reorderText(s, len, nullptr, primaryLR, nullptr, reordered);
 
     // normalize the search string
@@ -3973,7 +3983,7 @@ bool TextPage::findText(const Unicode *s, int len, bool startAtTop, bool stopAtB
             }
             if (!caseSensitive) {
                 if (m > txtSize) {
-                    txt = (Unicode *)greallocn(txt, m, sizeof(Unicode));
+                    txt = static_cast<Unicode *>(greallocn(txt, m, sizeof(Unicode)));
                     txtSize = m;
                 }
                 for (k = 0; k < m; ++k) {
@@ -3985,7 +3995,7 @@ bool TextPage::findText(const Unicode *s, int len, bool startAtTop, bool stopAtB
                 }
                 if (matchAcrossLines && nextline) {
                     nextline_len = ignoreDiacritics ? nextline->ascii_len : nextline->normalized_len;
-                    nextline_txt = (Unicode *)gmallocn(nextline_len, sizeof(Unicode));
+                    nextline_txt = static_cast<Unicode *>(gmallocn(nextline_len, sizeof(Unicode)));
                     for (k = 0; k < nextline_len; ++k) {
                         nextline_txt[k] = ignoreDiacritics ? unicodeToUpper(nextline->ascii_translation[k]) : unicodeToUpper(nextline->normalized[k]);
                     }
@@ -4025,19 +4035,20 @@ bool TextPage::findText(const Unicode *s, int len, bool startAtTop, bool stopAtB
                     for (k = 0; k < len; ++k) {
                         bool last_char_of_line = j + k == m - 1;
                         bool last_char_of_search_term = k == len - 1;
-                        bool match_started = (bool)k;
+                        bool match_started = static_cast<bool>(k);
 
                         if (p[k] != s2[k] || (nextline_txt && last_char_of_line && !last_char_of_search_term)) {
                             // now check if the comparison failed at the end-of-line hyphen,
                             // and if so, keep on comparing at the next line
+                            // (only ASCII '-', U+002D; other hyphen code points are not matched across lines)
                             nextlineAfterHyphen = false;
 
                             if (s2[k] == p[k]) {
-                                if (p[k] != (Unicode)'-' && !UnicodeIsWhitespace(s2[k + 1])) {
+                                if (p[k] != static_cast<Unicode>('-') && !UnicodeIsWhitespace(s2[k + 1])) {
                                     break;
                                 }
                                 k++;
-                            } else if (!match_started || p[k] != (Unicode)'-' || !last_char_of_line || UnicodeIsWhitespace(s2[k])) {
+                            } else if (!match_started || p[k] != static_cast<Unicode>('-') || !last_char_of_line || UnicodeIsWhitespace(s2[k])) {
                                 break;
                             } else {
                                 nextlineAfterHyphen = true;
@@ -4071,7 +4082,7 @@ bool TextPage::findText(const Unicode *s, int len, bool startAtTop, bool stopAtB
                     }
                     // found it
                     if (found_it) {
-                        bool nextLineMatch = (bool)n;
+                        bool nextLineMatch = static_cast<bool>(n);
                         if (spaceConsumedByNewline) {
                             k--;
                         }
@@ -4174,232 +4185,20 @@ bool TextPage::findText(const Unicode *s, int len, bool startAtTop, bool stopAtB
     return false;
 }
 
-GooString *TextPage::getText(double xMin, double yMin, double xMax, double yMax, EndOfLineKind textEOL) const
+GooString TextPage::getText(const std::optional<PDFRectangle> &area, EndOfLineKind textEOL, bool physLayout, EndOfLineHyphenMode hyphenMode) const
 {
-    GooString *s;
-    const UnicodeMap *uMap;
-    TextBlock *blk;
-    TextLine *line;
-    TextLineFrag *frags;
-    int nFrags, fragsSize;
-    TextLineFrag *frag;
-    char space[8], eol[16];
-    int spaceLen, eolLen;
-    int lastRot;
-    double x, y, delta;
-    int col, idx0, idx1, i, j;
-    bool multiLine, oneRot;
+    TextOutputFunc dumpToString = [](void *stream, const char *text, int len) {
+        auto *s = static_cast<GooString *>(stream);
+        s->append(text, len);
+    };
 
-    s = new GooString();
+    GooString s;
 
-    // get the output encoding
-    if (!(uMap = globalParams->getTextEncoding())) {
-        return s;
+    if (!physLayout && !rawOrder && area) {
+        error(errInternal, -1, "physical layout false, rawOrder false and an area does not work well together");
     }
 
-    if (rawOrder) {
-        TextWord *word;
-        char mbc[16];
-        int mbc_len;
-
-        for (word = rawWords; word && word <= rawLastWord; word = word->next) {
-            for (j = 0; j < word->getLength(); ++j) {
-                double gXMin, gXMax, gYMin, gYMax;
-                word->getCharBBox(j, &gXMin, &gYMin, &gXMax, &gYMax);
-                if (xMin <= gXMin && gXMax <= xMax && yMin <= gYMin && gYMax <= yMax) {
-                    mbc_len = uMap->mapUnicode(*(word->getChar(j)), mbc, sizeof(mbc));
-                    s->append(mbc, mbc_len);
-                }
-            }
-        }
-        return s;
-    }
-
-    spaceLen = uMap->mapUnicode(0x20, space, sizeof(space));
-    eolLen = 0; // make gcc happy
-    switch (textEOL) {
-    case eolUnix:
-        eolLen = uMap->mapUnicode(0x0a, eol, sizeof(eol));
-        break;
-    case eolDOS:
-        eolLen = uMap->mapUnicode(0x0d, eol, sizeof(eol));
-        eolLen += uMap->mapUnicode(0x0a, eol + eolLen, sizeof(eol) - eolLen);
-        break;
-    case eolMac:
-        eolLen = uMap->mapUnicode(0x0d, eol, sizeof(eol));
-        break;
-    }
-
-    //~ writing mode (horiz/vert)
-
-    // collect the line fragments that are in the rectangle
-    fragsSize = 256;
-    frags = (TextLineFrag *)gmallocn(fragsSize, sizeof(TextLineFrag));
-    nFrags = 0;
-    lastRot = -1;
-    oneRot = true;
-    for (i = 0; i < nBlocks; ++i) {
-        blk = blocks[i];
-        if (xMin < blk->xMax && blk->xMin < xMax && yMin < blk->yMax && blk->yMin < yMax) {
-            for (line = blk->lines; line; line = line->next) {
-                if (xMin < line->xMax && line->xMin < xMax && yMin < line->yMax && line->yMin < yMax) {
-                    idx0 = idx1 = -1;
-                    switch (line->rot) {
-                    case 0:
-                        y = 0.5 * (line->yMin + line->yMax);
-                        if (yMin < y && y < yMax) {
-                            j = 0;
-                            while (j < line->len) {
-                                if (0.5 * (line->edge[j] + line->edge[j + 1]) > xMin) {
-                                    idx0 = j;
-                                    break;
-                                }
-                                ++j;
-                            }
-                            j = line->len - 1;
-                            while (j >= 0) {
-                                if (0.5 * (line->edge[j] + line->edge[j + 1]) < xMax) {
-                                    idx1 = j;
-                                    break;
-                                }
-                                --j;
-                            }
-                        }
-                        break;
-                    case 1:
-                        x = 0.5 * (line->xMin + line->xMax);
-                        if (xMin < x && x < xMax) {
-                            j = 0;
-                            while (j < line->len) {
-                                if (0.5 * (line->edge[j] + line->edge[j + 1]) > yMin) {
-                                    idx0 = j;
-                                    break;
-                                }
-                                ++j;
-                            }
-                            j = line->len - 1;
-                            while (j >= 0) {
-                                if (0.5 * (line->edge[j] + line->edge[j + 1]) < yMax) {
-                                    idx1 = j;
-                                    break;
-                                }
-                                --j;
-                            }
-                        }
-                        break;
-                    case 2:
-                        y = 0.5 * (line->yMin + line->yMax);
-                        if (yMin < y && y < yMax) {
-                            j = 0;
-                            while (j < line->len) {
-                                if (0.5 * (line->edge[j] + line->edge[j + 1]) < xMax) {
-                                    idx0 = j;
-                                    break;
-                                }
-                                ++j;
-                            }
-                            j = line->len - 1;
-                            while (j >= 0) {
-                                if (0.5 * (line->edge[j] + line->edge[j + 1]) > xMin) {
-                                    idx1 = j;
-                                    break;
-                                }
-                                --j;
-                            }
-                        }
-                        break;
-                    case 3:
-                        x = 0.5 * (line->xMin + line->xMax);
-                        if (xMin < x && x < xMax) {
-                            j = 0;
-                            while (j < line->len) {
-                                if (0.5 * (line->edge[j] + line->edge[j + 1]) < yMax) {
-                                    idx0 = j;
-                                    break;
-                                }
-                                ++j;
-                            }
-                            j = line->len - 1;
-                            while (j >= 0) {
-                                if (0.5 * (line->edge[j] + line->edge[j + 1]) > yMin) {
-                                    idx1 = j;
-                                    break;
-                                }
-                                --j;
-                            }
-                        }
-                        break;
-                    }
-                    if (idx0 >= 0 && idx1 >= 0) {
-                        if (nFrags == fragsSize) {
-                            fragsSize *= 2;
-                            frags = (TextLineFrag *)greallocn(frags, fragsSize, sizeof(TextLineFrag));
-                        }
-                        frags[nFrags].init(line, idx0, idx1 - idx0 + 1);
-                        ++nFrags;
-                        if (lastRot >= 0 && line->rot != lastRot) {
-                            oneRot = false;
-                        }
-                        lastRot = line->rot;
-                    }
-                }
-            }
-        }
-    }
-
-    // sort the fragments and generate the string
-    if (nFrags > 0) {
-
-        for (i = 0; i < nFrags; ++i) {
-            frags[i].computeCoords(oneRot);
-        }
-        assignColumns(frags, nFrags, oneRot);
-
-        // if all lines in the region have the same rotation, use it;
-        // otherwise, use the page's primary rotation
-        if (oneRot) {
-            qsort(frags, nFrags, sizeof(TextLineFrag), &TextLineFrag::cmpYXLineRot);
-        } else {
-            qsort(frags, nFrags, sizeof(TextLineFrag), &TextLineFrag::cmpYXPrimaryRot);
-        }
-        i = 0;
-        while (i < nFrags) {
-            delta = maxIntraLineDelta * frags[i].line->words->fontSize;
-            for (j = i + 1; j < nFrags && fabs(frags[j].base - frags[i].base) < delta; ++j) {
-                ;
-            }
-            qsort(frags + i, j - i, sizeof(TextLineFrag), oneRot ? &TextLineFrag::cmpXYColumnLineRot : &TextLineFrag::cmpXYColumnPrimaryRot);
-            i = j;
-        }
-
-        col = 0;
-        multiLine = false;
-        for (i = 0; i < nFrags; ++i) {
-            frag = &frags[i];
-
-            // insert a return
-            if (frag->col < col || (i > 0 && fabs(frag->base - frags[i - 1].base) > maxIntraLineDelta * frags[i - 1].line->words->fontSize)) {
-                s->append(eol, eolLen);
-                col = 0;
-                multiLine = true;
-            }
-
-            // column alignment
-            for (; col < frag->col; ++col) {
-                s->append(space, spaceLen);
-            }
-
-            // get the fragment text
-            col += dumpFragment(frag->line->text + frag->start, frag->len, uMap, s);
-        }
-
-        if (multiLine) {
-            s->append(eol, eolLen);
-        }
-    }
-
-    gfree(frags);
-
+    dump(&s, dumpToString, physLayout, textEOL, false, true, area, hyphenMode);
     return s;
 }
 
@@ -4410,9 +4209,9 @@ public:
     virtual ~TextSelectionVisitor();
     TextSelectionVisitor(const TextSelectionVisitor &) = delete;
     TextSelectionVisitor &operator=(const TextSelectionVisitor &) = delete;
-    virtual void visitBlock(TextBlock *block, TextLine *begin, TextLine *end, const PDFRectangle *selection) = 0;
-    virtual void visitLine(TextLine *line, TextWord *begin, TextWord *end, int edge_begin, int edge_end, const PDFRectangle *selection) = 0;
-    virtual void visitWord(TextWord *word, int begin, int end, const PDFRectangle *selection) = 0;
+    virtual void visitBlock(TextBlock *block, TextLine *begin, TextLine *end, const PDFRectangle &selection) = 0;
+    virtual void visitLine(TextLine *line, TextWord *begin, TextWord *end, int edge_begin, int edge_end, const PDFRectangle &selection) = 0;
+    virtual void visitWord(TextWord *word, int begin, int end, const PDFRectangle &selection) = 0;
 
 protected:
     TextPage *page;
@@ -4428,74 +4227,52 @@ public:
     explicit TextSelectionDumper(TextPage *page);
     ~TextSelectionDumper() override;
 
-    void visitBlock(TextBlock *block, TextLine *begin, TextLine *end, const PDFRectangle *selection) override { };
-    void visitLine(TextLine *line, TextWord *begin, TextWord *end, int edge_begin, int edge_end, const PDFRectangle *selection) override;
-    void visitWord(TextWord *word, int begin, int end, const PDFRectangle *selection) override;
+    void visitBlock(TextBlock * /*block*/, TextLine * /*begin*/, TextLine * /*end*/, const PDFRectangle & /*selection*/) override { };
+    void visitLine(TextLine *line, TextWord *begin, TextWord *end, int edge_begin, int edge_end, const PDFRectangle &selection) override;
+    void visitWord(TextWord *word, int begin, int end, const PDFRectangle &selection) override;
     void endPage();
 
-    GooString *getText();
-    std::vector<TextWordSelection *> **takeWordList(int *nLines);
+    GooString getText();
+    std::vector<std::vector<std::unique_ptr<TextWordSelection>>> takeWordList();
 
 private:
     void startLine();
     void finishLine();
 
-    std::vector<TextWordSelection *> **lines;
-    int nLines, linesSize;
-    std::vector<TextWordSelection *> *words;
+    std::vector<std::vector<std::unique_ptr<TextWordSelection>>> lines;
+    std::vector<std::unique_ptr<TextWordSelection>> words;
     int tableId;
     TextBlock *currentBlock;
 };
 
 TextSelectionDumper::TextSelectionDumper(TextPage *p) : TextSelectionVisitor(p)
 {
-    linesSize = 256;
-    lines = (std::vector<TextWordSelection *> **)gmallocn(linesSize, sizeof(std::vector<TextWordSelection *> *));
-    nLines = 0;
-
     tableId = -1;
     currentBlock = nullptr;
-    words = nullptr;
 }
 
-TextSelectionDumper::~TextSelectionDumper()
-{
-    for (int i = 0; i < nLines; i++) {
-        for (auto entry : *(lines[i])) {
-            delete entry;
-        }
-        delete lines[i];
-    }
-    gfree(lines);
-}
+TextSelectionDumper::~TextSelectionDumper() = default;
 
 void TextSelectionDumper::startLine()
 {
     finishLine();
-    words = new std::vector<TextWordSelection *>();
+    words.clear();
 }
 
 void TextSelectionDumper::finishLine()
 {
-    if (nLines == linesSize) {
-        linesSize *= 2;
-        lines = (std::vector<TextWordSelection *> **)grealloc(lines, linesSize * sizeof(std::vector<TextWordSelection *> *));
-    }
-
-    if (words && words->size() > 0) {
+    if (!words.empty()) {
         // Reverse word order for RTL text. Fixes #53 for glib backend (Evince)
         if (!page->primaryLR) {
-            std::reverse(words->begin(), words->end());
+            std::ranges::reverse(words);
         }
 
-        lines[nLines++] = words;
-    } else if (words) {
-        delete words;
+        lines.push_back(std::move(words));
     }
-    words = nullptr;
+    words.clear();
 }
 
-void TextSelectionDumper::visitLine(TextLine *line, TextWord *begin, TextWord *end, int edge_begin, int edge_end, const PDFRectangle *selection)
+void TextSelectionDumper::visitLine(TextLine *line, TextWord * /*begin*/, TextWord * /*end*/, int edge_begin, int edge_end, const PDFRectangle & /*selection*/)
 {
     TextLineFrag frag;
 
@@ -4527,9 +4304,9 @@ void TextSelectionDumper::visitLine(TextLine *line, TextWord *begin, TextWord *e
     }
 }
 
-void TextSelectionDumper::visitWord(TextWord *word, int begin, int end, const PDFRectangle *selection)
+void TextSelectionDumper::visitWord(TextWord *word, int begin, int end, const PDFRectangle & /*selection*/)
 {
-    words->push_back(new TextWordSelection(word, begin, end));
+    words.push_back(std::make_unique<TextWordSelection>(word, begin, end));
 }
 
 void TextSelectionDumper::endPage()
@@ -4537,15 +4314,12 @@ void TextSelectionDumper::endPage()
     finishLine();
 }
 
-GooString *TextSelectionDumper::getText()
+GooString TextSelectionDumper::getText()
 {
-    GooString *text;
-    int i;
+    GooString text;
     const UnicodeMap *uMap;
     char space[8], eol[16];
     int spaceLen, eolLen;
-
-    text = new GooString();
 
     if (!(uMap = globalParams->getTextEncoding())) {
         return text;
@@ -4555,39 +4329,31 @@ GooString *TextSelectionDumper::getText()
     eolLen = uMap->mapUnicode(0x0a, eol, sizeof(eol));
 
     std::vector<Unicode> uText;
-    for (i = 0; i < nLines; i++) {
-        std::vector<TextWordSelection *> *lineWords = lines[i];
-        for (std::size_t j = 0; j < lineWords->size(); j++) {
-            TextWordSelection *sel = (*lineWords)[j];
+    for (size_t i = 0; i < lines.size(); i++) {
+        const auto &line = lines[i];
+        for (size_t j = 0; j < line.size(); j++) {
+            const auto &sel = line[j];
 
             uText.resize(sel->end - sel->begin);
             std::transform(sel->word->chars.begin() + sel->begin, sel->word->chars.begin() + sel->end, uText.begin(), [](auto &c) { return c.text; });
-            page->dumpFragment(uText.data(), uText.size(), uMap, text);
+            page->dumpFragment(uText.data(), uText.size(), uMap, &text);
 
-            if (j < lineWords->size() - 1 && sel->word->spaceAfter) {
-                text->append(space, spaceLen);
+            if (j < line.size() - 1 && sel->word->spaceAfter) {
+                text.append(space, spaceLen);
             }
         }
-        if (i < nLines - 1) {
-            text->append(eol, eolLen);
+        if (i < lines.size() - 1) {
+            text.append(eol, eolLen);
         }
     }
 
     return text;
 }
 
-std::vector<TextWordSelection *> **TextSelectionDumper::takeWordList(int *nLinesOut)
+std::vector<std::vector<std::unique_ptr<TextWordSelection>>> TextSelectionDumper::takeWordList()
 {
-    std::vector<TextWordSelection *> **returnValue = lines;
-
-    *nLinesOut = nLines;
-    if (nLines == 0) {
-        return nullptr;
-    }
-
-    nLines = 0;
-    lines = nullptr;
-
+    std::vector<std::vector<std::unique_ptr<TextWordSelection>>> returnValue;
+    std::swap(lines, returnValue);
     return returnValue;
 }
 
@@ -4597,13 +4363,13 @@ public:
     TextSelectionSizer(TextPage *page, double scale);
     ~TextSelectionSizer() override { delete list; }
 
-    void visitBlock(TextBlock *block, TextLine *begin, TextLine *end, const PDFRectangle *selection) override { };
-    void visitLine(TextLine *line, TextWord *begin, TextWord *end, int edge_begin, int edge_end, const PDFRectangle *selection) override;
-    void visitWord(TextWord *word, int begin, int end, const PDFRectangle *selection) override { };
+    void visitBlock(TextBlock * /*block*/, TextLine * /*begin*/, TextLine * /*end*/, const PDFRectangle & /*selection*/) override { };
+    void visitLine(TextLine *line, TextWord *begin, TextWord *end, int edge_begin, int edge_end, const PDFRectangle &selection) override;
+    void visitWord(TextWord * /*word*/, int /*begin*/, int /*end*/, const PDFRectangle & /*selection*/) override { };
 
     std::vector<PDFRectangle *> *takeRegion()
     {
-        auto aux = list;
+        auto *aux = list;
         list = nullptr;
         return aux;
     }
@@ -4618,7 +4384,7 @@ TextSelectionSizer::TextSelectionSizer(TextPage *p, double s) : TextSelectionVis
     list = new std::vector<PDFRectangle *>();
 }
 
-void TextSelectionSizer::visitLine(TextLine *line, TextWord *begin, TextWord *end, int edge_begin, int edge_end, const PDFRectangle *selection)
+void TextSelectionSizer::visitLine(TextLine *line, TextWord * /*begin*/, TextWord * /*end*/, int edge_begin, int edge_end, const PDFRectangle & /*selection*/)
 {
     PDFRectangle *rect;
     double x1, y1, x2, y2, margin;
@@ -4662,51 +4428,54 @@ void TextSelectionSizer::visitLine(TextLine *line, TextWord *begin, TextWord *en
 class TextSelectionPainter : public TextSelectionVisitor
 {
 public:
-    TextSelectionPainter(TextPage *page, double scale, int rotation, OutputDev *out, const GfxColor *box_color, const GfxColor *glyph_color);
+    TextSelectionPainter(TextPage *page, double scale, int rotation, OutputDev *out, const GfxColor &box_color, const GfxColor &glyph_color, double box_opacity, bool draw_glyphs);
     ~TextSelectionPainter() override;
 
-    void visitBlock(TextBlock *block, TextLine *begin, TextLine *end, const PDFRectangle *selection) override { };
-    void visitLine(TextLine *line, TextWord *begin, TextWord *end, int edge_begin, int edge_end, const PDFRectangle *selection) override;
-    void visitWord(TextWord *word, int begin, int end, const PDFRectangle *selection) override;
+    void visitBlock(TextBlock * /*block*/, TextLine * /*begin*/, TextLine * /*end*/, const PDFRectangle & /*selection*/) override { };
+    void visitLine(TextLine *line, TextWord *begin, TextWord *end, int edge_begin, int edge_end, const PDFRectangle &selection) override;
+    void visitWord(TextWord *word, int begin, int end, const PDFRectangle &selection) override;
     void endPage();
 
 private:
     OutputDev *out;
-    const GfxColor *glyph_color;
+    const GfxColor &glyph_color;
+    bool draw_glyphs;
     GfxState *state;
     std::vector<TextWordSelection *> *selectionList;
     Matrix ctm, ictm;
     bool hasGlyphLessFont();
 };
 
-TextSelectionPainter::TextSelectionPainter(TextPage *p, double scale, int rotation, OutputDev *outA, const GfxColor *box_color, const GfxColor *glyph_colorA) : TextSelectionVisitor(p), out(outA), glyph_color(glyph_colorA)
+TextSelectionPainter::TextSelectionPainter(TextPage *p, double scale, int rotation, OutputDev *outA, const GfxColor &box_color, const GfxColor &glyph_colorA, double box_opacity, bool draw_glyphsA)
+    : TextSelectionVisitor(p), out(outA), glyph_color(glyph_colorA), draw_glyphs(draw_glyphsA)
 {
     PDFRectangle box(0, 0, p->pageWidth, p->pageHeight);
 
     selectionList = new std::vector<TextWordSelection *>();
-    state = new GfxState(72 * scale, 72 * scale, &box, rotation, false);
+    state = new GfxState(72 * scale, 72 * scale, box, rotation, false);
 
     state->getCTM(&ctm);
     ctm.invertTo(&ictm);
 
-    out->startPage(0, state, nullptr);
     out->setDefaultCTM(state->getCTM());
 
     state->setFillColorSpace(std::make_unique<GfxDeviceRGBColorSpace>());
     state->setFillColor(box_color);
+    state->setFillOpacity(box_opacity);
     out->updateFillColor(state);
+    out->updateFillOpacity(state);
 }
 
 TextSelectionPainter::~TextSelectionPainter()
 {
-    for (auto entry : *selectionList) {
+    for (auto *entry : *selectionList) {
         delete entry;
     }
     delete selectionList;
     delete state;
 }
 
-void TextSelectionPainter::visitLine(TextLine *line, TextWord *begin, TextWord *end, int edge_begin, int edge_end, const PDFRectangle *selection)
+void TextSelectionPainter::visitLine(TextLine *line, TextWord * /*begin*/, TextWord * /*end*/, int edge_begin, int edge_end, const PDFRectangle & /*selection*/)
 {
     double x1, y1, x2, y2, margin;
 
@@ -4771,14 +4540,14 @@ void TextSelectionPainter::visitLine(TextLine *line, TextWord *begin, TextWord *
     state->closePath();
 }
 
-void TextSelectionPainter::visitWord(TextWord *word, int begin, int end, const PDFRectangle *selection)
+void TextSelectionPainter::visitWord(TextWord *word, int begin, int end, const PDFRectangle & /*selection*/)
 {
     selectionList->push_back(new TextWordSelection(word, begin, end));
 }
 
 bool TextSelectionPainter::hasGlyphLessFont()
 {
-    if (selectionList && selectionList->size()) {
+    if (selectionList && !selectionList->empty()) {
         TextWordSelection *sel = (*selectionList)[0];
         return sel->word->invisible;
     }
@@ -4788,6 +4557,12 @@ bool TextSelectionPainter::hasGlyphLessFont()
 
 void TextSelectionPainter::endPage()
 {
+    if (!draw_glyphs) {
+        out->fill(state);
+        out->endPage();
+        return;
+    }
+
     /* Take a shortcut for glyphless fonts (eg. Tesseract scanned documents)
      * cause we just paint a transparent fill over existent text.Issue #157 */
     if (hasGlyphLessFont()) {
@@ -4809,7 +4584,7 @@ void TextSelectionPainter::endPage()
 
     out->updateFillColor(state);
 
-    GooString string;
+    std::string string;
     for (const TextWordSelection *sel : *selectionList) {
         int begin = sel->begin;
 
@@ -4831,8 +4606,8 @@ void TextSelectionPainter::endPage()
             /* The only purpose of this string is to let the output device query
              * it's length.  Might want to change this interface later. */
             string.clear();
-            std::for_each(sel->word->chars.begin() + begin, sel->word->chars.begin() + fEnd, [&string](const auto c) { string.append(c.charcode); });
-            out->beginString(state, &string);
+            std::for_each(sel->word->chars.begin() + begin, sel->word->chars.begin() + fEnd, [&string](const auto c) { string.push_back(c.charcode); });
+            out->beginString(state, string);
 
             for (int j = begin; j < fEnd; j++) {
                 const auto &charJ = sel->word->chars[j];
@@ -4850,16 +4625,16 @@ void TextSelectionPainter::endPage()
     out->endPage();
 }
 
-void TextWord::visitSelection(TextSelectionVisitor *visitor, const PDFRectangle *selection, SelectionStyle style)
+void TextWord::visitSelection(TextSelectionVisitor *visitor, const PDFRectangle &selection)
 {
     double mid, s1, s2;
 
     if (rot == 0 || rot == 2) {
-        s1 = selection->x1;
-        s2 = selection->x2;
+        s1 = selection.x1;
+        s2 = selection.x2;
     } else {
-        s1 = selection->y1;
-        s2 = selection->y2;
+        s1 = selection.y1;
+        s2 = selection.y2;
     }
 
     size_t begin = len();
@@ -4887,7 +4662,7 @@ void TextWord::visitSelection(TextSelectionVisitor *visitor, const PDFRectangle 
     visitor->visitWord(this, begin, end, selection);
 }
 
-void TextLine::visitSelection(TextSelectionVisitor *visitor, const PDFRectangle *selection, SelectionStyle style)
+void TextLine::visitSelection(TextSelectionVisitor *visitor, const PDFRectangle &selection, SelectionStyle style)
 {
     TextWord *p, *begin, *end, *current;
     int i, edge_begin, edge_end;
@@ -4895,11 +4670,11 @@ void TextLine::visitSelection(TextSelectionVisitor *visitor, const PDFRectangle 
     double s1, s2, pMin, pMax;
 
     if (rot == 0 || rot == 2) {
-        s1 = selection->x1;
-        s2 = selection->x2;
+        s1 = selection.x1;
+        s2 = selection.x2;
     } else {
-        s1 = selection->y1;
-        s2 = selection->y2;
+        s1 = selection.y1;
+        s2 = selection.y2;
     }
 
     begin = nullptr;
@@ -4939,7 +4714,7 @@ void TextLine::visitSelection(TextSelectionVisitor *visitor, const PDFRectangle 
         current = begin;
     }
 
-    child_selection = *selection;
+    child_selection = selection;
     if (style == selectionStyleWord) {
         if (rot == 0 || rot == 2) {
             child_selection.x1 = begin ? begin->xMin : xMin;
@@ -4984,14 +4759,14 @@ void TextLine::visitSelection(TextSelectionVisitor *visitor, const PDFRectangle 
         return;
     }
 
-    visitor->visitLine(this, begin, end, edge_begin, edge_end, &child_selection);
+    visitor->visitLine(this, begin, end, edge_begin, edge_end, child_selection);
 
     for (p = begin; p != end; p = p->next) {
-        p->visitSelection(visitor, &child_selection, style);
+        p->visitSelection(visitor, child_selection);
     }
 }
 
-void TextBlock::visitSelection(TextSelectionVisitor *visitor, const PDFRectangle *selection, SelectionStyle style)
+void TextBlock::visitSelection(TextSelectionVisitor *visitor, const PDFRectangle &selection, SelectionStyle style)
 {
     PDFRectangle child_selection;
     double x[2], y[2], d, best_d[2];
@@ -4999,10 +4774,10 @@ void TextBlock::visitSelection(TextSelectionVisitor *visitor, const PDFRectangle
     int i, count = 0, best_count[2], start, stop;
     bool all[2];
 
-    x[0] = selection->x1;
-    y[0] = selection->y1;
-    x[1] = selection->x2;
-    y[1] = selection->y2;
+    x[0] = selection.x1;
+    y[0] = selection.y1;
+    x[1] = selection.x2;
+    y[1] = selection.y2;
 
     for (i = 0; i < 2; i++) {
         // the first/last lines are often not nearest
@@ -5089,14 +4864,14 @@ void TextBlock::visitSelection(TextSelectionVisitor *visitor, const PDFRectangle
                 child_selection.y2 = fmax(p->yMin, fmin(p->yMax, y[stop]));
             }
         }
-        p->visitSelection(visitor, &child_selection, style);
+        p->visitSelection(visitor, child_selection, style);
         if (p == best_line[stop]) {
             return;
         }
     }
 }
 
-void TextPage::visitSelection(TextSelectionVisitor *visitor, const PDFRectangle *selection, SelectionStyle style)
+void TextPage::visitSelection(TextSelectionVisitor *visitor, const PDFRectangle &selection, SelectionStyle style)
 {
     PDFRectangle child_selection;
     double x[2], y[2], d, best_d[2];
@@ -5109,10 +4884,10 @@ void TextPage::visitSelection(TextSelectionVisitor *visitor, const PDFRectangle 
         return;
     }
 
-    x[0] = selection->x1;
-    y[0] = selection->y1;
-    x[1] = selection->x2;
-    y[1] = selection->y2;
+    x[0] = selection.x1;
+    y[0] = selection.y1;
+    x[1] = selection.x2;
+    y[1] = selection.y2;
 
     xMin = pageWidth;
     yMin = pageHeight;
@@ -5203,23 +4978,23 @@ void TextPage::visitSelection(TextSelectionVisitor *visitor, const PDFRectangle 
             if (blk == best_block[stop]) {
                 child_selection.x2 = fmax(blk->xMin, fmin(blk->xMax, x[stop]));
                 child_selection.y2 = fmax(blk->yMin, fmin(blk->yMax, y[stop]));
-                blk->visitSelection(visitor, &child_selection, style);
+                blk->visitSelection(visitor, child_selection, style);
                 return;
             }
-            blk->visitSelection(visitor, &child_selection, style);
+            blk->visitSelection(visitor, child_selection, style);
         }
     }
 }
 
-void TextPage::drawSelection(OutputDev *out, double scale, int rotation, const PDFRectangle *selection, SelectionStyle style, const GfxColor *glyph_color, const GfxColor *box_color)
+void TextPage::drawSelection(OutputDev *out, double scale, int rotation, const PDFRectangle &selection, SelectionStyle style, const GfxColor &glyph_color, const GfxColor &box_color, double box_opacity, bool draw_glyphs)
 {
-    TextSelectionPainter painter(this, scale, rotation, out, box_color, glyph_color);
+    TextSelectionPainter painter(this, scale, rotation, out, box_color, glyph_color, box_opacity, draw_glyphs);
 
     visitSelection(&painter, selection, style);
     painter.endPage();
 }
 
-std::vector<PDFRectangle *> *TextPage::getSelectionRegion(const PDFRectangle *selection, SelectionStyle style, double scale)
+std::vector<PDFRectangle *> *TextPage::getSelectionRegion(const PDFRectangle &selection, SelectionStyle style, double scale)
 {
     TextSelectionSizer sizer(this, scale);
 
@@ -5228,7 +5003,7 @@ std::vector<PDFRectangle *> *TextPage::getSelectionRegion(const PDFRectangle *se
     return sizer.takeRegion();
 }
 
-GooString *TextPage::getSelectionText(const PDFRectangle *selection, SelectionStyle style)
+GooString TextPage::getSelectionText(const PDFRectangle &selection, SelectionStyle style)
 {
     TextSelectionDumper dumper(this);
 
@@ -5238,116 +5013,121 @@ GooString *TextPage::getSelectionText(const PDFRectangle *selection, SelectionSt
     return dumper.getText();
 }
 
-std::vector<TextWordSelection *> **TextPage::getSelectionWords(const PDFRectangle *selection, SelectionStyle style, int *nLines)
+std::vector<std::vector<std::unique_ptr<TextWordSelection>>> TextPage::getSelectionWords(const PDFRectangle &selection, SelectionStyle style)
 {
     TextSelectionDumper dumper(this);
 
     visitSelection(&dumper, selection, style);
     dumper.endPage();
 
-    return dumper.takeWordList(nLines);
+    return dumper.takeWordList();
 }
 
-bool TextPage::findCharRange(int pos, int length, double *xMin, double *yMin, double *xMax, double *yMax) const
+std::pair<int, int> TextLine::getLineBounds(const PDFRectangle &area) const
 {
-    TextBlock *blk;
-    TextLine *line;
-    TextWord *word;
-    double xMin0, xMax0, yMin0, yMax0;
-    double xMin1, xMax1, yMin1, yMax1;
-    bool first;
+    const auto bBox = getBBox();
+    auto clipped { bBox };
+    clipped.clipTo(area);
 
-    if (rawOrder) {
-        return false;
+    if (clipped.isEmpty()) {
+        return { 0, 0 };
+    }
+    if (bBox == clipped) {
+        return { 0, len };
     }
 
-    //~ this doesn't correctly handle ranges split across multiple lines
-    //~ (the highlighted region is the bounding box of all the parts of
-    //~ the range)
-    first = true;
-    xMin0 = xMax0 = yMin0 = yMax0 = 0; // make gcc happy
-    xMin1 = xMax1 = yMin1 = yMax1 = 0; // make gcc happy
-    for (int i = 0; i < nBlocks; ++i) {
-        blk = blocks[i];
-        for (line = blk->lines; line; line = line->next) {
-            for (word = line->words; word; word = word->next) {
-                if (pos < word->charPosEnd && pos + length > word->chars.front().charPos) {
-                    size_t j0, j1;
-                    for (j0 = 0; (j0 + 1) < word->len() && pos >= word->chars[j0 + 1].charPos; ++j0) {
-                        ;
-                    }
-                    for (j1 = word->len(); j1 > j0 && pos + length <= word->chars[j1].charPos; --j1) {
-                        ;
-                    }
-                    auto startingEdge = word->chars[j0].edge;
-                    auto endingEdge = (j1 + 1 == word->len()) ? word->edgeEnd : word->chars[j1 + 1].edge;
-                    switch (line->rot) {
-                    case 0:
-                        xMin1 = startingEdge;
-                        xMax1 = endingEdge;
-                        yMin1 = word->yMin;
-                        yMax1 = word->yMax;
-                        break;
-                    case 1:
-                        xMin1 = word->xMin;
-                        xMax1 = word->xMax;
-                        yMin1 = startingEdge;
-                        yMax1 = endingEdge;
-                        break;
-                    case 2:
-                        xMin1 = endingEdge;
-                        xMax1 = startingEdge;
-                        yMin1 = word->yMin;
-                        yMax1 = word->yMax;
-                        break;
-                    case 3:
-                        xMin1 = word->xMin;
-                        xMax1 = word->xMax;
-                        yMin1 = endingEdge;
-                        yMax1 = startingEdge;
-                        break;
-                    }
-                    if (first || xMin1 < xMin0) {
-                        xMin0 = xMin1;
-                    }
-                    if (first || xMax1 > xMax0) {
-                        xMax0 = xMax1;
-                    }
-                    if (first || yMin1 < yMin0) {
-                        yMin0 = yMin1;
-                    }
-                    if (first || yMax1 > yMax0) {
-                        yMax0 = yMax1;
-                    }
-                    first = false;
-                }
-            }
+    if (rot == 0 || rot == 2) {
+        auto centerY = (bBox.y1 + bBox.y2) * 0.5;
+        if (centerY < area.y1 || centerY > area.y2) {
+            return { 0, 0 };
+        }
+    } else {
+        auto centerX = (bBox.x1 + bBox.x2) * 0.5;
+        if (centerX < area.x1 || centerX > area.x2) {
+            return { 0, 0 };
         }
     }
-    if (!first) {
-        *xMin = xMin0;
-        *xMax = xMax0;
-        *yMin = yMin0;
-        *yMax = yMax0;
-        return true;
+
+    using Cmp = bool (*)(double, double);
+    auto findEdge = [this](int start, double wantedEdge, Cmp cmp) -> int {
+        for (int i = start; i < len; i++) {
+            if (cmp(edge[i + 1], wantedEdge)) {
+                auto center = (edge[i] + edge[i + 1]) * 0.5;
+                if (cmp(center, wantedEdge)) {
+                    return i;
+                }
+                return i + 1;
+            }
+        }
+        return len;
+    };
+
+    if (rot == 0 || rot == 1) {
+        auto edge1 = (rot == 0) ? clipped.x1 : clipped.y1;
+        auto edge2 = (rot == 0) ? clipped.x2 : clipped.y2;
+        int l = findEdge(0, edge1, [](double a, double b) { return a > b; });
+        int u = findEdge(l, edge2, [](double a, double b) { return a > b; });
+        return { l, u - l };
     }
-    return false;
+    auto edge1 = (rot == 2) ? clipped.x2 : clipped.y2;
+    auto edge2 = (rot == 2) ? clipped.x1 : clipped.y1;
+    int l = findEdge(0, edge1, [](double a, double b) { return a < b; });
+    int u = findEdge(l, edge2, [](double a, double b) { return a < b; });
+    return { l, u - l };
 }
 
-void TextPage::dump(void *outputStream, TextOutputFunc outputFunc, bool physLayout, EndOfLineKind textEOL, bool pageBreaks)
+static bool isHyphenChar(Unicode c)
+{
+    return c == static_cast<Unicode>('-') || c == static_cast<Unicode>(0x2010) || c == static_cast<Unicode>(0xFE63) || c == static_cast<Unicode>(0xFF0D);
+}
+
+// sanitize output to prevent terminal escape injection and line spoofing
+static bool isDangerousCtrl(unsigned char c)
+{
+    switch (c) {
+    case 0x07: // BEL - audible bell, terminates OSC
+    case 0x08: // BS  - erases previous character
+    case 0x0a: // LF  - newline injection
+    case 0x0b: // VT  - acts as linefeed
+    case 0x0c: // FF  - acts as linefeed
+    case 0x0d: // CR  - overwrites line start
+    case 0x0e: // SO  - corrupts charset
+    case 0x0f: // SI  - corrupts charset
+    case 0x1b: // ESC - starts escape sequences
+    case 0x7f: // DEL - may erase
+        return true;
+    default:
+        return false;
+    }
+}
+
+static int appendInlineLinkURI(const AnnotLink *link, const UnicodeMap *uMap, GooString *s)
+{
+    const LinkAction *action = link->getAction();
+    if (!action || action->getKind() != actionURI) {
+        return 0;
+    }
+    char buf[8];
+    int nCols = 0;
+    const auto append = [&](Unicode u) {
+        s->append(buf, uMap->mapUnicode(u, buf, sizeof(buf)));
+        ++nCols;
+    };
+    append(0x20);
+    append('[');
+    for (const char c : static_cast<const LinkURI *>(action)->getURI()) {
+        const auto uc = static_cast<unsigned char>(c);
+        append(isDangerousCtrl(uc) ? '?' : uc);
+    }
+    append(']');
+    return nCols;
+}
+
+void TextPage::dump(void *outputStream, TextOutputFunc outputFunc, bool physLayout, EndOfLineKind textEOL, bool pageBreaks, bool suppressLastEol, std::optional<PDFRectangle> area, EndOfLineHyphenMode hyphenMode) const
 {
     const UnicodeMap *uMap;
-    TextFlow *flow;
-    TextBlock *blk;
-    TextLine *line;
-    TextLineFrag *frags;
-    TextWord *word;
-    int nFrags, fragsSize;
-    TextLineFrag *frag;
     char space[8], eol[16], eop[8];
     int spaceLen, eolLen, eopLen;
-    double delta;
-    int col, i, j, d, n;
 
     // get the output encoding
     if (!(uMap = globalParams->getTextEncoding())) {
@@ -5369,6 +5149,11 @@ void TextPage::dump(void *outputStream, TextOutputFunc outputFunc, bool physLayo
     }
     eopLen = uMap->mapUnicode(0x0c, eop, sizeof(eop));
 
+    if (area && area->x1 <= 0.0 && area->y1 <= 0.0 //
+        && area->x2 >= pageWidth && area->y2 >= pageHeight) {
+        area = std::nullopt;
+    }
+
     //~ writing mode (horiz/vert)
 
     // output the page in raw (content stream) order
@@ -5377,94 +5162,134 @@ void TextPage::dump(void *outputStream, TextOutputFunc outputFunc, bool physLayo
         GooString s;
         std::vector<Unicode> uText;
 
-        for (word = rawWords; word; word = word->next) {
+        for (TextWord *word = rawWords; word; word = word->next) {
+            if (area) {
+                auto bBox = word->getBBox();
+                if (!area->contains(bBox.x1, bBox.y1) && !area->contains(bBox.x2, bBox.y2)) {
+                    continue;
+                }
+            }
             s.clear();
             uText.resize(word->len());
-            std::transform(word->chars.begin(), word->chars.end(), uText.begin(), [](auto &c) { return c.text; });
+            std::ranges::transform(word->chars, uText.begin(), [](auto &c) { return c.text; });
             dumpFragment(uText.data(), uText.size(), uMap, &s);
-            (*outputFunc)(outputStream, s.c_str(), s.getLength());
+            (*outputFunc)(outputStream, s.c_str(), s.size());
 
-            if (word->next && fabs(word->next->base - word->base) < maxIntraLineDelta * word->fontSize && word->next->xMin > word->xMax - minDupBreakOverlap * word->fontSize) {
-                if (word->next->xMin > word->xMax + minWordSpacing * word->fontSize) {
-                    (*outputFunc)(outputStream, space, spaceLen);
-                }
-            } else {
+            if (inlineLinkURIs && word->link && (!word->next || word->next->link != word->link)) {
+                s.clear();
+                appendInlineLinkURI(word->link, uMap, &s);
+                (*outputFunc)(outputStream, s.c_str(), s.size());
+            }
+
+            if (!word->next) {
+                continue;
+            }
+            if (fabs(word->next->base - word->base) >= maxIntraLineDelta * word->fontSize) {
                 (*outputFunc)(outputStream, eol, eolLen);
+            } else if (fabs(word->next->xMin - word->xMax) > minDupBreakOverlap * word->fontSize) {
+                (*outputFunc)(outputStream, space, spaceLen);
             }
         }
 
         // output the page, maintaining the original physical layout
     } else if (physLayout) {
+        int rotations = 0;
 
         // collect the line fragments for the page and sort them
-        fragsSize = 256;
-        frags = (TextLineFrag *)gmallocn(fragsSize, sizeof(TextLineFrag));
-        nFrags = 0;
-        for (i = 0; i < nBlocks; ++i) {
-            blk = blocks[i];
-            for (line = blk->lines; line; line = line->next) {
-                if (nFrags == fragsSize) {
-                    fragsSize *= 2;
-                    frags = (TextLineFrag *)greallocn(frags, fragsSize, sizeof(TextLineFrag));
+        std::vector<TextLineFrag> frags;
+        frags.reserve(256);
+        for (int i = 0; i < nBlocks; ++i) {
+            TextBlock *blk = blocks[i];
+            if (area) {
+                auto bBox = blk->getBBox();
+                bBox.clipTo(area.value());
+                if (bBox.isEmpty()) {
+                    continue;
                 }
-                frags[nFrags].init(line, 0, line->len);
-                frags[nFrags].computeCoords(true);
-                ++nFrags;
             }
-        }
-        qsort(frags, nFrags, sizeof(TextLineFrag), &TextLineFrag::cmpYXPrimaryRot);
-        i = 0;
-        while (i < nFrags) {
-            delta = maxIntraLineDelta * frags[i].line->words->fontSize;
-            for (j = i + 1; j < nFrags && fabs(frags[j].base - frags[i].base) < delta; ++j) {
-                ;
+            for (TextLine *line = blk->lines; line; line = line->next) {
+                const auto [start, len] = area ? line->getLineBounds(*area) : std::pair { 0, line->len };
+                if (len) {
+                    rotations |= 1 << line->rot;
+                    frags.push_back({});
+                    frags.back().init(line, start, len);
+                }
             }
-            qsort(frags + i, j - i, sizeof(TextLineFrag), &TextLineFrag::cmpXYColumnPrimaryRot);
-            i = j;
         }
 
-#if 0 // for debugging
-    printf("*** line fragments ***\n");
-    for (i = 0; i < nFrags; ++i) {
-      frag = &frags[i];
-      printf("frag: x=%.2f..%.2f y=%.2f..%.2f base=%.2f '",
-	     frag->xMin, frag->xMax, frag->yMin, frag->yMax, frag->base);
-      for (n = 0; n < frag->len; ++n) {
-	fputc(frag->line->text[frag->start + n] & 0xff, stdout);
-      }
-      printf("'\n");
-    }
-    printf("\n");
+        bool oneRot = (rotations == 1) || (rotations == 2) || (rotations == 4) || (rotations == 8);
+        for (auto &frag : frags) {
+            frag.computeCoords(oneRot);
+        }
+        if (!frags.empty() && area) {
+            // Recalculate columns, as some blocks/lines were possibly discarded above
+            assignColumns(frags.data(), frags.size(), oneRot);
+        }
+        if (oneRot) {
+            std::ranges::sort(frags, &TextLineFrag::cmpYXLineRot);
+        } else {
+            std::ranges::sort(frags, &TextLineFrag::cmpYXPrimaryRot);
+        }
+        for (auto it = frags.begin(); it != frags.end();) {
+            double delta = maxIntraLineDelta * it->line->words->fontSize;
+            double base = it->base;
+
+            auto end = std::find_if(it + 1, frags.end(), [base, delta](const TextLineFrag &frag) { //
+                return fabs(frag.base - base) >= delta;
+            });
+            std::sort(it, end, oneRot ? &TextLineFrag::cmpXYColumnLineRot : &TextLineFrag::cmpXYColumnPrimaryRot);
+            it = end;
+        }
+
+#if ENABLE_TEXTDEVOUTPUT_DEBUGGING
+        printf("*** line fragments ***\n");
+        for (const auto &frag : frags) {
+            printf("frag: x=%.2f..%.2f y=%.2f..%.2f base=%.2f '", frag.xMin, frag.xMax, frag.yMin, frag.yMax, frag.base);
+            for (int n = 0; n < frag.len; ++n) {
+                fputc(frag.line->text[frag.start + n] & 0xff, stdout);
+            }
+            printf("'\n");
+        }
+        printf("\n");
 #endif
 
         GooString s;
         // generate output
-        col = 0;
-        for (i = 0; i < nFrags; ++i) {
-            frag = &frags[i];
+        int col = 0;
+        for (size_t i = 0; i < frags.size(); ++i) {
+            const auto &frag = frags[i];
 
             // column alignment
-            for (; col < frag->col; ++col) {
+            for (; col < frag.col; ++col) {
                 (*outputFunc)(outputStream, space, spaceLen);
             }
 
             // print the line
             s.clear();
-            col += dumpFragment(frag->line->text + frag->start, frag->len, uMap, &s);
-            (*outputFunc)(outputStream, s.c_str(), s.getLength());
+            col += dumpFragment(frag.line->text + frag.start, frag.len, uMap, &s);
+            (*outputFunc)(outputStream, s.c_str(), s.size());
+
+            if (inlineLinkURIs) {
+                s.clear();
+                int offset = 0;
+                for (const TextWord *word = frag.line->words; word && offset < frag.start + frag.len; word = word->next) {
+                    const int wordEnd = offset + static_cast<int>(word->len());
+                    if (word->link && (!word->next || word->next->link != word->link) && wordEnd > frag.start) {
+                        col += appendInlineLinkURI(word->link, uMap, &s);
+                    }
+                    offset = wordEnd + (word->spaceAfter ? 1 : 0);
+                }
+                (*outputFunc)(outputStream, s.c_str(), s.size());
+            }
 
             // print one or more returns if necessary
-            if (i == nFrags - 1 || frags[i + 1].col < col || fabs(frags[i + 1].base - frag->base) > maxIntraLineDelta * frag->line->words->fontSize) {
-                if (i < nFrags - 1) {
-                    d = (int)((frags[i + 1].base - frag->base) / frag->line->words->fontSize);
-                    if (d < 1) {
-                        d = 1;
-                    } else if (d > 5) {
-                        d = 5;
-                    }
-                } else {
-                    d = 1;
+            if (i == frags.size() - 1) {
+                if (!suppressLastEol) {
+                    (*outputFunc)(outputStream, eol, eolLen);
                 }
+            } else if (frags[i + 1].col < col || fabs(frags[i + 1].base - frag.base) > maxIntraLineDelta * frag.line->words->fontSize) {
+                int d = static_cast<int>((frags[i + 1].base - frag.base) / frag.line->words->fontSize);
+                d = std::clamp(d, 1, 5);
                 for (; d > 0; --d) {
                     (*outputFunc)(outputStream, eol, eolLen);
                 }
@@ -5472,22 +5297,49 @@ void TextPage::dump(void *outputStream, TextOutputFunc outputFunc, bool physLayo
             }
         }
 
-        gfree(frags);
-
         // output the page, "undoing" the layout
     } else {
-        for (flow = flows; flow; flow = flow->next) {
-            for (blk = flow->blocks; blk; blk = blk->next) {
-                for (line = blk->lines; line; line = line->next) {
-                    n = line->len;
-                    if (line->hyphenated && (line->next || blk->next)) {
-                        --n;
-                    }
-                    GooString s;
+        GooString s;
+        for (TextFlow *flow = flows; flow; flow = flow->next) {
+            for (TextBlock *blk = flow->blocks; blk; blk = blk->next) {
+                for (TextLine *line = blk->lines; line; line = line->next) {
+                    const bool suppressHyphen = [&] -> bool {
+                        if (!line->next && !blk->next) {
+                            return false;
+                        }
+                        if (hyphenMode == EndOfLineHyphenMode::Keep) {
+                            return false;
+                        }
+                        if (line->text[line->len - 1] == static_cast<Unicode>(0x00AD)) {
+                            return true;
+                        }
+                        if (hyphenMode == EndOfLineHyphenMode::RemoveAll && isHyphenChar(line->text[line->len - 1])) {
+                            return true;
+                        }
+                        return false;
+                    }();
+                    const int n = suppressHyphen ? line->len - 1 : line->len;
+                    s.clear();
                     dumpFragment(line->text, n, uMap, &s);
-                    (*outputFunc)(outputStream, s.c_str(), s.getLength());
-                    // output a newline when a hyphen is not suppressed
-                    if (n == line->len) {
+                    (*outputFunc)(outputStream, s.c_str(), s.size());
+                    if (inlineLinkURIs) {
+                        s.clear();
+                        for (const TextWord *word = line->words; word; word = word->next) {
+                            const TextWord *nextWord = word->next;
+                            if (!nextWord) {
+                                if (line->next) {
+                                    nextWord = line->next->words;
+                                } else if (blk->next && blk->next->lines) {
+                                    nextWord = blk->next->lines->words;
+                                }
+                            }
+                            if (word->link && (!nextWord || nextWord->link != word->link)) {
+                                appendInlineLinkURI(word->link, uMap, &s);
+                            }
+                        }
+                        (*outputFunc)(outputStream, s.c_str(), s.size());
+                    }
+                    if (!suppressHyphen) {
                         (*outputFunc)(outputStream, eol, eolLen);
                     }
                 }
@@ -5507,7 +5359,12 @@ void TextPage::setMergeCombining(bool merge)
     mergeCombining = merge;
 }
 
-void TextPage::assignColumns(TextLineFrag *frags, int nFrags, bool oneRot) const
+void TextPage::setInlineLinkURIs(bool inlineLinkURIsA)
+{
+    inlineLinkURIs = inlineLinkURIsA;
+}
+
+void TextPage::assignColumns(TextLineFrag *frags, int nFrags, bool oneRot)
 {
     TextLineFrag *frag0, *frag1;
     int rot, col1, col2, i, j, k;
@@ -5515,7 +5372,7 @@ void TextPage::assignColumns(TextLineFrag *frags, int nFrags, bool oneRot) const
     // all text in the region has the same rotation -- recompute the
     // column numbers based only on the text in the region
     if (oneRot) {
-        qsort(frags, nFrags, sizeof(TextLineFrag), &TextLineFrag::cmpXYLineRot);
+        std::sort(frags, frags + nFrags, &TextLineFrag::cmpXYLineRot);
         rot = frags[0].line->rot;
         for (i = 0; i < nFrags; ++i) {
             frag0 = &frags[i];
@@ -5592,47 +5449,36 @@ int TextPage::dumpFragment(const Unicode *text, int len, const UnicodeMap *uMap,
 {
     if (uMap->isUnicode()) {
         return reorderText(text, len, uMap, primaryLR, s, nullptr);
-    } else {
-        int nCols = 0;
-
-        char buf[8];
-        int buflen = 0;
-
-        for (int i = 0; i < len; ++i) {
-            buflen = uMap->mapUnicode(text[i], buf, sizeof(buf));
-            s->append(buf, buflen);
-            nCols += buflen;
-        }
-
-        return nCols;
     }
+    int nCols = 0;
+
+    char buf[8];
+    int buflen = 0;
+
+    for (int i = 0; i < len; ++i) {
+        buflen = uMap->mapUnicode(text[i], buf, sizeof(buf));
+        s->append(buf, buflen);
+        nCols += buflen;
+    }
+
+    return nCols;
 }
 
-#ifdef TEXTOUT_WORD_LIST
 std::unique_ptr<TextWordList> TextPage::makeWordList(bool physLayout)
 {
     return std::make_unique<TextWordList>(this, physLayout);
 }
-#endif
 
 //------------------------------------------------------------------------
 // ActualText
 //------------------------------------------------------------------------
 ActualText::ActualText(TextPage *out)
 {
-    out->incRefCnt();
     text = out;
-    actualText = nullptr;
     actualTextNBytes = 0;
 }
 
-ActualText::~ActualText()
-{
-    if (actualText) {
-        delete actualText;
-    }
-    text->decRefCnt();
-}
+ActualText::~ActualText() = default;
 
 void ActualText::addChar(const GfxState *state, double x, double y, double dx, double dy, CharCode c, int nBytes, const Unicode *u, int uLen)
 {
@@ -5651,12 +5497,9 @@ void ActualText::addChar(const GfxState *state, double x, double y, double dx, d
     actualTextNBytes += nBytes;
 }
 
-void ActualText::begin(const GfxState *state, const GooString *t)
+void ActualText::begin(const GfxState * /*state*/, const std::string &t)
 {
-    if (actualText) {
-        delete actualText;
-    }
-    actualText = new GooString(t);
+    actualText = t;
     actualTextNBytes = 0;
 }
 
@@ -5669,12 +5512,12 @@ void ActualText::end(const GfxState *state)
         // now that we have the position info for all of the text inside
         // the marked content span, we feed the "ActualText" back through
         // text->addChar()
-        std::vector<Unicode> uni = TextStringToUCS4(actualText->toStr());
+        assert(actualText.has_value());
+        std::vector<Unicode> uni = TextStringToUCS4(actualText.value());
         text->addChar(state, actualTextX0, actualTextY0, actualTextX1 - actualTextX0, actualTextY1 - actualTextY0, 0, actualTextNBytes, uni.data(), uni.size());
     }
 
-    delete actualText;
-    actualText = nullptr;
+    actualText.reset();
     actualTextNBytes = 0;
 }
 
@@ -5684,7 +5527,7 @@ void ActualText::end(const GfxState *state)
 
 static void TextOutputDev_outputToFile(void *stream, const char *text, int len)
 {
-    fwrite(text, 1, len, (FILE *)stream);
+    fwrite(text, 1, len, static_cast<FILE *>(stream));
 }
 
 TextOutputDev::TextOutputDev(const char *fileName, bool physLayoutA, double fixedPitchA, bool rawOrderA, bool append, bool discardDiagA)
@@ -5695,7 +5538,7 @@ TextOutputDev::TextOutputDev(const char *fileName, bool physLayoutA, double fixe
     rawOrder = rawOrderA;
     discardDiag = discardDiagA;
     doHTML = false;
-    textEOL = defaultEndOfLine();
+    textEOL = EndOfLineKind::eolUnix;
     textPageBreaks = true;
     ok = true;
     minColSpacing1 = minColSpacing1_default;
@@ -5723,8 +5566,8 @@ TextOutputDev::TextOutputDev(const char *fileName, bool physLayoutA, double fixe
     }
 
     // set up text object
-    text = new TextPage(rawOrderA, discardDiagA);
-    actualText = new ActualText(text);
+    text = std::make_unique<TextPage>(rawOrderA, discardDiagA);
+    actualText = std::make_unique<ActualText>(text.get());
 }
 
 TextOutputDev::TextOutputDev(TextOutputFunc func, void *stream, bool physLayoutA, double fixedPitchA, bool rawOrderA, bool discardDiagA)
@@ -5737,9 +5580,9 @@ TextOutputDev::TextOutputDev(TextOutputFunc func, void *stream, bool physLayoutA
     rawOrder = rawOrderA;
     discardDiag = discardDiagA;
     doHTML = false;
-    text = new TextPage(rawOrderA, discardDiagA);
-    actualText = new ActualText(text);
-    textEOL = defaultEndOfLine();
+    text = std::make_unique<TextPage>(rawOrderA, discardDiagA);
+    actualText = std::make_unique<ActualText>(text.get());
+    textEOL = EndOfLineKind::eolUnix;
     textPageBreaks = true;
     ok = true;
     minColSpacing1 = minColSpacing1_default;
@@ -5748,26 +5591,36 @@ TextOutputDev::TextOutputDev(TextOutputFunc func, void *stream, bool physLayoutA
 TextOutputDev::~TextOutputDev()
 {
     if (needClose) {
-        fclose((FILE *)outputStream);
+        fclose(static_cast<FILE *>(outputStream));
     }
-    if (text) {
-        text->decRefCnt();
-    }
-    delete actualText;
 }
 
-void TextOutputDev::startPage(int pageNum, GfxState *state, XRef *xref)
+bool TextOutputDev::checkPageSlice(Page *pageA, double /*hDPI*/, double /*vDPI*/, int /*rotate*/, bool /*useMediaBox*/, bool /*crop*/, int /*sliceX*/, int /*sliceY*/, int /*sliceW*/, int /*sliceH*/, bool /*printing*/,
+                                   bool (* /*abortCheckCbk*/)(void *data), void * /*abortCheckCbkData*/, bool (* /*annotDisplayDecideCbk*/)(Annot *annot, void *user_data), void * /*annotDisplayDecideCbkData*/)
+{
+    currentPage = pageA;
+    return true;
+}
+
+void TextOutputDev::startPage(int /*pageNum*/, GfxState *state, XRef * /*xref*/)
 {
     text->startPage(state);
 }
 
 void TextOutputDev::endPage()
 {
+    if (inlineLinkURIs && currentPage) {
+        const std::unique_ptr<Links> pageLinks = currentPage->getLinks();
+        for (const std::shared_ptr<AnnotLink> &annot : pageLinks->getLinks()) {
+            processLink(annot.get());
+        }
+    }
     text->endPage();
     text->coalesce(physLayout, fixedPitch, doHTML, minColSpacing1);
     if (outputStream) {
-        text->dump(outputStream, outputFunc, physLayout, textEOL, textPageBreaks);
+        text->dump(outputStream, outputFunc, physLayout, textEOL, textPageBreaks, false, std::nullopt, hyphenMode);
     }
+    currentPage = nullptr;
 }
 
 void TextOutputDev::restoreState(GfxState *state)
@@ -5780,11 +5633,11 @@ void TextOutputDev::updateFont(GfxState *state)
     text->updateFont(state);
 }
 
-void TextOutputDev::beginString(GfxState *state, const GooString *s) { }
+void TextOutputDev::beginString(GfxState * /*state*/, const std::string & /*s*/) { }
 
-void TextOutputDev::endString(GfxState *state) { }
+void TextOutputDev::endString(GfxState * /*state*/) { }
 
-void TextOutputDev::drawChar(GfxState *state, double x, double y, double dx, double dy, double originX, double originY, CharCode c, int nBytes, const Unicode *u, int uLen)
+void TextOutputDev::drawChar(GfxState *state, double x, double y, double dx, double dy, double /*originX*/, double /*originY*/, CharCode c, int nBytes, const Unicode *u, int uLen)
 {
     actualText->addChar(state, x, y, dx, dy, c, nBytes, u, uLen);
 }
@@ -5794,7 +5647,7 @@ void TextOutputDev::incCharCount(int nChars)
     text->incCharCount(nChars);
 }
 
-void TextOutputDev::beginActualText(GfxState *state, const GooString *t)
+void TextOutputDev::beginActualText(GfxState *state, const std::string &t)
 {
     actualText->begin(state, t);
 }
@@ -5906,7 +5759,7 @@ void TextOutputDev::processLink(AnnotLink *link)
     double x1, y1, x2, y2;
     int xMin, yMin, xMax, yMax, x, y;
 
-    if (!doHTML) {
+    if (!doHTML && !inlineLinkURIs) {
         return;
     }
     link->getRect(&x1, &y1, &x2, &y2);
@@ -5954,29 +5807,24 @@ bool TextOutputDev::findText(const Unicode *s, int len, bool startAtTop, bool st
     return text->findText(s, len, startAtTop, stopAtBottom, startAtLast, stopAtLast, caseSensitive, backward, wholeWord, xMin, yMin, xMax, yMax);
 }
 
-GooString *TextOutputDev::getText(double xMin, double yMin, double xMax, double yMax) const
+GooString TextOutputDev::getText(const std::optional<PDFRectangle> &area) const
 {
-    return text->getText(xMin, yMin, xMax, yMax, textEOL);
+    return text->getText(area, textEOL, physLayout, hyphenMode);
 }
 
-void TextOutputDev::drawSelection(OutputDev *out, double scale, int rotation, const PDFRectangle *selection, SelectionStyle style, const GfxColor *glyph_color, const GfxColor *box_color)
+void TextOutputDev::drawSelection(OutputDev *out, double scale, int rotation, const PDFRectangle &selection, SelectionStyle style, const GfxColor &glyph_color, const GfxColor &box_color, double box_opacity, bool draw_glyphs)
 {
-    text->drawSelection(out, scale, rotation, selection, style, glyph_color, box_color);
+    text->drawSelection(out, scale, rotation, selection, style, glyph_color, box_color, box_opacity, draw_glyphs);
 }
 
-std::vector<PDFRectangle *> *TextOutputDev::getSelectionRegion(const PDFRectangle *selection, SelectionStyle style, double scale)
+std::vector<PDFRectangle *> *TextOutputDev::getSelectionRegion(const PDFRectangle &selection, SelectionStyle style, double scale)
 {
     return text->getSelectionRegion(selection, style, scale);
 }
 
-GooString *TextOutputDev::getSelectionText(const PDFRectangle *selection, SelectionStyle style)
+GooString TextOutputDev::getSelectionText(const PDFRectangle &selection, SelectionStyle style)
 {
     return text->getSelectionText(selection, style);
-}
-
-bool TextOutputDev::findCharRange(int pos, int length, double *xMin, double *yMin, double *xMax, double *yMax) const
-{
-    return text->findCharRange(pos, length, xMin, yMin, xMax, yMax);
 }
 
 void TextOutputDev::setMergeCombining(bool merge)
@@ -5984,22 +5832,25 @@ void TextOutputDev::setMergeCombining(bool merge)
     text->setMergeCombining(merge);
 }
 
-#ifdef TEXTOUT_WORD_LIST
 std::unique_ptr<TextWordList> TextOutputDev::makeWordList()
 {
     return text->makeWordList(physLayout);
 }
-#endif
 
-TextPage *TextOutputDev::takeText()
+std::unique_ptr<TextPage> TextOutputDev::takeText()
 {
-    TextPage *ret;
+    auto ret = std::move(text);
 
-    ret = text;
-    text = new TextPage(rawOrder, discardDiag);
-    delete actualText;
-    actualText = new ActualText(text);
+    text = std::make_unique<TextPage>(rawOrder, discardDiag);
+    text->setInlineLinkURIs(inlineLinkURIs);
+    actualText = std::make_unique<ActualText>(text.get());
     return ret;
+}
+
+void TextOutputDev::setInlineLinkURIs(bool inlineLinkURIsA)
+{
+    inlineLinkURIs = inlineLinkURIsA;
+    text->setInlineLinkURIs(inlineLinkURIsA);
 }
 
 const TextFlow *TextOutputDev::getFlows() const

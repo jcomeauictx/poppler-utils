@@ -7,20 +7,21 @@ class TestSearch : public QObject
     Q_OBJECT
 public:
     explicit TestSearch(QObject *parent = nullptr) : QObject(parent) { }
-private slots:
-    void testAcrossLinesSearch(); // leave it first
-    void testAcrossLinesSearchDoubleColumn();
-    void bug7063();
-    void testNextAndPrevious();
-    void testWholeWordsOnly();
-    void testIgnoreDiacritics();
-    void testRussianSearch(); // Issue #743
-    void testDeseretSearch(); // Issue #853
+private Q_SLOTS:
+    static void testAcrossLinesSearch(); // leave it first
+    static void testAcrossLinesSearchDoubleColumn();
+    static void testAcrossLinesContinuationRect();
+    static void bug7063();
+    static void testNextAndPrevious();
+    static void testWholeWordsOnly();
+    static void testIgnoreDiacritics();
+    static void testRussianSearch(); // Issue #743
+    static void testDeseretSearch(); // Issue #853
 };
 
 void TestSearch::bug7063()
 {
-    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(TESTDATADIR "/unittestcases/bug7063.pdf");
+    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/bug7063.pdf"));
     QVERIFY(document);
 
     std::unique_ptr<Poppler::Page> page = document->page(0);
@@ -59,7 +60,7 @@ void TestSearch::bug7063()
 
 void TestSearch::testNextAndPrevious()
 {
-    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(TESTDATADIR "/unittestcases/xr01.pdf");
+    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/xr01.pdf"));
     QVERIFY(document);
 
     std::unique_ptr<Poppler::Page> page = document->page(0);
@@ -148,7 +149,7 @@ void TestSearch::testNextAndPrevious()
 
 void TestSearch::testWholeWordsOnly()
 {
-    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(TESTDATADIR "/unittestcases/WithActualText.pdf");
+    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/WithActualText.pdf"));
     QVERIFY(document);
 
     std::unique_ptr<Poppler::Page> page = document->page(0);
@@ -178,7 +179,7 @@ void TestSearch::testWholeWordsOnly()
 
 void TestSearch::testIgnoreDiacritics()
 {
-    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(TESTDATADIR "/unittestcases/Issue637.pdf");
+    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/Issue637.pdf"));
     QVERIFY(document);
 
     std::unique_ptr<Poppler::Page> page = document->page(0);
@@ -237,7 +238,7 @@ void TestSearch::testIgnoreDiacritics()
 void TestSearch::testRussianSearch()
 {
     // Test for issue #743
-    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(TESTDATADIR "/unittestcases/russian.pdf");
+    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/russian.pdf"));
     QVERIFY(document);
 
     std::unique_ptr<Poppler::Page> page = document->page(0);
@@ -266,7 +267,7 @@ void TestSearch::testRussianSearch()
 
 void TestSearch::testDeseretSearch()
 {
-    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(TESTDATADIR "/unittestcases/deseret.pdf");
+    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/deseret.pdf"));
     QVERIFY(document);
 
     std::unique_ptr<Poppler::Page> page = document->page(0);
@@ -286,7 +287,7 @@ void TestSearch::testAcrossLinesSearch()
     // Test for searching across lines with new flag Poppler::Page::AcrossLines
     // and its automatic features like ignoring hyphen at end of line or allowing
     // whitespace in the search term to match on newline character.
-    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(TESTDATADIR "/unittestcases/searchAcrossLines.pdf");
+    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/searchAcrossLines.pdf"));
     QVERIFY(document);
 
     std::unique_ptr<Poppler::Page> page = document->page(1);
@@ -381,7 +382,7 @@ void TestSearch::testAcrossLinesSearchDoubleColumn()
 {
     // Test for searching across lines with new flag Poppler::Page::AcrossLines
     // in a document with two columns of text.
-    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(TESTDATADIR "/unittestcases/searchAcrossLinesDoubleColumn.pdf");
+    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/searchAcrossLinesDoubleColumn.pdf"));
     QVERIFY(document);
 
     std::unique_ptr<Poppler::Page> page = document->page(0);
@@ -396,6 +397,26 @@ void TestSearch::testAcrossLinesSearchDoubleColumn()
     // there's only 3 matches for 'betw' in document, where only the last
     // one is a multiline match, so that's a total of 4 rects returned
     QCOMPARE(page->search(bug_str, mode).size(), 4);
+}
+
+void TestSearch::testAcrossLinesContinuationRect()
+{
+    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/searchAcrossLines.pdf"));
+    QVERIFY(document);
+
+    std::unique_ptr<Poppler::Page> page = document->page(1);
+    QVERIFY(page);
+
+    const QList<QRectF> rects = page->search(QStringLiteral("reconocimiento"), Poppler::Page::AcrossLines);
+    QCOMPARE(rects.size(), 2);
+    QCOMPARE(qRound(rects[0].x()), 526);
+    QCOMPARE(qRound(rects[0].y()), 712);
+    QCOMPARE(qRound(rects[0].width()), 8);
+    QCOMPARE(qRound(rects[0].height()), 10);
+    QCOMPARE(qRound(rects[1].x()), 136);
+    QCOMPARE(qRound(rects[1].y()), 725);
+    QCOMPARE(qRound(rects[1].width()), 59);
+    QCOMPARE(qRound(rects[1].height()), 10);
 }
 
 QTEST_GUILESS_MAIN(TestSearch)

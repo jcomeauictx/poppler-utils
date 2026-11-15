@@ -34,7 +34,7 @@ set(poppler_qt6_SRCS
 )
 add_library(poppler-qt6 ${poppler_qt6_SRCS})
 generate_export_header(poppler-qt6 BASE_NAME poppler-qt6 EXPORT_FILE_NAME "${CMAKE_CURRENT_BINARY_DIR}/poppler-export.h")
-set_target_properties(poppler-qt6 PROPERTIES VERSION 3.9.0 SOVERSION 3)
+set_target_properties(poppler-qt6 PROPERTIES VERSION 3.14.0 SOVERSION 3)
 if(MINGW AND BUILD_SHARED_LIBS)
     get_target_property(POPPLER_QT6_SOVERSION poppler-qt6 SOVERSION)
     set_target_properties(poppler-qt6 PROPERTIES SUFFIX "-${POPPLER_QT6_SOVERSION}${CMAKE_SHARED_LIBRARY_SUFFIX}")
@@ -61,14 +61,10 @@ set(poppler_qt6_all_install_headers
   ${CMAKE_CURRENT_BINARY_DIR}/poppler-export.h
   ${CMAKE_CURRENT_BINARY_DIR}/poppler-version.h
 )
-if (${CMAKE_VERSION} VERSION_LESS "3.23.0")
-  install(FILES ${poppler_qt6_all_install_headers} DESTINATION include/poppler/qt6)
-else()
-  target_sources(poppler-qt6
-    PUBLIC
-    FILE_SET HEADERS
-    BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR};${CMAKE_CURRENT_BINARY_DIR}
-    FILES ${poppler_qt6_all_install_headers}
-  )
-  install(TARGETS poppler-qt6 FILE_SET HEADERS DESTINATION include/poppler/qt6)
-endif()
+target_sources(poppler-qt6
+  PUBLIC
+  FILE_SET HEADERS
+  BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR};${CMAKE_CURRENT_BINARY_DIR}
+  FILES ${poppler_qt6_all_install_headers}
+)
+install(TARGETS poppler-qt6 FILE_SET HEADERS DESTINATION include/poppler/qt6)

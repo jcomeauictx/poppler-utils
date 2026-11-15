@@ -11,8 +11,9 @@
 // All changes made under the Poppler project to this file are licensed
 // under GPL version 2 or later
 //
-// Copyright (C) 2007-2008, 2010, 2014, 2019 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2007-2008, 2010, 2014, 2019, 2025, 2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2018 Oliver Sander <oliver.sander@tu-dresden.de>
+// Copyright (C) 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -24,7 +25,6 @@
 #include <climits>
 #include <cstring>
 #include "goo/gmem.h"
-#include "SplashMath.h"
 #include "SplashGlyphBitmap.h"
 #include "SplashFontFile.h"
 #include "SplashFont.h"
@@ -43,18 +43,9 @@ struct SplashFontCacheTag
 // SplashFont
 //------------------------------------------------------------------------
 
-SplashFont::SplashFont(SplashFontFile *fontFileA, const SplashCoord *matA, const SplashCoord *textMatA, bool aaA)
+SplashFont::SplashFont(const std::shared_ptr<SplashFontFile> &fontFileA, const std::array<double, 4> &matA, const std::array<double, 4> &textMatA, bool aaA) : mat(matA), textMat(textMatA)
 {
     fontFile = fontFileA;
-    fontFile->incRefCnt();
-    mat[0] = matA[0];
-    mat[1] = matA[1];
-    mat[2] = matA[2];
-    mat[3] = matA[3];
-    textMat[0] = textMatA[0];
-    textMat[1] = textMatA[1];
-    textMat[2] = textMatA[2];
-    textMat[3] = textMatA[3];
     aa = aaA;
 
     cache = nullptr;
@@ -96,9 +87,9 @@ void SplashFont::initCache()
     } else {
         cacheSets = 1;
     }
-    cache = (unsigned char *)gmallocn_checkoverflow(cacheSets * cacheAssoc, glyphSize);
+    cache = static_cast<unsigned char *>(gmallocn_checkoverflow(cacheSets * cacheAssoc, glyphSize));
     if (cache != nullptr) {
-        cacheTags = (SplashFontCacheTag *)gmallocn(cacheSets * cacheAssoc, sizeof(SplashFontCacheTag));
+        cacheTags = static_cast<SplashFontCacheTag *>(gmallocn(cacheSets * cacheAssoc, sizeof(SplashFontCacheTag)));
         for (i = 0; i < cacheSets * cacheAssoc; ++i) {
             cacheTags[i].mru = i & (cacheAssoc - 1);
         }
@@ -109,7 +100,6 @@ void SplashFont::initCache()
 
 SplashFont::~SplashFont()
 {
-    fontFile->decRefCnt();
     if (cache) {
         gfree(cache);
     }
@@ -118,7 +108,7 @@ SplashFont::~SplashFont()
     }
 }
 
-bool SplashFont::getGlyph(int c, int xFrac, int yFrac, SplashGlyphBitmap *bitmap, int x0, int y0, SplashClip *clip, SplashClipResult *clipRes)
+bool SplashFont::getGlyph(int c, int xFrac, int yFrac, SplashGlyphBitmap *bitmap, int x0, int y0, const SplashClip &clip, SplashClipResult *clipRes)
 {
     SplashGlyphBitmap bitmap2;
     int size;
@@ -134,7 +124,7 @@ bool SplashFont::getGlyph(int c, int xFrac, int yFrac, SplashGlyphBitmap *bitmap
     // check the cache
     i = (c & (cacheSets - 1)) * cacheAssoc;
     for (j = 0; j < cacheAssoc; ++j) {
-        if ((cacheTags[i + j].mru & 0x80000000) && cacheTags[i + j].c == c && (int)cacheTags[i + j].xFrac == xFrac && (int)cacheTags[i + j].yFrac == yFrac) {
+        if ((cacheTags[i + j].mru & 0x80000000) && cacheTags[i + j].c == c && static_cast<int>(cacheTags[i + j].xFrac) == xFrac && static_cast<int>(cacheTags[i + j].yFrac) == yFrac) {
             bitmap->x = cacheTags[i + j].x;
             bitmap->y = cacheTags[i + j].y;
             bitmap->w = cacheTags[i + j].w;
@@ -149,7 +139,14 @@ bool SplashFont::getGlyph(int c, int xFrac, int yFrac, SplashGlyphBitmap *bitmap
             bitmap->data = cache + (i + j) * glyphSize;
             bitmap->freeData = false;
 
-            *clipRes = clip->testRect(x0 - bitmap->x, y0 - bitmap->y, x0 - bitmap->x + bitmap->w - 1, y0 - bitmap->y + bitmap->h - 1);
+            int rectXMin, rectYMin;
+            if (checkedSubtraction(x0, bitmap->x, &rectXMin)) {
+                return false;
+            }
+            if (checkedSubtraction(y0, bitmap->y, &rectYMin)) {
+                return false;
+            }
+            *clipRes = clip.testRect(rectXMin, rectYMin, rectXMin + bitmap->w - 1, rectYMin + bitmap->h - 1);
 
             return true;
         }
@@ -190,8 +187,8 @@ bool SplashFont::getGlyph(int c, int xFrac, int yFrac, SplashGlyphBitmap *bitmap
             if ((cacheTags[i + j].mru & 0x7fffffff) == cacheAssoc - 1) {
                 cacheTags[i + j].mru = 0x80000000;
                 cacheTags[i + j].c = c;
-                cacheTags[i + j].xFrac = (short)xFrac;
-                cacheTags[i + j].yFrac = (short)yFrac;
+                cacheTags[i + j].xFrac = static_cast<short>(xFrac);
+                cacheTags[i + j].yFrac = static_cast<short>(yFrac);
                 cacheTags[i + j].x = bitmap2.x;
                 cacheTags[i + j].y = bitmap2.y;
                 cacheTags[i + j].w = bitmap2.w;

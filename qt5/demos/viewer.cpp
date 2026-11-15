@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2008-2009, Pino Toscano <pino@kde.org>
- * Copyright (C) 2008, 2019, 2022, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2008, 2019, 2022, 2025, Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2009, Shawn Rutledge <shawn.t.rutledge@gmail.com>
  * Copyright (C) 2013, Fabio D'Urso <fabiodurso@hotmail.it>
  * Copyright (C) 2020, Oliver Sander <oliver.sander@tu-dresden.de>
@@ -47,7 +47,7 @@
 
 #include <functional>
 
-PdfViewer::PdfViewer(QWidget *parent) : QMainWindow(parent), m_currentPage(0), m_doc(nullptr)
+PdfViewer::PdfViewer(QWidget *parent) : QMainWindow(parent)
 {
     setWindowTitle(tr("Poppler-Qt5 Demo"));
 
@@ -90,57 +90,57 @@ PdfViewer::PdfViewer(QWidget *parent) : QMainWindow(parent), m_currentPage(0), m
     act = helpMenu->addAction(tr("&About"), this, &PdfViewer::slotAbout);
     act = helpMenu->addAction(tr("About &Qt"), this, &PdfViewer::slotAboutQt);
 
-    NavigationToolBar *navbar = new NavigationToolBar(this);
+    auto *navbar = new NavigationToolBar(this);
     addToolBar(navbar);
     m_observers.append(navbar);
 
-    PageView *view = new PageView(this);
+    auto *view = new PageView(this);
     setCentralWidget(view);
     m_observers.append(view);
 
-    InfoDock *infoDock = new InfoDock(this);
+    auto *infoDock = new InfoDock(this);
     addDockWidget(Qt::LeftDockWidgetArea, infoDock);
     infoDock->hide();
     viewMenu->addAction(infoDock->toggleViewAction());
     m_observers.append(infoDock);
 
-    TocDock *tocDock = new TocDock(this);
+    auto *tocDock = new TocDock(this);
     addDockWidget(Qt::LeftDockWidgetArea, tocDock);
     tocDock->hide();
     viewMenu->addAction(tocDock->toggleViewAction());
     m_observers.append(tocDock);
 
-    FontsDock *fontsDock = new FontsDock(this);
+    auto *fontsDock = new FontsDock(this);
     addDockWidget(Qt::LeftDockWidgetArea, fontsDock);
     fontsDock->hide();
     viewMenu->addAction(fontsDock->toggleViewAction());
     m_observers.append(fontsDock);
 
-    PermissionsDock *permissionsDock = new PermissionsDock(this);
+    auto *permissionsDock = new PermissionsDock(this);
     addDockWidget(Qt::LeftDockWidgetArea, permissionsDock);
     permissionsDock->hide();
     viewMenu->addAction(permissionsDock->toggleViewAction());
     m_observers.append(permissionsDock);
 
-    ThumbnailsDock *thumbnailsDock = new ThumbnailsDock(this);
+    auto *thumbnailsDock = new ThumbnailsDock(this);
     addDockWidget(Qt::LeftDockWidgetArea, thumbnailsDock);
     thumbnailsDock->hide();
     viewMenu->addAction(thumbnailsDock->toggleViewAction());
     m_observers.append(thumbnailsDock);
 
-    EmbeddedFilesDock *embfilesDock = new EmbeddedFilesDock(this);
+    auto *embfilesDock = new EmbeddedFilesDock(this);
     addDockWidget(Qt::BottomDockWidgetArea, embfilesDock);
     embfilesDock->hide();
     viewMenu->addAction(embfilesDock->toggleViewAction());
     m_observers.append(embfilesDock);
 
-    MetadataDock *metadataDock = new MetadataDock(this);
+    auto *metadataDock = new MetadataDock(this);
     addDockWidget(Qt::BottomDockWidgetArea, metadataDock);
     metadataDock->hide();
     viewMenu->addAction(metadataDock->toggleViewAction());
     m_observers.append(metadataDock);
 
-    OptContentDock *optContentDock = new OptContentDock(this);
+    auto *optContentDock = new OptContentDock(this);
     addDockWidget(Qt::LeftDockWidgetArea, optContentDock);
     optContentDock->hide();
     viewMenu->addAction(optContentDock->toggleViewAction());
@@ -195,11 +195,11 @@ void PdfViewer::loadDocument(const QString &file)
 
     m_doc->setRenderHint(Poppler::Document::TextAntialiasing, m_settingsTextAAAct->isChecked());
     m_doc->setRenderHint(Poppler::Document::Antialiasing, m_settingsGfxAAAct->isChecked());
-    m_doc->setRenderBackend((Poppler::Document::RenderBackend)m_settingsRenderBackendGrp->checkedAction()->data().toInt());
+    m_doc->setRenderBackend(static_cast<Poppler::Document::RenderBackend>(m_settingsRenderBackendGrp->checkedAction()->data().toInt()));
     if (m_doc->xrefWasReconstructed()) {
         xrefReconstructedHandler(m_doc);
     } else {
-        std::function<void()> cb = [this]() { xrefReconstructedHandler(m_doc); };
+        std::function<void()> cb = [this] { xrefReconstructedHandler(m_doc); };
 
         m_doc->setXRefReconstructedCallback(cb);
     }
@@ -229,7 +229,7 @@ void PdfViewer::closeDocument()
     m_fileSaveCopyAct->setEnabled(false);
 }
 
-void PdfViewer::xrefReconstructedHandler(Poppler::Document *doc)
+void PdfViewer::xrefReconstructedHandler(Poppler::Document * /*doc*/)
 {
     if (!xrefReconstructed) {
         QMessageBox msgbox(QMessageBox::Critical, tr("File may be corrupted"), tr("The PDF may be broken but we're still showing something, contents may not be correct"), QMessageBox::Ok, this);
@@ -311,7 +311,7 @@ void PdfViewer::slotRenderBackend(QAction *act)
         return;
     }
 
-    m_doc->setRenderBackend((Poppler::Document::RenderBackend)act->data().toInt());
+    m_doc->setRenderBackend(static_cast<Poppler::Document::RenderBackend>(act->data().toInt()));
 
     Q_FOREACH (DocumentObserver *obs, m_observers) {
         obs->pageChanged(m_currentPage);

@@ -1,5 +1,5 @@
 /* poppler-annotation-helper.h: qt interface to poppler
- * Copyright (C) 2006, 2008, 2017-2019, 2021, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2006, 2008, 2017-2019, 2021, 2025, Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2008, Pino Toscano <pino@kde.org>
  * Copyright (C) 2012, Fabio D'Urso <fabiodurso@hotmail.it>
  * Copyright (C) 2018, Dileep Sankhla <sankhla.dileep96@gmail.com>
@@ -29,6 +29,7 @@
 #include <memory>
 
 #include <QtCore/QDebug>
+#include <QtCore/QPointF>
 
 #include <Object.h>
 
@@ -43,7 +44,7 @@ class XPDFReader
 public:
     // transform from user coords to normalized ones using the matrix M
     static inline void transform(double *M, double x, double y, QPointF &res);
-    static inline void invTransform(const double *M, const QPointF p, double &x, double &y);
+    static inline void invTransform(const double *M, QPointF p, double &x, double &y);
 };
 
 void XPDFReader::transform(double *M, double x, double y, QPointF &res)

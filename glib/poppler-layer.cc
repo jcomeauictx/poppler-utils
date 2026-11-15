@@ -1,6 +1,8 @@
 /* poppler-layer.cc: glib interface to poppler
  *
  * Copyright (C) 2008 Carlos Garcia Campos <carlosgc@gnome.org>
+ * Copyright (C) 2025 Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,11 +28,11 @@
  * @title: PopplerLayer
  */
 
-typedef struct _PopplerLayerClass PopplerLayerClass;
 struct _PopplerLayerClass
 {
     GObjectClass parent_class;
 };
+using PopplerLayerClass = _PopplerLayerClass;
 
 G_DEFINE_TYPE(PopplerLayer, poppler_layer, G_TYPE_OBJECT)
 
@@ -53,7 +55,7 @@ static void poppler_layer_finalize(GObject *object)
     G_OBJECT_CLASS(poppler_layer_parent_class)->finalize(object);
 }
 
-static void poppler_layer_init(PopplerLayer *layer) { }
+static void poppler_layer_init(PopplerLayer * /*layer*/) { }
 
 static void poppler_layer_class_init(PopplerLayerClass *klass)
 {
@@ -72,11 +74,11 @@ PopplerLayer *_poppler_layer_new(PopplerDocument *document, Layer *layer, GList 
 
     poppler_layer = POPPLER_LAYER(g_object_new(POPPLER_TYPE_LAYER, nullptr));
 
-    poppler_layer->document = (PopplerDocument *)g_object_ref(document);
+    poppler_layer->document = static_cast<PopplerDocument *> g_object_ref(document);
     poppler_layer->layer = layer;
     poppler_layer->rbgroup = rbgroup;
     layer_name = layer->oc->getName();
-    poppler_layer->title = layer_name ? _poppler_goo_string_to_utf8(layer_name) : nullptr;
+    poppler_layer->title = layer_name ? _poppler_goo_string_to_utf8(layer_name->toStr()) : nullptr;
 
     return poppler_layer;
 }
@@ -140,7 +142,7 @@ void poppler_layer_show(PopplerLayer *poppler_layer)
     layer->oc->setState(OptionalContentGroup::On);
 
     for (l = poppler_layer->rbgroup; l && l->data; l = g_list_next(l)) {
-        OptionalContentGroup *oc = (OptionalContentGroup *)l->data;
+        auto *oc = static_cast<OptionalContentGroup *>(l->data);
 
         if (oc != layer->oc) {
             oc->setState(OptionalContentGroup::Off);

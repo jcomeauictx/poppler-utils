@@ -2,15 +2,19 @@
 #include <poppler.h>
 #include <cairo.h>
 #include <cairo-pdf.h>
+#include <GlobalParams.h>
 
 #include "fuzzer_temp_file.h"
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
+    GlobalParamsIniter globalParamsIniter(nullptr);
+    globalParams->setErrQuiet(true);
+
     GError *err = NULL;
     PopplerDocument *doc;
     PopplerPage *page;
-    PopplerAnnot *annot;
+    PopplerAnnot *annot = nullptr;
     PopplerRectangle bb;
     gdouble width, height;
     gboolean hg;
@@ -51,7 +55,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         hg = poppler_page_get_bounding_box(page, &bb);
         if (hg) {
             annot = poppler_annot_text_new(doc, &bb);
-            if (annot != NULL) {
+            if (annot == NULL) {
                 g_object_unref(page);
                 continue;
             }
@@ -68,6 +72,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         poppler_page_render_for_printing(page, cr);
         cairo_surface_show_page(surface);
         cairo_destroy(cr);
+        if (annot) {
+            g_object_unref(annot);
+            annot = nullptr;
+        }
         g_object_unref(page);
     }
     cairo_surface_destroy(surface);

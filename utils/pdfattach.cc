@@ -4,7 +4,7 @@
 //
 // This file is licensed under the GPLv2 or later
 //
-// Copyright (C) 2019-2022 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2019-2022, 2025 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2019, 2023 Oliver Sander <oliver.sander@tu-dresden.de>
 // Copyright (C) 2024 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
 //
@@ -20,7 +20,6 @@
 #include "GlobalParams.h"
 #include "PDFDoc.h"
 #include "PDFDocFactory.h"
-#include "Error.h"
 #include "ErrorCodes.h"
 #include "UTF.h"
 #include "Win32Console.h"
@@ -29,12 +28,12 @@ static bool doReplace = false;
 static bool printVersion = false;
 static bool printHelp = false;
 
-static const ArgDesc argDesc[] = { { "-replace", argFlag, &doReplace, 0, "replace embedded file with same name (if it exists)" },
-                                   { "-v", argFlag, &printVersion, 0, "print copyright and version info" },
-                                   { "-h", argFlag, &printHelp, 0, "print usage information" },
-                                   { "-help", argFlag, &printHelp, 0, "print usage information" },
-                                   { "--help", argFlag, &printHelp, 0, "print usage information" },
-                                   { "-?", argFlag, &printHelp, 0, "print usage information" },
+static const ArgDesc argDesc[] = { { .arg = "-replace", .kind = argFlag, .val = &doReplace, .size = 0, .usage = "replace embedded file with same name (if it exists)" },
+                                   { .arg = "-v", .kind = argFlag, .val = &printVersion, .size = 0, .usage = "print copyright and version info" },
+                                   { .arg = "-h", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
+                                   { .arg = "-help", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
+                                   { .arg = "--help", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
+                                   { .arg = "-?", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
                                    {} };
 
 static bool fileExists(const char *filePath)
@@ -96,7 +95,7 @@ int main(int argc, char *argv[])
 
     doc->getCatalog()->addEmbeddedFile(attachFile.get(), attachFileName);
 
-    const GooString outputPdfFilePath(argv[3]);
+    const std::string outputPdfFilePath(argv[3]);
     const int saveResult = doc->saveAs(outputPdfFilePath);
     if (saveResult != errNone) {
         fprintf(stderr, "Couldn't save the file properly.\n");

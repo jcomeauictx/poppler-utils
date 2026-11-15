@@ -3,11 +3,11 @@
  * Copyright (C) 2013 Adrian Johnson <ajohnson@redneon.com>
  * Copyright (C) 2014, Hans-Peter Deifel <hpdeifel@gmx.de>
  * Copyright (C) 2016 Jakub Alba <jakubalba@gmail.com>
- * Copyright (C) 2017-2019 Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2017-2019, 2025 Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2018 Suzuki Toshiya <mpsuzuki@hiroshima-u.ac.jp>
  * Copyright (C) 2020 Adam Reichold <adam.reichold@t-online.de>
  * Copyright (C) 2024 Oliver Sander <oliver.sander@tu-dresden.de>
- * Copyright (C) 2024 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+ * Copyright (C) 2024-2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,7 +27,7 @@
 #include "poppler-private.h"
 
 #include "goo/GooString.h"
-#include "Page.h"
+#include "PDFRectangle.h"
 #include "UTF.h"
 
 #include <ctime>
@@ -61,13 +61,13 @@ rectf detail::pdfrectangle_to_rectf(const PDFRectangle &pdfrect)
     return rectf(pdfrect.x1, pdfrect.y1, pdfrect.x2 - pdfrect.x1, pdfrect.y2 - pdfrect.y1);
 }
 
-ustring detail::unicode_GooString_to_ustring(const GooString *str)
+ustring detail::unicode_string_to_ustring(const std::string &str)
 {
-    const char *data = str->c_str();
-    const int len = str->getLength();
+    const char *data = str.c_str();
+    const int len = str.size();
 
-    const bool is_unicodeLE = hasUnicodeByteOrderMarkLE(str->toStr());
-    const bool is_unicode = hasUnicodeByteOrderMark(str->toStr()) || is_unicodeLE;
+    const bool is_unicodeLE = hasUnicodeByteOrderMarkLE(str);
+    const bool is_unicode = hasUnicodeByteOrderMark(str) || is_unicodeLE;
     int i = is_unicode ? 2 : 0;
     ustring::size_type ret_len = len - i;
     if (is_unicode) {
@@ -99,22 +99,21 @@ ustring detail::unicode_to_ustring(const Unicode *u, int length)
     ustring::iterator it = str.begin();
     const Unicode *uu = u;
     for (int i = 0; i < length; ++i) {
-        *it++ = ustring::value_type(*uu++ & 0xffff);
+        *it++ = static_cast<ustring::value_type>(*uu++ & 0xffff);
     }
     return str;
 }
 
-GooString *detail::ustring_to_unicode_GooString(const ustring &str)
+std::unique_ptr<GooString> detail::ustring_to_unicode_GooString(const ustring &str)
 {
     const size_t len = str.size() * 2 + 2;
     const ustring::value_type *me = str.data();
     byte_array ba(len);
-    ba[0] = (char)0xfe;
-    ba[1] = (char)0xff;
+    ba[0] = static_cast<char>(0xfe);
+    ba[1] = static_cast<char>(0xff);
     for (size_t i = 0; i < str.size(); ++i, ++me) {
         ba[i * 2 + 2] = ((*me >> 8) & 0xff);
         ba[i * 2 + 3] = (*me & 0xff);
     }
-    GooString *goo = new GooString(&ba[0], len);
-    return goo;
+    return std::make_unique<GooString>(ba.data(), len);
 }

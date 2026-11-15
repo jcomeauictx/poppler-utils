@@ -3,11 +3,13 @@
 // This file is under the GPLv2 or later license
 //
 // Copyright (C) 2005-2006 Kristian Høgsberg <krh@redhat.com>
-// Copyright (C) 2005, 2009, 2013, 2017, 2018, 2020, 2021, 2023 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2005, 2009, 2013, 2017, 2018, 2020, 2021, 2023, 2025, 2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2011 Simon Kellner <kellner@kit.edu>
 // Copyright (C) 2012 Fabio D'Urso <fabiodurso@hotmail.it>
 // Copyright (C) 2018 Adam Reichold <adam.reichold@t-online.de>
 // Copyright (C) 2024 Oliver Sander <oliver.sander@tu-dresden.de>
+// Copyright (C) 2025, 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2026 Stefan Brüns <stefan.bruens@rwth-aachen.de>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -15,20 +17,20 @@
 //========================================================================
 
 #include <config.h>
-#include <climits>
 #include <cstdlib>
 #include <cstdio>
 #include <cassert>
 
 #include <algorithm>
 
+#include "Object.h"
 #include "PageLabelInfo.h"
 #include "PageLabelInfo_p.h"
 
-PageLabelInfo::Interval::Interval(Object *dict, int baseA)
+PageLabelInfo::Interval::Interval(const Dict &dict, int baseA)
 {
     style = None;
-    Object obj = dict->dictLookup("S");
+    Object obj = dict.lookup("S");
     if (obj.isName()) {
         if (obj.isName("D")) {
             style = Arabic;
@@ -43,13 +45,13 @@ PageLabelInfo::Interval::Interval(Object *dict, int baseA)
         }
     }
 
-    obj = dict->dictLookup("P");
+    obj = dict.lookup("P");
     if (obj.isString()) {
-        const auto str = obj.getString();
-        prefix.assign(str->c_str(), str->getLength());
+        const std::string &str = obj.getString();
+        prefix.assign(str);
     }
 
-    obj = dict->dictLookup("St");
+    obj = dict.lookup("St");
     if (obj.isInt()) {
         first = obj.getInt();
     } else {
@@ -59,7 +61,7 @@ PageLabelInfo::Interval::Interval(Object *dict, int baseA)
     base = baseA;
 }
 
-PageLabelInfo::PageLabelInfo(Object *tree, int numPages)
+PageLabelInfo::PageLabelInfo(const Dict &tree, int numPages)
 {
     RefRecursionChecker alreadyParsedRefs;
     parse(tree, alreadyParsedRefs);
@@ -75,10 +77,10 @@ PageLabelInfo::PageLabelInfo(Object *tree, int numPages)
     curr->length = std::max(0, numPages - curr->base);
 }
 
-void PageLabelInfo::parse(const Object *tree, RefRecursionChecker &alreadyParsedRefs)
+void PageLabelInfo::parse(const Dict &tree, RefRecursionChecker &alreadyParsedRefs)
 {
     // leaf node
-    Object nums = tree->dictLookup("Nums");
+    Object nums = tree.lookup("Nums");
     if (nums.isArray()) {
         for (int i = 0; i < nums.arrayGetLength(); i += 2) {
             Object obj = nums.arrayGet(i);
@@ -94,11 +96,11 @@ void PageLabelInfo::parse(const Object *tree, RefRecursionChecker &alreadyParsed
                 continue;
             }
 
-            intervals.emplace_back(&obj, base);
+            intervals.emplace_back(*obj.getDict(), base);
         }
     }
 
-    Object kids = tree->dictLookup("Kids");
+    Object kids = tree.lookup("Kids");
     if (kids.isArray()) {
         const Array *kidsArray = kids.getArray();
         for (int i = 0; i < kidsArray->getLength(); ++i) {
@@ -109,19 +111,18 @@ void PageLabelInfo::parse(const Object *tree, RefRecursionChecker &alreadyParsed
                 continue;
             }
             if (kid.isDict()) {
-                parse(&kid, alreadyParsedRefs);
+                parse(*kid.getDict(), alreadyParsedRefs);
             }
         }
     }
 }
 
-bool PageLabelInfo::labelToIndex(GooString *label, int *index) const
+std::optional<int> PageLabelInfo::labelToIndex(const std::string &label) const
 {
-    const char *const str = label->c_str();
-    const std::size_t strLen = label->getLength();
-    const bool strUnicode = hasUnicodeByteOrderMark(label->toStr());
+    const char *const str = label.c_str();
+    const std::size_t strLen = label.size();
+    const bool strUnicode = hasUnicodeByteOrderMark(label);
     int number;
-    bool ok;
 
     for (const auto &interval : intervals) {
         const std::size_t prefixLen = interval.prefix.size();
@@ -131,48 +132,45 @@ bool PageLabelInfo::labelToIndex(GooString *label, int *index) const
 
         switch (interval.style) {
         case Interval::Arabic:
-            std::tie(number, ok) = fromDecimal(label->toStr().substr(prefixLen), strUnicode);
+            bool ok;
+            std::tie(number, ok) = fromDecimal(label.substr(prefixLen), strUnicode);
             if (ok && number - interval.first < interval.length) {
-                *index = interval.base + number - interval.first;
-                return true;
+                return interval.base + number - interval.first;
             }
             break;
         case Interval::LowercaseRoman:
         case Interval::UppercaseRoman:
             number = fromRoman(str + prefixLen);
             if (number >= 0 && number - interval.first < interval.length) {
-                *index = interval.base + number - interval.first;
-                return true;
+                return interval.base + number - interval.first;
             }
             break;
         case Interval::UppercaseLatin:
         case Interval::LowercaseLatin:
             number = fromLatin(str + prefixLen);
             if (number >= 0 && number - interval.first < interval.length) {
-                *index = interval.base + number - interval.first;
-                return true;
+                return interval.base + number - interval.first;
             }
             break;
         case Interval::None:
-            if (interval.length == 1 && label->toStr() == interval.prefix) {
-                *index = interval.base;
-                return true;
-            } else {
-                error(errSyntaxError, -1, "asking to convert label to page index in an unknown scenario, report a bug");
+            if (interval.length == 1 && label == interval.prefix) {
+                return interval.base;
             }
+
+            error(errSyntaxError, -1, "asking to convert label to page index in an unknown scenario, report a bug");
             break;
         }
     }
 
-    return false;
+    return {};
 }
 
-bool PageLabelInfo::indexToLabel(int index, GooString *label) const
+bool PageLabelInfo::indexToLabel(int index, std::string *label) const
 {
     char buffer[32];
     int base, number;
     const Interval *matching_interval;
-    GooString number_string;
+    std::string number_string;
 
     base = 0;
     matching_interval = nullptr;
@@ -212,19 +210,19 @@ bool PageLabelInfo::indexToLabel(int index, GooString *label) const
 
     label->clear();
     label->append(matching_interval->prefix.c_str(), matching_interval->prefix.size());
-    if (hasUnicodeByteOrderMark(label->toStr())) {
+    if (hasUnicodeByteOrderMark(*label)) {
         int i, len;
         char ucs2_char[2];
 
         /* Convert the ascii number string to ucs2 and append. */
-        len = number_string.getLength();
+        len = number_string.size();
         ucs2_char[0] = 0;
         for (i = 0; i < len; ++i) {
-            ucs2_char[1] = number_string.getChar(i);
+            ucs2_char[1] = number_string[i];
             label->append(ucs2_char, 2);
         }
     } else {
-        label->append(&number_string);
+        label->append(number_string);
     }
 
     return true;

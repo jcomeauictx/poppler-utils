@@ -1,3 +1,398 @@
+Release 26.11.0:
+        core:
+         * Fix subsetting annotations with multiline content
+         * NSS: Fix crash if creating the hash context fails
+         * Fix crash when saving documents with special forms
+         * Properly apply password length limit
+         * Annot: Fix the text width of widgets rotated 180 degrees
+         * FlateStream::rewind: Don't consider the empty stream failing when reviwnding it
+         * TextStringToUtf8: Fix PDFDocEncoding conversion
+         * Internal code improvements
+         * Fix crashes in malformed documents
+
+        utils:
+         * Increase max password length
+         * pdfsig: Allow to give multiple nss passwords
+         * pdfsig: Allow to input the password interactively
+
+        qt6:
+         * Expose the asset of RichMedia instances
+         * Fix leak of RichMedia activation and deactivation
+         * Check that Catalog::getForm() returns a Form before using it
+
+        qt5:
+         * Check that Catalog::getForm() returns a Form before using it
+         * Fix leak of RichMedia activation and deactivation
+
+Release 26.10.0:
+        core:
+         * Support for eidas (cades-b) signatures
+         * Enable font subsetting when using the windows font backend
+         * Enable brotli streams
+         * NSS-signatures-backend: Be a bit more lenient on what we consider valid cert usage
+         * NSS-signatures-backend: Mark hardware keys as such
+         * NSS-signatures-backend: Reuse password callback for token PIN prompts
+         * PSOutputDev: fix rendering of files when using -preload
+         * Fix rendering of some Forms
+         * Improve code a bit when finding fonts fails
+         * Fix dest dict to name tree fallback when resolving named destination. Issue #1788
+         * Internal code improvements
+         * Fix crashes in malformed documents
+
+        utils:
+         * pdfsig: Write some error message if signing fails
+         * pdfsig: Replace -etsi with -etsi-cades-b and support it with -add-signature
+
+        qt5:
+         * Deprecate CertificateInfo::publicKey()
+         * Map the annotation rules flags a bit closer to the spec
+
+        qt6:
+         * Deprecate CertificateInfo::publicKey()
+         * Map the annotation rules flags a bit closer to the spec
+         * Add API to query and select CAdES-B / S/MIME signature type
+
+        build system:
+         * libbrotlidec is now required for brotli stream support
+         * Find libharfbuzz via pkgconfig
+         * Conditionalise test builds and test dependencies based on enabled frontends
+         * Fix intermittent glib API docs build failure
+         * Don't scan for c++ modules
+         * oss-fuzz build updates
+
+Release 26.09.0:
+        core:
+         * Subset fonts when saving changes in Annotations and Forms when using fontconfig
+         * NSS: Don't infinite loop on wrong password
+         * Internal code improvements
+         * Fix crashes in malformed documents
+
+        utils:
+         * pdftotext: Add -urls option to print link URLs next to their text
+         * pdftohtml: Improve speed by ignoring tiling patterns earlier
+         * pdfimages: Fix typo in manpage
+
+        glib:
+         * Remove G_GNUC_CONST in enum _get_type funcs
+
+        build system:
+         * harfbuzz is now required for font subsetting
+
+Release 26.08.0:
+        core:
+         * GPG based signature improvements
+         * Internal code improvements
+
+        utils:
+         * pdftohtml: Fix crash when using dataurls. Issue #1751
+         * pdfimages: Add min-height and min-width options
+
+        glib:
+         * Stop using G_GNUC_CONST in _get_type funcs
+
+        build system:
+         * Slight increase in compilation of utils folder
+         * Fix -Wunused-command-line-argument when using clang
+         * Use cmake modern way to check for linker support
+
+Release 26.07.0:
+        core:
+         * Remove deprecated DCT and JPX decoders
+         * Fix signature regression in some cases. KDE bug #520496
+         * Fix added annotations getting lost in some cases. Issue #1732
+         * GPG based signature improvements
+         * Internal code improvements
+         * Fix crashes in malformed documents
+
+        utils:
+         * pdfinfo: sanitize output
+
+        cpp:
+         * Add render_hint::ignore_paper_color to allow transparent paper
+
+        glib:
+         * construct PopplerPage::mutex (fixes crash on macOS). Issue #1743
+
+        qt5:
+         * Fix crash in some signature operations. Issue #1737
+
+        qt6:
+         * Fix crash in some signature operations. Issue #1737
+
+Release 26.06.0:
+        core:
+         * Improve annotations initialization thread-safety
+         * CairoFontEngine: Properly honor font face index
+         * Internal code improvements
+         * Fix crashes in malformed documents
+
+Release 26.05.0:
+        core:
+         * Improve reconstruction of damaged files. Issue #1693
+         * PSOutputDev: Remove "pipe as filename" feature
+         * PSOutputDev: Respect pre-existing PageSize policies. Issue #1610
+         * Internal code improvements
+         * Fix crashes in malformed documents
+
+        glib:
+         * Improve PopplerPage thread-safety
+
+        utils:
+         * pdftotext: Add -remove-hyphens option
+         * pdftotext: Do not abort on empty strings. Issue #1699
+
+        build system:
+         * Increase minimum required dependency versions to those of Ubuntu 24.04
+
+Release 26.04.0:
+        core:
+         * Splash: Improve knockout groups rendering. Issue #1538
+         * Improve reconstruction of damaged files
+         * Performance improvement in files with peculiar Form objects. Issue #1682
+         * Fix memory leak if embedding png fails
+         * Internal code improvements
+
+        qt5:
+         * Fix inverted continuation rect in performMultipleTextSearch
+
+        qt6:
+         * Fix inverted continuation rect in performMultipleTextSearch
+
+Release 26.03.0:
+        core:
+         * Add compression support for stamp annotation images
+         * NSS signature backend: Look for Firefox profiles also in XDG config directory
+         * GPG signature backend: Fix marking of qualified keys
+         * Simplify the form of some ink annotations
+         * Speed improvements for some fixes
+         * Internal code improvements
+
+        qt5:
+         * Replace deprecated Qt::SystemLocaleDate
+         * Fix wrong result bottom coordinate when searching across lines
+
+        qt6:
+         * Fix wrong result bottom coordinate when searching across lines
+
+        glib:
+         * Mark structure_element_iter_new as nullable
+
+        build system:
+         * Remove USE_FLOAT cmake option
+
+Release 26.02.0:
+        core:
+         * Improvements in signature checking
+         * Improve rendering of files using the CalGray color space
+         * Internal code improvements
+         * Fix crashes in malformed documents
+
+        utils:
+         * pdftotext: Fix page level bounds calculation in tsv mode
+
+        build system:
+         * unmaintained value for some options has been replaced by UnmaintainedWillBeRemovedInJuly2026
+
+Release 26.01.0:
+        core:
+         * Improve signature compatibiluty on some files
+         * Add support for de-facto standard annotation icons
+         * Splash: Implement more blending modes for mono1/8
+         * Internal code improvements
+         * Fix crashes in malformed documents
+
+        utils:
+         * pdfinfo: Print alt text in -struct
+
+        cpp:
+         * Remove deprecated time functions
+
+        qt:
+         * Add reading order option for getText()
+
+Release 25.12.0:
+        core:
+         * Be less strict about the Page Annots object being correct. Issue #1641
+         * Fix rendering of some annotations. Issue #1642
+         * TextOuputDev: change default line ending to \n
+         * Splash: Performance improvements
+         * Ignore color operators when painting a Type3 font with d1
+         * Internal code improvements
+         * Fix crashes in malformed documents
+
+        utils:
+         * pdfsig: specify search order for NSS certificate database on the man page
+
+        build system:
+         * Switch to C++23
+
+Release 25.11.0:
+        core:
+         * NSS Signatures: Tweak the logic that decides which firefox profile to use
+         * NSS Signatures: call PORT_GetError() only if the preceding CERT_PKIXVerifyCert() fails
+         * Splash: Performance improvements
+         * Fix crashes in malformed documents
+
+        glib:
+         * Fix ocsp check for signatures validation
+         * Fix warning when running glib-mkenums
+
+Release 25.10.0:
+        core:
+         * Fix image signature getting lost
+         * Don't embed substitutions for base14 fonts
+         * Form font improvements
+         * Handle signatures padded with random data
+         * Add feature to Ink annotation to render with multiply blend mode
+         * Internal code improvements
+         * Fix crashes in malformed documents
+
+        glib:
+         * Fix signature text
+         * Add feature to Ink annotation to render with multiply blend mode
+
+        cpp:
+         * Added embedded_file::unicodeName function
+
+Release 25.09.1:
+        core:
+         * Internal code improvements
+
+        build system:
+         * Fix generated .pc files when using old gpgme
+
+Release 25.09.0:
+        core:
+         * Speed improvements when reusing the same document with different output devices
+         * Speed improvements when reading from network file systems
+         * Internal code improvements
+         * Fix crashes in malformed documents
+
+        glib:
+         * fix ODR issue with enum
+
+        utils:
+         * pdftohtml: Fix text positioning. (Regressed in 25.07.0)
+
+        build system:
+         * Better pkgconfig support for static builds
+
+Release 25.08.0:
+        core:
+         * FormWidgetSignature::signDocumentWithAppearance: add imagePath parameter
+         * Fix parsing Distinguished Names that end with a hex string
+         * Fix crashes in malformed documents
+
+        glib:
+         * Add poppler_page_render_transparent_selection()
+         * Add missing since to the documentation
+
+Release 25.07.0:
+        core:
+         * Changed rendering of malformed documents to mimic what Adobe Reader does. Issue #1602
+         * Improvemenst in signature validation in the NSS backend
+         * Add more detailed output when signing fails
+         * Internal code improvements
+         * Fix crashes in malformed documents
+
+        utils:
+         * pdfsig: command line option for allowing PGP signatures in GnuPG backend
+
+Release 25.06.0:
+        core:
+         * Fix writing dates back to file
+         * Internal code improvements
+         * Fix crashes in malformed documents
+
+        glib:
+         * Add the ink annotation type
+         * Add missing autopointers definitions
+
+        utils:
+         * pdfsig: Add assert-signer feature
+         * pdfsig: Return error code on error
+
+Release 25.05.0:
+        core:
+         * Fix re-fetching after xref reconstruction. Issue #1584
+         * Fix compilation with ENABLE_ZLIB_UNCOMPRESS=ON
+         * Various annotation improvements. Issues #642, #1558, #1055
+         * CairoFontEngine: invalidate broken embedded fonts. Issue #1453
+         * Splash: Performance improvements
+         * Internal code improvements
+
+        glib:
+         * Small signature improvements
+
+Release 25.04.0:
+        core:
+         * Properly verify adbe.pkcs7.sha1 signatures
+         * Improve errors on signing failure
+         * Allow empty outline titles
+         * Fix error in Distinguished Name parsing
+         * Fix build with Android API < 29
+         * Fix parsing Level PG document string
+         * Internal code improvements
+         * Fix crashes in malformed documents
+
+        utils:
+         * pdfcairo: Fix document unit for SVG output
+
+        cpp:
+         * Add document::form_type
+         * Add document::has_javascript
+
+        build system:
+         * cmake: Use modern Python3 cmake module
+
+Release 25.03.0:
+        core:
+         * Fix opening some slightly malformed files
+         * Signing: Support custom PGP signing
+         * Signing: Do not embed fonts in the case of signatures without appearance
+         * Signing: Improve error handling on bad passphrase
+         * Signing-GPGME: more correct validation handling
+         * Internal code improvements
+
+        glib:
+         * Fix default signature colors
+         * Check file attachment annotation for this class before casting
+
+Release 25.02.0:
+        core:
+         * cairo: fix issue for images reaching MAX_CAIRO_IMAGE_SIZE
+         * Improve rendering in some malformed documents
+         * Internal code improvements
+
+        glib:
+         * add new api to allow selecting annotations to render
+         * fix a crash when getting a font description for a free text annotation if it was not set
+
+Release 25.01.0:
+        core:
+         * TextOutputDev: Better detect fakebold words
+         * TextOutputDev: Faster sorting algorithm
+         * Internal code improvements
+         * Fix crashes in malformed documents
+
+        cpp:
+         * Remove rect parameter from image::copy, it was never implemented
+
+        qt6:
+         * Fix crash in Submit Forms if document links to non existing field
+
+        qt5:
+         * Fix crash in Submit Forms if document links to non existing field
+
+        glib:
+         * mark transfer of poppler_page_get_selected_region
+
+        utils:
+         * pdfdetach: Make -savefile work with Unicode strings. Issue #1540
+
+        build system:
+         * Don't update pdfsig.pot when POT-Creation-date is the only change
+
 Release 24.12.0:
         core:
          * cairo: Fix rendering of JPX images with transparency

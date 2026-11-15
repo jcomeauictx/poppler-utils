@@ -14,7 +14,7 @@
 // All changes made under the Poppler project to this file are licensed
 // under GPL version 2 or later
 //
-// Copyright (C) 2006, 2007, 2009, 2012, 2018-2022 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2006, 2007, 2009, 2012, 2018-2022, 2024, 2025 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2008, 2009 Warren Toomey <wkt@tuhs.org>
 // Copyright (C) 2009, 2011 Carlos Garcia Campos <carlosgc@gnome.org>
 // Copyright (C) 2009 Kovid Goyal <kovid@kovidgoyal.net>
@@ -26,7 +26,8 @@
 // Copyright (C) 2013 Thomas Freitag <Thomas.Freitag@alfa.de>
 // Copyright (C) 2018 Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>. Work sponsored by the LiMux project of the city of Munich
 // Copyright (C) 2019, 2024 Oliver Sander <oliver.sander@tu-dresden.de>
-// Copyright (C) 2024 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2024-2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2026 Eddie Kohler <ekohler@gmail.com>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -37,16 +38,13 @@
 #define HTMLOUTPUTDEV_H
 
 #include <cstdio>
-#include "goo/gbasename.h"
-#include "GfxFont.h"
 #include "OutputDev.h"
 #include "HtmlLinks.h"
 #include "HtmlFonts.h"
 #include "Link.h"
 #include "Catalog.h"
-#include "UnicodeMap.h"
 
-#define xoutRound(x) ((int)(x + 0.5))
+#define xoutRound(x) ((int)((x) + 0.5))
 
 #define DOCTYPE "<!DOCTYPE html>"
 
@@ -122,7 +120,7 @@ public:
     HtmlPage &operator=(const HtmlPage &) = delete;
 
     // Begin a new string.
-    void beginString(GfxState *state, const GooString *s);
+    void beginString(GfxState *state, const std::string &s);
 
     // Add a character to the current string.
     void addChar(GfxState *state, double x, double y, double dx, double dy, double ox, double oy, const Unicode *u, int uLen); // unsigned char c);
@@ -172,15 +170,15 @@ private:
     void setDocName(const char *fname);
     void dumpAsXML(FILE *f, int page);
     void dumpComplex(FILE *f, int page, const std::vector<std::string> &backgroundImages);
-    int dumpComplexHeaders(FILE *const file, FILE *&pageFile, int page);
+    int dumpComplexHeaders(FILE *file, FILE *&pageFile, int page);
 
     // marks the position of the fonts that belong to current page (for noframes)
     int fontsPageMarker;
-    HtmlFontAccu *fonts;
-    HtmlLinks *links;
-    std::vector<HtmlImage *> imgList;
+    std::unique_ptr<HtmlFontAccu> fonts;
+    std::unique_ptr<HtmlLinks> links;
+    std::vector<std::unique_ptr<HtmlImage>> imgList;
 
-    GooString *DocName;
+    std::unique_ptr<GooString> DocName;
     int pageWidth;
     int pageHeight;
     int firstPage; // used to begin the numeration of pages
@@ -200,11 +198,11 @@ public:
     HtmlMetaVar(const HtmlMetaVar &) = delete;
     HtmlMetaVar &operator=(const HtmlMetaVar &) = delete;
 
-    GooString *toString() const;
+    std::unique_ptr<GooString> toString() const;
 
 private:
-    GooString *name;
-    GooString *content;
+    std::unique_ptr<GooString> name;
+    std::unique_ptr<GooString> content;
 };
 
 //------------------------------------------------------------------------
@@ -237,6 +235,11 @@ public:
     // Does this device use drawChar() or drawString()?
     bool useDrawChar() override { return true; }
 
+    // Does this device use tilingPatternFill()?  If this returns false,
+    // tiling pattern fills will be reduced to a series of other drawing
+    // operations.
+    bool useTilingPatternFill() override { return true; }
+
     // Does this device use beginType3Char/endType3Char?  Otherwise,
     // text in Type 3 fonts will be drawn with drawChar/drawString.
     bool interpretType3Chars() override { return false; }
@@ -246,8 +249,9 @@ public:
 
     //----- initialization and control
 
-    bool checkPageSlice(Page *p, double hDPI, double vDPI, int rotate, bool useMediaBox, bool crop, int sliceX, int sliceY, int sliceW, int sliceH, bool printing, bool (*abortCheckCbk)(void *data) = nullptr,
-                        void *abortCheckCbkData = nullptr, bool (*annotDisplayDecideCbk)(Annot *annot, void *user_data) = nullptr, void *annotDisplayDecideCbkData = nullptr) override
+    bool checkPageSlice(Page *p, double /*hDPI*/, double /*vDPI*/, int /*rotate*/, bool /*useMediaBox*/, bool /*crop*/, int /*sliceX*/, int /*sliceY*/, int /*sliceW*/, int /*sliceH*/, bool /*printing*/,
+                        bool (* /*abortCheckCbk*/)(void *data) = nullptr, void * /*abortCheckCbkData*/ = nullptr, bool (* /*annotDisplayDecideCbk*/)(Annot *annot, void *user_data) = nullptr,
+                        void * /*annotDisplayDecideCbkData*/ = nullptr) override
     {
         docPage = p;
         return true;
@@ -263,11 +267,18 @@ public:
     // as this seems to be done outside other processing. takes ownership of img.
     void addBackgroundImage(const std::string &img);
 
+    //----- path painting
+    bool tilingPatternFill(GfxState * /*state*/, Gfx * /*gfx*/, Catalog * /*cat*/, GfxTilingPattern * /*tPat*/, const std::array<double, 6> & /*mat*/, int /*x0*/, int /*y0*/, int /*x1*/, int /*y1*/, double /*xStep*/,
+                           double /*yStep*/) override
+    {
+        return true;
+    }
+
     //----- update text state
     void updateFont(GfxState *state) override;
 
     //----- text drawing
-    void beginString(GfxState *state, const GooString *s) override;
+    void beginString(GfxState *state, const std::string &s) override;
     void endString(GfxState *state) override;
     void drawChar(GfxState *state, double x, double y, double dx, double dy, double originX, double originY, CharCode code, int nBytes, const Unicode *u, int uLen) override;
 
@@ -277,8 +288,8 @@ public:
     // new feature
     virtual int DevType() { return 1234; }
 
-    int getPageWidth() { return maxPageWidth; }
-    int getPageHeight() { return maxPageHeight; }
+    int getPageWidth() const { return maxPageWidth; }
+    int getPageHeight() const { return maxPageHeight; }
 
     bool dumpDocOutline(PDFDoc *doc);
 
@@ -287,8 +298,8 @@ private:
     // recognized.
     static std::string mapEncodingToHtml(const std::string &encoding);
     void doProcessLink(AnnotLink *link);
-    GooString *getLinkDest(AnnotLink *link);
-    void dumpMetaVars(FILE *);
+    std::unique_ptr<GooString> getLinkDest(AnnotLink *link);
+    void dumpMetaVars(FILE *file);
     void doFrame(int firstPage);
     bool newHtmlOutlineLevel(FILE *output, const std::vector<OutlineItem *> *outlines, int level = 1);
     void newXmlOutlineLevel(FILE *output, const std::vector<OutlineItem *> *outlines);
@@ -302,7 +313,7 @@ private:
     // FILE *tin;                    // image log file
     // bool write;
     bool needClose; // need to close the file?
-    HtmlPage *pages; // text for the current page
+    std::unique_ptr<HtmlPage> pages; // text for the current page
     bool rawOrder; // keep text in content stream order
     bool doOutline; // output document outline
     bool ok; // set up ok?
@@ -310,9 +321,9 @@ private:
     int pageNum;
     int maxPageWidth;
     int maxPageHeight;
-    GooString *Docname;
-    GooString *docTitle;
-    std::vector<HtmlMetaVar *> glMetaVars;
+    std::unique_ptr<GooString> Docname;
+    std::unique_ptr<GooString> docTitle;
+    std::vector<std::unique_ptr<HtmlMetaVar>> glMetaVars;
     Catalog *catalog;
     Page *docPage;
     std::vector<std::string> backgroundImages;

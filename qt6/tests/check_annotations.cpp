@@ -17,28 +17,29 @@ class TestAnnotations : public QObject
 public:
     explicit TestAnnotations(QObject *parent = nullptr) : QObject(parent) { }
 
-    void saveAndCheck(const std::unique_ptr<Poppler::Document> &doc, const std::function<void(Poppler::Annotation *a)> &checkFunction);
+    static void saveAndCheck(const std::unique_ptr<Poppler::Document> &doc, const std::function<void(Poppler::Annotation *a)> &checkFunction);
 
-private slots:
-    void checkQColorPrecision();
-    void checkFontSizeAndColor();
-    void checkHighlightFromAndToQuads();
-    void checkUTF16LEAnnot();
-    void checkModificationCreationDate();
-    void checkNonMarkupAnnotations();
-    void checkDefaultAppearance();
+private Q_SLOTS:
+    static void checkQColorPrecision();
+    static void checkFontSizeAndColor();
+    static void checkHighlightFromAndToQuads();
+    static void checkUTF16LEAnnot();
+    static void checkModificationCreationDate();
+    static void checkNonMarkupAnnotations();
+    static void checkDefaultAppearance();
+    static void checkRichMediaInstanceAsset();
 };
 
 /* Is .5f sufficient for 16 bit color channel roundtrip trough save and load on all architectures? */
 void TestAnnotations::checkQColorPrecision()
 {
     bool precisionOk = true;
-    for (int i = std::numeric_limits<uint16_t>::min(); i <= std::numeric_limits<uint16_t>::max(); i++) {
-        double normalized = static_cast<uint16_t>(i) / static_cast<double>(std::numeric_limits<uint16_t>::max());
+    for (uint32_t i = std::numeric_limits<uint16_t>::min(); i <= std::numeric_limits<uint16_t>::max(); i++) {
+        double normalized = i / static_cast<double>(std::numeric_limits<uint16_t>::max());
         const std::string serialized = GooString::format("{0:.5f}", normalized);
         double deserialized = gatof(serialized.c_str());
         uint16_t denormalized = std::round(deserialized * std::numeric_limits<uint16_t>::max());
-        if (static_cast<uint16_t>(i) != denormalized) {
+        if (i != denormalized) {
             precisionOk = false;
             break;
         }
@@ -57,7 +58,7 @@ void TestAnnotations::checkFontSizeAndColor()
     tempFile.close();
 
     {
-        std::unique_ptr<Poppler::Document> doc { Poppler::Document::load(TESTDATADIR "/unittestcases/UseNone.pdf") };
+        std::unique_ptr<Poppler::Document> doc { Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/UseNone.pdf")) };
         QVERIFY(doc.get());
 
         std::unique_ptr<Poppler::Page> page { doc->page(0) };
@@ -92,7 +93,7 @@ void TestAnnotations::checkFontSizeAndColor()
         auto &&annot = annots.cbegin();
         for (const auto &color : testColors) {
             QCOMPARE((*annot)->subType(), Poppler::Annotation::AText);
-            auto textAnnot = static_cast<Poppler::TextAnnotation *>(annot->get());
+            auto *textAnnot = static_cast<Poppler::TextAnnotation *>(annot->get());
             QCOMPARE(textAnnot->contents(), contents);
             QCOMPARE(textAnnot->textFont().pointSize(), testFont.pointSize());
             QCOMPARE(static_cast<int>(textAnnot->textColor().spec()), static_cast<int>(color.spec()));
@@ -115,21 +116,22 @@ static bool operator==(const Poppler::HighlightAnnotation::Quad &a, const Popple
 
 void TestAnnotations::checkHighlightFromAndToQuads()
 {
-    std::unique_ptr<Poppler::Document> doc { Poppler::Document::load(TESTDATADIR "/unittestcases/UseNone.pdf") };
+    std::unique_ptr<Poppler::Document> doc { Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/UseNone.pdf")) };
 
     std::unique_ptr<Poppler::Page> page { doc->page(0) };
 
     auto ha = std::make_unique<Poppler::HighlightAnnotation>();
     page->addAnnotation(ha.get());
 
-    const QList<Poppler::HighlightAnnotation::Quad> quads = { { { { 0, 0.1 }, { 0.2, 0.3 }, { 0.4, 0.5 }, { 0.6, 0.7 } }, false, false, 0 }, { { { 0.8, 0.9 }, { 0.1, 0.2 }, { 0.3, 0.4 }, { 0.5, 0.6 } }, true, false, 0.4 } };
+    const QList<Poppler::HighlightAnnotation::Quad> quads = { { .points = { { 0, 0.1 }, { 0.2, 0.3 }, { 0.4, 0.5 }, { 0.6, 0.7 } }, .capStart = false, .capEnd = false, .feather = 0 },
+                                                              { .points = { { 0.8, 0.9 }, { 0.1, 0.2 }, { 0.3, 0.4 }, { 0.5, 0.6 } }, .capStart = true, .capEnd = false, .feather = 0.4 } };
     ha->setHighlightQuads(quads);
     QCOMPARE(ha->highlightQuads(), quads);
 }
 
 void TestAnnotations::checkUTF16LEAnnot()
 {
-    std::unique_ptr<Poppler::Document> doc { Poppler::Document::load(TESTDATADIR "/unittestcases/utf16le-annot.pdf") };
+    std::unique_ptr<Poppler::Document> doc { Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/utf16le-annot.pdf")) };
     QVERIFY(doc.get());
 
     std::unique_ptr<Poppler::Page> page { doc->page(0) };
@@ -162,7 +164,7 @@ void TestAnnotations::saveAndCheck(const std::unique_ptr<Poppler::Document> &doc
 
 void TestAnnotations::checkModificationCreationDate()
 {
-    std::unique_ptr<Poppler::Document> doc { Poppler::Document::load(TESTDATADIR "/unittestcases/utf16le-annot.pdf") };
+    std::unique_ptr<Poppler::Document> doc { Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/utf16le-annot.pdf")) };
     QVERIFY(doc.get());
 
     std::unique_ptr<Poppler::Page> page { doc->page(0) };
@@ -209,7 +211,7 @@ void TestAnnotations::checkModificationCreationDate()
 
 void TestAnnotations::checkNonMarkupAnnotations()
 {
-    std::unique_ptr<Poppler::Document> doc { Poppler::Document::load(TESTDATADIR "/unittestcases/checkbox_issue_159.pdf") };
+    std::unique_ptr<Poppler::Document> doc { Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/checkbox_issue_159.pdf")) };
     QVERIFY(doc.get());
 
     std::unique_ptr<Poppler::Page> page { doc->page(0) };
@@ -221,27 +223,27 @@ void TestAnnotations::checkNonMarkupAnnotations()
 
 void TestAnnotations::checkDefaultAppearance()
 {
-    std::unique_ptr<GooString> roundtripString;
+    std::string roundtripString;
     {
-        GooString daString { "/Helv 10 Tf 0.1 0.2 0.3 rg" };
-        const DefaultAppearance da { &daString };
+        const std::string daString { "/Helv 10 Tf 0.1 0.2 0.3 rg" };
+        const DefaultAppearance da { daString };
         QCOMPARE(da.getFontPtSize(), 10.);
-        QVERIFY(da.getFontName().isName());
-        QCOMPARE(da.getFontName().getName(), "Helv");
+        QVERIFY(!da.getFontName().empty());
+        QCOMPARE(da.getFontName(), "Helv");
         const AnnotColor *color = da.getFontColor();
         QVERIFY(color);
         QCOMPARE(color->getSpace(), AnnotColor::colorRGB);
         QCOMPARE(color->getValues()[0], 0.1);
         QCOMPARE(color->getValues()[1], 0.2);
         QCOMPARE(color->getValues()[2], 0.3);
-        roundtripString = std::make_unique<GooString>(da.toAppearanceString());
+        roundtripString = da.toAppearanceString();
     }
     {
         /* roundtrip through parse/generate/parse shall preserve values */
-        const DefaultAppearance da { roundtripString.get() };
+        const DefaultAppearance da { roundtripString };
         QCOMPARE(da.getFontPtSize(), 10.);
-        QVERIFY(da.getFontName().isName());
-        QCOMPARE(da.getFontName().getName(), "Helv");
+        QVERIFY(!da.getFontName().empty());
+        QCOMPARE(da.getFontName(), "Helv");
         const AnnotColor *color = da.getFontColor();
         QVERIFY(color);
         QCOMPARE(color->getSpace(), AnnotColor::colorRGB);
@@ -251,10 +253,42 @@ void TestAnnotations::checkDefaultAppearance()
     }
     {
         /* parsing bad DA strings must not cause crash */
-        GooString daString { "/ % Tf 1 2 rg" };
-        const DefaultAppearance da { &daString };
-        QVERIFY(!da.getFontName().isName());
+        const std::string daString { "/ % Tf 1 2 rg" };
+        const DefaultAppearance da { daString };
+        QVERIFY(da.getFontName().empty());
     }
+}
+
+void TestAnnotations::checkRichMediaInstanceAsset()
+{
+    // The poster comes first in the Assets name tree, the video instance must still get the trailer
+    std::unique_ptr<Poppler::Document> doc { Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/richmedia_instance_asset.pdf")) };
+    QVERIFY(doc.get());
+
+    std::unique_ptr<Poppler::Page> page { doc->page(0) };
+    QVERIFY(page.get());
+
+    const auto annots = page->annotations();
+    QCOMPARE(annots.size(), 1);
+    QCOMPARE(annots[0]->subType(), Poppler::Annotation::ARichMedia);
+
+    const auto *richMedia = static_cast<const Poppler::RichMediaAnnotation *>(annots[0].get());
+    QVERIFY(richMedia->content());
+    const auto configurations = richMedia->content()->configurations();
+    QCOMPARE(configurations.size(), 1);
+    const auto instances = configurations[0]->instances();
+    QCOMPARE(instances.size(), 5);
+
+    Poppler::EmbeddedFile *video = instances[0]->embeddedFile();
+    QVERIFY(video);
+    QCOMPARE(video->name(), QStringLiteral("trailer.mp4"));
+    QCOMPARE(video->data(), QByteArray("video bytes"));
+
+    // No asset, an asset that's not a dictionary, an asset with no embedded file, an asset with no file name
+    QVERIFY(!instances[1]->embeddedFile());
+    QVERIFY(!instances[2]->embeddedFile());
+    QVERIFY(!instances[3]->embeddedFile());
+    QVERIFY(!instances[4]->embeddedFile());
 }
 
 QTEST_GUILESS_MAIN(TestAnnotations)

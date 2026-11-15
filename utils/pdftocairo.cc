@@ -18,7 +18,7 @@
 // Copyright (C) 2009 Michael K. Johnson <a1237@danlj.org>
 // Copyright (C) 2009 Shen Liang <shenzhuxi@gmail.com>
 // Copyright (C) 2009 Stefan Thomas <thomas@eload24.com>
-// Copyright (C) 2009, 2010, 2017-2020, 2022 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2009, 2010, 2017-2020, 2022, 2025, 2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2010, 2011-2017, 2023, 2024 Adrian Johnson <ajohnson@redneon.com>
 // Copyright (C) 2010, 2014 Hib Eris <hib@hiberis.nl>
 // Copyright (C) 2010 Jonathan Liu <net147@gmail.com>
@@ -41,6 +41,8 @@
 // Copyright (C) 2021 Christian Persch <chpe@src.gnome.org>
 // Copyright (C) 2022 James Cloos <cloos@jhcloos.com>
 // Copyright (C) 2023 Anton Thomasson <antonthomasson@gmail.com>
+// Copyright (C) 2025 Masamichi Hosoda <trueroad@trueroad.jp>
+// Copyright (C) 2025, 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -65,13 +67,12 @@
 #include "goo/PNGWriter.h"
 #include "goo/TiffWriter.h"
 #include "GlobalParams.h"
-#include "Object.h"
 #include "PDFDoc.h"
 #include "PDFDocFactory.h"
 #include "CairoOutputDev.h"
 #include "Win32Console.h"
 #include "numberofcharacters.h"
-#ifdef USE_CMS
+#if USE_CMS
 #    include <lcms2.h>
 #endif
 #include <cairo.h>
@@ -134,8 +135,8 @@ static bool duplex = false;
 static char tiffCompressionStr[16] = "";
 static bool docStruct = false;
 
-static char ownerPassword[33] = "";
-static char userPassword[33] = "";
+static char ownerPassword[128] = "";
+static char userPassword[128] = "";
 static bool quiet = false;
 static bool printVersion = false;
 static bool printHelp = false;
@@ -152,26 +153,26 @@ static bool setupdlg = false;
 #endif
 
 static const ArgDesc argDesc[] = {
-#ifdef ENABLE_LIBPNG
-    { "-png", argFlag, &png, 0, "generate a PNG file" },
+#if ENABLE_LIBPNG
+    { .arg = "-png", .kind = argFlag, .val = &png, .size = 0, .usage = "generate a PNG file" },
 #endif
-#ifdef ENABLE_LIBJPEG
-    { "-jpeg", argFlag, &jpeg, 0, "generate a JPEG file" },
-    { "-jpegopt", argGooString, &jpegOpt, 0, "jpeg options, with format <opt1>=<val1>[,<optN>=<valN>]*" },
+#if ENABLE_LIBJPEG
+    { .arg = "-jpeg", .kind = argFlag, .val = &jpeg, .size = 0, .usage = "generate a JPEG file" },
+    { .arg = "-jpegopt", .kind = argGooString, .val = &jpegOpt, .size = 0, .usage = "jpeg options, with format <opt1>=<val1>[,<optN>=<valN>]*" },
 #endif
-#ifdef ENABLE_LIBTIFF
-    { "-tiff", argFlag, &tiff, 0, "generate a TIFF file" },
-    { "-tiffcompression", argString, tiffCompressionStr, sizeof(tiffCompressionStr), "set TIFF compression: none, packbits, jpeg, lzw, deflate" },
+#if ENABLE_LIBTIFF
+    { .arg = "-tiff", .kind = argFlag, .val = &tiff, .size = 0, .usage = "generate a TIFF file" },
+    { .arg = "-tiffcompression", .kind = argString, .val = tiffCompressionStr, .size = sizeof(tiffCompressionStr), .usage = "set TIFF compression: none, packbits, jpeg, lzw, deflate" },
 #endif
 #ifdef CAIRO_HAS_PS_SURFACE
-    { "-ps", argFlag, &ps, 0, "generate PostScript file" },
-    { "-eps", argFlag, &eps, 0, "generate Encapsulated PostScript (EPS)" },
+    { .arg = "-ps", .kind = argFlag, .val = &ps, .size = 0, .usage = "generate PostScript file" },
+    { .arg = "-eps", .kind = argFlag, .val = &eps, .size = 0, .usage = "generate Encapsulated PostScript (EPS)" },
 #endif
 #ifdef CAIRO_HAS_PDF_SURFACE
-    { "-pdf", argFlag, &pdf, 0, "generate a PDF file" },
+    { .arg = "-pdf", .kind = argFlag, .val = &pdf, .size = 0, .usage = "generate a PDF file" },
 #endif
 #ifdef CAIRO_HAS_SVG_SURFACE
-    { "-svg", argFlag, &svg, 0, "generate a Scalable Vector Graphics (SVG) file" },
+    { .arg = "-svg", .kind = argFlag, .val = &svg, .size = 0, .usage = "generate a Scalable Vector Graphics (SVG) file" },
 #endif
 #ifdef CAIRO_HAS_WIN32_SURFACE
     { "-print", argFlag, &printToWin32, 0, "print to a Windows printer" },
@@ -181,59 +182,57 @@ static const ArgDesc argDesc[] = {
     { "-setupdlg", argFlag, &setupdlg, 0, "show printer setup dialog before printing" },
 #endif
 
-    { "-f", argInt, &firstPage, 0, "first page to print" },
-    { "-l", argInt, &lastPage, 0, "last page to print" },
-    { "-o", argFlag, &printOnlyOdd, 0, "print only odd pages" },
-    { "-e", argFlag, &printOnlyEven, 0, "print only even pages" },
-    { "-singlefile", argFlag, &singleFile, 0, "write only the first page and do not add digits" },
+    { .arg = "-f", .kind = argInt, .val = &firstPage, .size = 0, .usage = "first page to print" },
+    { .arg = "-l", .kind = argInt, .val = &lastPage, .size = 0, .usage = "last page to print" },
+    { .arg = "-o", .kind = argFlag, .val = &printOnlyOdd, .size = 0, .usage = "print only odd pages" },
+    { .arg = "-e", .kind = argFlag, .val = &printOnlyEven, .size = 0, .usage = "print only even pages" },
+    { .arg = "-singlefile", .kind = argFlag, .val = &singleFile, .size = 0, .usage = "write only the first page and do not add digits" },
 
-    { "-r", argFP, &resolution, 0, "resolution, in PPI (default is 150)" },
-    { "-rx", argFP, &x_resolution, 0, "X resolution, in PPI (default is 150)" },
-    { "-ry", argFP, &y_resolution, 0, "Y resolution, in PPI (default is 150)" },
-    { "-scale-to", argInt, &scaleTo, 0, "scales each page to fit within scale-to*scale-to pixel box" },
-    { "-scale-to-x", argInt, &x_scaleTo, 0, "scales each page horizontally to fit in scale-to-x pixels" },
-    { "-scale-to-y", argInt, &y_scaleTo, 0, "scales each page vertically to fit in scale-to-y pixels" },
+    { .arg = "-r", .kind = argFP, .val = &resolution, .size = 0, .usage = "resolution, in PPI (default is 150)" },
+    { .arg = "-rx", .kind = argFP, .val = &x_resolution, .size = 0, .usage = "X resolution, in PPI (default is 150)" },
+    { .arg = "-ry", .kind = argFP, .val = &y_resolution, .size = 0, .usage = "Y resolution, in PPI (default is 150)" },
+    { .arg = "-scale-to", .kind = argInt, .val = &scaleTo, .size = 0, .usage = "scales each page to fit within scale-to*scale-to pixel box" },
+    { .arg = "-scale-to-x", .kind = argInt, .val = &x_scaleTo, .size = 0, .usage = "scales each page horizontally to fit in scale-to-x pixels" },
+    { .arg = "-scale-to-y", .kind = argInt, .val = &y_scaleTo, .size = 0, .usage = "scales each page vertically to fit in scale-to-y pixels" },
 
-    { "-x", argInt, &crop_x, 0, "x-coordinate of the crop area top left corner" },
-    { "-y", argInt, &crop_y, 0, "y-coordinate of the crop area top left corner" },
-    { "-W", argInt, &crop_w, 0, "width of crop area in pixels (default is 0)" },
-    { "-H", argInt, &crop_h, 0, "height of crop area in pixels (default is 0)" },
-    { "-sz", argInt, &sz, 0, "size of crop square in pixels (sets W and H)" },
-    { "-cropbox", argFlag, &useCropBox, 0, "use the crop box rather than media box" },
+    { .arg = "-x", .kind = argInt, .val = &crop_x, .size = 0, .usage = "x-coordinate of the crop area top left corner" },
+    { .arg = "-y", .kind = argInt, .val = &crop_y, .size = 0, .usage = "y-coordinate of the crop area top left corner" },
+    { .arg = "-W", .kind = argInt, .val = &crop_w, .size = 0, .usage = "width of crop area in pixels (default is 0)" },
+    { .arg = "-H", .kind = argInt, .val = &crop_h, .size = 0, .usage = "height of crop area in pixels (default is 0)" },
+    { .arg = "-sz", .kind = argInt, .val = &sz, .size = 0, .usage = "size of crop square in pixels (sets W and H)" },
+    { .arg = "-cropbox", .kind = argFlag, .val = &useCropBox, .size = 0, .usage = "use the crop box rather than media box" },
 
-    { "-mono", argFlag, &mono, 0, "generate a monochrome image file (PNG, JPEG)" },
-    { "-gray", argFlag, &gray, 0, "generate a grayscale image file (PNG, JPEG)" },
-    { "-transp", argFlag, &transp, 0, "use a transparent background instead of white (PNG)" },
-    { "-antialias", argGooString, &antialias, 0, "set cairo antialias option" },
-#ifdef USE_CMS
-    { "-icc", argGooString, &icc, 0, "ICC color profile to use" },
+    { .arg = "-mono", .kind = argFlag, .val = &mono, .size = 0, .usage = "generate a monochrome image file (PNG, JPEG)" },
+    { .arg = "-gray", .kind = argFlag, .val = &gray, .size = 0, .usage = "generate a grayscale image file (PNG, JPEG)" },
+    { .arg = "-transp", .kind = argFlag, .val = &transp, .size = 0, .usage = "use a transparent background instead of white (PNG)" },
+    { .arg = "-antialias", .kind = argGooString, .val = &antialias, .size = 0, .usage = "set cairo antialias option" },
+#if USE_CMS
+    { .arg = "-icc", .kind = argGooString, .val = &icc, .size = 0, .usage = "ICC color profile to use" },
 #endif
 
-    { "-level2", argFlag, &level2, 0, "generate Level 2 PostScript (PS, EPS)" },
-    { "-level3", argFlag, &level3, 0, "generate Level 3 PostScript (PS, EPS)" },
-    { "-origpagesizes", argFlag, &origPageSizes, 0, "conserve original page sizes (PS, PDF, SVG)" },
-    { "-paper", argString, paperSize, sizeof(paperSize), "paper size (letter, legal, A4, A3, match)" },
-    { "-paperw", argInt, &paperWidth, 0, "paper width, in points" },
-    { "-paperh", argInt, &paperHeight, 0, "paper height, in points" },
-    { "-nocrop", argFlag, &noCrop, 0, "don't crop pages to CropBox" },
-    { "-expand", argFlag, &expand, 0, "expand pages smaller than the paper size" },
-    { "-noshrink", argFlag, &noShrink, 0, "don't shrink pages larger than the paper size" },
-    { "-nocenter", argFlag, &noCenter, 0, "don't center pages smaller than the paper size" },
-    { "-duplex", argFlag, &duplex, 0, "enable duplex printing" },
+    { .arg = "-level2", .kind = argFlag, .val = &level2, .size = 0, .usage = "generate Level 2 PostScript (PS, EPS)" },
+    { .arg = "-level3", .kind = argFlag, .val = &level3, .size = 0, .usage = "generate Level 3 PostScript (PS, EPS)" },
+    { .arg = "-origpagesizes", .kind = argFlag, .val = &origPageSizes, .size = 0, .usage = "conserve original page sizes (PS, PDF, SVG)" },
+    { .arg = "-paper", .kind = argString, .val = paperSize, .size = sizeof(paperSize), .usage = "paper size (letter, legal, A4, A3, match)" },
+    { .arg = "-paperw", .kind = argInt, .val = &paperWidth, .size = 0, .usage = "paper width, in points" },
+    { .arg = "-paperh", .kind = argInt, .val = &paperHeight, .size = 0, .usage = "paper height, in points" },
+    { .arg = "-nocrop", .kind = argFlag, .val = &noCrop, .size = 0, .usage = "don't crop pages to CropBox" },
+    { .arg = "-expand", .kind = argFlag, .val = &expand, .size = 0, .usage = "expand pages smaller than the paper size" },
+    { .arg = "-noshrink", .kind = argFlag, .val = &noShrink, .size = 0, .usage = "don't shrink pages larger than the paper size" },
+    { .arg = "-nocenter", .kind = argFlag, .val = &noCenter, .size = 0, .usage = "don't center pages smaller than the paper size" },
+    { .arg = "-duplex", .kind = argFlag, .val = &duplex, .size = 0, .usage = "enable duplex printing" },
 
-#if CAIRO_VERSION >= CAIRO_VERSION_ENCODE(1, 18, 0)
-    { "-struct", argFlag, &docStruct, 0, "enable logical document structure" },
-#endif
+    { .arg = "-struct", .kind = argFlag, .val = &docStruct, .size = 0, .usage = "enable logical document structure" },
 
-    { "-opw", argString, ownerPassword, sizeof(ownerPassword), "owner password (for encrypted files)" },
-    { "-upw", argString, userPassword, sizeof(userPassword), "user password (for encrypted files)" },
+    { .arg = "-opw", .kind = argString, .val = ownerPassword, .size = sizeof(ownerPassword), .usage = "owner password (for encrypted files)" },
+    { .arg = "-upw", .kind = argString, .val = userPassword, .size = sizeof(userPassword), .usage = "user password (for encrypted files)" },
 
-    { "-q", argFlag, &quiet, 0, "don't print any messages or errors" },
-    { "-v", argFlag, &printVersion, 0, "print copyright and version info" },
-    { "-h", argFlag, &printHelp, 0, "print usage information" },
-    { "-help", argFlag, &printHelp, 0, "print usage information" },
-    { "--help", argFlag, &printHelp, 0, "print usage information" },
-    { "-?", argFlag, &printHelp, 0, "print usage information" },
+    { .arg = "-q", .kind = argFlag, .val = &quiet, .size = 0, .usage = "don't print any messages or errors" },
+    { .arg = "-v", .kind = argFlag, .val = &printVersion, .size = 0, .usage = "print copyright and version info" },
+    { .arg = "-h", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
+    { .arg = "-help", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
+    { .arg = "--help", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
+    { .arg = "-?", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
     {}
 };
 
@@ -243,7 +242,7 @@ static FILE *output_file;
 static bool usePDFPageSize;
 static cairo_antialias_t antialiasEnum = CAIRO_ANTIALIAS_DEFAULT;
 
-#ifdef USE_CMS
+#if USE_CMS
 static unsigned char *icc_data;
 static int icc_data_size;
 static GfxLCMSProfilePtr profile;
@@ -256,15 +255,15 @@ struct AntialiasOption
 };
 
 static const AntialiasOption antialiasOptions[] = {
-    { "default", CAIRO_ANTIALIAS_DEFAULT }, { "none", CAIRO_ANTIALIAS_NONE }, { "gray", CAIRO_ANTIALIAS_GRAY }, { "subpixel", CAIRO_ANTIALIAS_SUBPIXEL },
-    { "fast", CAIRO_ANTIALIAS_FAST },       { "good", CAIRO_ANTIALIAS_GOOD }, { "best", CAIRO_ANTIALIAS_BEST }, { nullptr, CAIRO_ANTIALIAS_DEFAULT },
+    { .name = "default", .value = CAIRO_ANTIALIAS_DEFAULT }, { .name = "none", .value = CAIRO_ANTIALIAS_NONE }, { .name = "gray", .value = CAIRO_ANTIALIAS_GRAY }, { .name = "subpixel", .value = CAIRO_ANTIALIAS_SUBPIXEL },
+    { .name = "fast", .value = CAIRO_ANTIALIAS_FAST },       { .name = "good", .value = CAIRO_ANTIALIAS_GOOD }, { .name = "best", .value = CAIRO_ANTIALIAS_BEST }, { .name = nullptr, .value = CAIRO_ANTIALIAS_DEFAULT },
 };
 
 static bool parseAntialiasOption()
 {
     const AntialiasOption *option = antialiasOptions;
     while (option->name) {
-        if (antialias.cmp(option->name) == 0) {
+        if (antialias.toStr() == option->name) {
             antialiasEnum = option->value;
             return true;
         }
@@ -289,10 +288,10 @@ static bool parseJpegOptions()
         const char *comma = strchr(nextOpt, ',');
         GooString opt;
         if (comma) {
-            opt.Set(nextOpt, static_cast<int>(comma - nextOpt));
+            opt.assign(nextOpt, static_cast<int>(comma - nextOpt));
             nextOpt = comma + 1;
         } else {
-            opt.Set(nextOpt);
+            opt.assign(nextOpt);
             nextOpt = nullptr;
         }
         // here opt is "<optN>=<valN> "
@@ -302,11 +301,11 @@ static bool parseJpegOptions()
             return false;
         }
         const int iequal = static_cast<int>(equal - opt.c_str());
-        GooString value(&opt, iequal + 1, opt.getLength() - iequal - 1);
-        opt.del(iequal, opt.getLength() - iequal);
+        GooString value(&opt, iequal + 1, opt.size() - iequal - 1);
+        opt.erase(iequal, opt.size() - iequal);
         // here opt is "<optN>" and value is "<valN>"
 
-        if (opt.cmp("quality") == 0) {
+        if (opt.toStr() == "quality") {
             if (!isInt(value.c_str())) {
                 fprintf(stderr, "Invalid jpeg quality\n");
                 return false;
@@ -316,19 +315,19 @@ static bool parseJpegOptions()
                 fprintf(stderr, "jpeg quality must be between 0 and 100\n");
                 return false;
             }
-        } else if (opt.cmp("progressive") == 0) {
+        } else if (opt.toStr() == "progressive") {
             jpegProgressive = false;
-            if (value.cmp("y") == 0) {
+            if (value.toStr() == "y") {
                 jpegProgressive = true;
-            } else if (value.cmp("n") != 0) {
+            } else if (value.toStr() != "n") {
                 fprintf(stderr, "jpeg progressive option must be \"y\" or \"n\"\n");
                 return false;
             }
-        } else if (opt.cmp("optimize") == 0 || opt.cmp("optimise") == 0) {
+        } else if (opt.toStr() == "optimize" || opt.toStr() == "optimise") {
             jpegOptimize = false;
-            if (value.cmp("y") == 0) {
+            if (value.toStr() == "y") {
                 jpegOptimize = true;
-            } else if (value.cmp("n") != 0) {
+            } else if (value.toStr() != "n") {
                 fprintf(stderr, "jpeg optimize option must be \"y\" or \"n\"\n");
                 return false;
             }
@@ -348,7 +347,7 @@ static void writePageImage(GooString *filename)
     unsigned char *data;
 
     if (png) {
-#ifdef ENABLE_LIBPNG
+#if ENABLE_LIBPNG
         if (transp) {
             writer = new PNGWriter(PNGWriter::RGBA);
         } else if (gray) {
@@ -359,7 +358,7 @@ static void writePageImage(GooString *filename)
             writer = new PNGWriter(PNGWriter::RGB);
         }
 
-#    ifdef USE_CMS
+#    if USE_CMS
         if (icc_data) {
             cmsUInt8Number profileID[17];
             profileID[16] = '\0';
@@ -373,7 +372,7 @@ static void writePageImage(GooString *filename)
 #endif
 
     } else if (jpeg) {
-#ifdef ENABLE_LIBJPEG
+#if ENABLE_LIBJPEG
         if (gray) {
             writer = new JpegWriter(JpegWriter::GRAY);
         } else {
@@ -387,7 +386,7 @@ static void writePageImage(GooString *filename)
         }
 #endif
     } else if (tiff) {
-#ifdef ENABLE_LIBTIFF
+#if ENABLE_LIBTIFF
         if (transp) {
             writer = new TiffWriter(TiffWriter::RGBA_PREMULTIPLIED);
         } else if (gray) {
@@ -404,7 +403,7 @@ static void writePageImage(GooString *filename)
         return;
     }
 
-    if (filename->cmp("fd://0") == 0) {
+    if (filename->toStr() == "fd://0") {
 #if defined(_WIN32) || defined(__CYGWIN__)
         _setmode(fileno(stdout), O_BINARY);
 #endif
@@ -428,10 +427,10 @@ static void writePageImage(GooString *filename)
         fprintf(stderr, "Error writing %s\n", filename->c_str());
         exit(2);
     }
-    unsigned char *row = (unsigned char *)gmallocn(width, 4);
+    auto *row = static_cast<unsigned char *>(gmallocn(width, 4));
 
     for (int y = 0; y < height; y++) {
-        uint32_t *pixel = reinterpret_cast<uint32_t *>((data + y * stride));
+        auto *pixel = reinterpret_cast<uint32_t *>((data + y * stride));
         unsigned char *rowp = row;
         int bit = 7;
         for (int x = 0; x < width; x++, pixel++) {
@@ -506,15 +505,15 @@ static void getCropSize(double page_w, double page_h, double *width, double *hei
     int h = crop_h;
 
     if (w == 0) {
-        w = (int)ceil(page_w);
+        w = static_cast<int>(ceil(page_w));
     }
 
     if (h == 0) {
-        h = (int)ceil(page_h);
+        h = static_cast<int>(ceil(page_h));
     }
 
-    *width = (crop_x + w > page_w ? (int)ceil(page_w - crop_x) : w);
-    *height = (crop_y + h > page_h ? (int)ceil(page_h - crop_y) : h);
+    *width = (crop_x + w > page_w ? static_cast<int>(ceil(page_w - crop_x)) : w);
+    *height = (crop_y + h > page_h ? static_cast<int>(ceil(page_h - crop_y)) : h);
 }
 
 static void getOutputSize(double page_w, double page_h, double *width, double *height)
@@ -570,13 +569,12 @@ static void getFitToPageTransform(double page_w, double page_h, double paper_w, 
 
 static cairo_status_t writeStream(void *closure, const unsigned char *data, unsigned int length)
 {
-    FILE *file = (FILE *)closure;
+    FILE *file = static_cast<FILE *>(closure);
 
     if (fwrite(data, length, 1, file) == 1) {
         return CAIRO_STATUS_SUCCESS;
-    } else {
-        return CAIRO_STATUS_WRITE_ERROR;
     }
+    return CAIRO_STATUS_WRITE_ERROR;
 }
 
 static void beginDocument(GooString *inputFileName, GooString *outputFileName, double w, double h)
@@ -585,7 +583,7 @@ static void beginDocument(GooString *inputFileName, GooString *outputFileName, d
         if (printToWin32) {
             output_file = nullptr;
         } else {
-            if (outputFileName->cmp("fd://0") == 0) {
+            if (outputFileName->toStr() == "fd://0") {
 #if defined(_WIN32) || defined(__CYGWIN__)
                 _setmode(fileno(stdout), O_BINARY);
 #endif
@@ -623,16 +621,19 @@ static void beginDocument(GooString *inputFileName, GooString *outputFileName, d
 #ifdef CAIRO_HAS_SVG_SURFACE
             surface = cairo_svg_surface_create_for_stream(writeStream, output_file, w, h);
             cairo_svg_surface_restrict_to_version(surface, CAIRO_SVG_VERSION_1_2);
+            cairo_svg_surface_set_document_unit(surface, CAIRO_SVG_UNIT_PT);
 #endif
         }
 #ifdef CAIRO_HAS_WIN32_SURFACE
         if (printToWin32)
             surface = win32BeginDocument(inputFileName, outputFileName);
+#else
+        (void)inputFileName;
 #endif
     }
 }
 
-static void beginPage(double *w, double *h)
+static void beginPage(double *w, double *h) // NOLINT(readability-non-const-parameter) On the windows codepath can't be const
 {
     if (printing) {
         if (ps) {
@@ -810,15 +811,15 @@ static bool setPSPaperSize(char *size, int &psPaperWidth, int &psPaperHeight)
     return true;
 }
 
-static GooString *getImageFileName(GooString *outputFileName, int numDigits, int page)
+static std::unique_ptr<GooString> getImageFileName(const GooString *outputFileName, int numDigits, int page)
 {
     char buf[10];
-    GooString *imageName = new GooString(outputFileName);
+    std::unique_ptr<GooString> imageName = outputFileName->copy();
     if (!singleFile) {
         snprintf(buf, sizeof(buf), "-%0*d", numDigits, page);
         imageName->append(buf);
     }
-    if (outputFileName->cmp("fd://0") != 0) {
+    if (outputFileName->toStr() != "fd://0") {
         if (png) {
             imageName->append(".png");
         } else if (jpeg) {
@@ -833,32 +834,32 @@ static GooString *getImageFileName(GooString *outputFileName, int numDigits, int
 
 // If (printing || singleFile) the output file name includes the
 // extension. Otherwise it is the file name base.
-static GooString *getOutputFileName(GooString *fileName, GooString *outputName)
+static std::unique_ptr<GooString> getOutputFileName(GooString *fileName, GooString *outputName)
 {
-    GooString *name;
+    std::unique_ptr<GooString> name;
 
     if (outputName) {
-        if (outputName->cmp("-") == 0) {
+        if (outputName->toStr() == "-") {
             if (printToWin32 || (!printing && !singleFile)) {
                 fprintf(stderr, "Error: stdout may only be used with the ps, eps, pdf, svg output options or if -singlefile is used.\n");
                 exit(99);
             }
-            return new GooString("fd://0");
+            return std::make_unique<GooString>("fd://0");
         }
-        return new GooString(outputName);
+        return outputName->copy();
     }
 
     if (printToWin32) {
         return nullptr; // No output file means print to printer
     }
 
-    if (fileName->cmp("fd://0") == 0) {
+    if (fileName->toStr() == "fd://0") {
         fprintf(stderr, "Error: an output filename or '-' must be supplied when the PDF file is stdin.\n");
         exit(99);
     }
 
     // be careful not to overwrite the input file when the output format is PDF
-    if (pdf && fileName->cmpN("http://", 7) != 0 && fileName->cmpN("https://", 8) != 0) {
+    if (pdf && !fileName->starts_with("http://") && !fileName->starts_with("https://")) {
         fprintf(stderr, "Error: an output filename or '-' must be supplied when the output format is PDF and input PDF file is a local file.\n");
         exit(99);
     }
@@ -872,17 +873,15 @@ static GooString *getOutputFileName(GooString *fileName, GooString *outputName)
             fprintf(stderr, "Error: invalid output filename.\n");
             exit(99);
         }
-        name = new GooString(p);
+        name = std::make_unique<GooString>(p);
     } else {
-        name = new GooString(s);
+        name = std::make_unique<GooString>(s);
     }
 
     // remove .pdf extension
     p = strrchr(name->c_str(), '.');
     if (p && strcasecmp(p, ".pdf") == 0) {
-        GooString *name2 = new GooString(name->c_str(), name->getLength() - 4);
-        delete name;
-        name = name2;
+        name = std::make_unique<GooString>(name->c_str(), name->size() - 4);
     }
 
     // append new extension
@@ -919,8 +918,8 @@ int main(int argc, char *argv[])
 {
     GooString *fileName = nullptr;
     GooString *outputName = nullptr;
-    GooString *outputFileName = nullptr;
-    GooString *imageFileName = nullptr;
+    std::unique_ptr<GooString> outputFileName = nullptr;
+    std::unique_ptr<GooString> imageFileName = nullptr;
     std::optional<GooString> ownerPW, userPW;
     CairoOutputDev *cairoOut;
     int pg, pg_num_len;
@@ -947,9 +946,9 @@ int main(int argc, char *argv[])
         }
         if (printVersion || printHelp) {
             exit(0);
-        } else {
-            exit(99);
         }
+
+        exit(99);
     }
 
     num_outputs = (png ? 1 : 0) + (jpeg ? 1 : 0) + (tiff ? 1 : 0) + (ps ? 1 : 0) + (eps ? 1 : 0) + (pdf ? 1 : 0) + (printToWin32 ? 1 : 0) + (printdlg ? 1 : 0) + (svg ? 1 : 0);
@@ -961,11 +960,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Error: use only one of the output format options (-png, -jpeg, -ps, -eps, -pdf, -printdlg, -print, -svg).\n");
         exit(99);
     }
-    if (png || jpeg || tiff) {
-        printing = false;
-    } else {
-        printing = true;
-    }
+    printing = !(png || jpeg || tiff);
 
     if (printing) {
         checkInvalidPrintOption(mono, "-mono");
@@ -1000,7 +995,7 @@ int main(int argc, char *argv[])
         exit(99);
     }
 
-    if (antialias.getLength() > 0) {
+    if (!antialias.empty()) {
         if (!parseAntialiasOption()) {
             exit(99);
         }
@@ -1021,7 +1016,7 @@ int main(int argc, char *argv[])
         exit(99);
     }
 
-    if (jpegOpt.getLength() > 0) {
+    if (!jpegOpt.empty()) {
         if (!jpeg) {
             fprintf(stderr, "Error: -jpegopt may only be used with jpeg output.\n");
             exit(99);
@@ -1068,11 +1063,7 @@ int main(int argc, char *argv[])
             exit(99);
         }
     }
-    if (origPageSizes || paperWidth < 0 || paperHeight < 0) {
-        usePDFPageSize = true;
-    } else {
-        usePDFPageSize = false;
-    }
+    usePDFPageSize = origPageSizes || paperWidth < 0 || paperHeight < 0;
 
     if (printdlg) {
         printToWin32 = true;
@@ -1092,7 +1083,7 @@ int main(int argc, char *argv[])
     }
 
     fileName = new GooString(argv[1]);
-    if (fileName->cmp("-") == 0) {
+    if (fileName->toStr() == "-") {
         delete fileName;
         fileName = new GooString("fd://0");
     }
@@ -1104,7 +1095,7 @@ int main(int argc, char *argv[])
 
     outputFileName = getOutputFileName(fileName, outputName);
 
-#ifdef USE_CMS
+#if USE_CMS
     icc_data = nullptr;
     if (icc.c_str()[0]) {
         FILE *file = fopen(icc.c_str(), "rb");
@@ -1115,7 +1106,7 @@ int main(int argc, char *argv[])
         fseek(file, 0, SEEK_END);
         icc_data_size = ftell(file);
         fseek(file, 0, SEEK_SET);
-        icc_data = (unsigned char *)gmalloc(icc_data_size);
+        icc_data = static_cast<unsigned char *>(gmalloc(icc_data_size));
         if (fread(icc_data, icc_data_size, 1, file) != 1) {
             fprintf(stderr, "Error: unable to read icc profile %s\n", icc.c_str());
             exit(4);
@@ -1205,7 +1196,7 @@ int main(int argc, char *argv[])
     cairoOut = new CairoOutputDev();
     cairoOut->setLogicalStructure(docStruct);
 
-#ifdef USE_CMS
+#if USE_CMS
     cairoOut->setDisplayProfile(profile);
 #endif
     cairoOut->startDoc(doc.get());
@@ -1230,8 +1221,8 @@ int main(int argc, char *argv[])
 
         if (printing && pg == firstPage) {
             if (paperWidth < 0 || paperHeight < 0) {
-                paperWidth = (int)ceil(pg_w);
-                paperHeight = (int)ceil(pg_h);
+                paperWidth = static_cast<int>(ceil(pg_w));
+                paperHeight = static_cast<int>(ceil(pg_h));
             }
         }
 
@@ -1258,39 +1249,28 @@ int main(int argc, char *argv[])
             }
         }
         if (imageFileName) {
-            delete imageFileName;
-            imageFileName = nullptr;
+            imageFileName.reset();
         }
         if (!printing) {
-            imageFileName = getImageFileName(outputFileName, pg_num_len, pg);
+            imageFileName = getImageFileName(outputFileName.get(), pg_num_len, pg);
         }
         getOutputSize(pg_w, pg_h, &output_w, &output_h);
 
         if (pg == firstPage) {
-            beginDocument(fileName, outputFileName, output_w, output_h);
+            beginDocument(fileName, outputFileName.get(), output_w, output_h);
         }
         beginPage(&output_w, &output_h);
         renderPage(doc.get(), cairoOut, pg, pg_w, pg_h, output_w, output_h);
-        endPage(imageFileName, cairoOut, pg == lastPage);
+        endPage(imageFileName.get(), cairoOut, pg == lastPage);
     }
     endDocument();
 
     // clean up
     delete cairoOut;
-    if (fileName) {
-        delete fileName;
-    }
-    if (outputName) {
-        delete outputName;
-    }
-    if (outputFileName) {
-        delete outputFileName;
-    }
-    if (imageFileName) {
-        delete imageFileName;
-    }
+    delete fileName;
+    delete outputName;
 
-#ifdef USE_CMS
+#if USE_CMS
     if (icc_data) {
         gfree(icc_data);
     }

@@ -14,7 +14,7 @@
 // under GPL version 2 or later
 //
 // Copyright (C) 2005 Marco Pesenti Gritti <mpg@redhat.com>
-// Copyright (C) 2008, 2016-2019, 2021, 2023 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2008, 2016-2019, 2021, 2023, 2025, 2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2009 Nick Jones <nick.jones@network-box.com>
 // Copyright (C) 2016 Jason Crain <jason@aquaticape.us>
 // Copyright (C) 2017 Adrian Johnson <ajohnson@redneon.com>
@@ -22,7 +22,8 @@
 // Copyright (C) 2018 Adam Reichold <adam.reichold@t-online.de>
 // Copyright (C) 2019, 2020 Oliver Sander <oliver.sander@tu-dresden.de>
 // Copyright (C) 2021 RM <rm+git@arcsin.org>
-// Copyright (C) 2024 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2024-2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2026 Stefan Brüns <stefan.bruens@rwth-aachen.de>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -31,8 +32,6 @@
 
 #include <config.h>
 
-#include "goo/gmem.h"
-#include "goo/GooString.h"
 #include "PDFDoc.h"
 #include "XRef.h"
 #include "Link.h"
@@ -58,7 +57,7 @@ Outline::Outline(Object *outlineObjA, XRef *xrefA, PDFDoc *docA)
 Outline::~Outline()
 {
     if (items) {
-        for (auto entry : *items) {
+        for (auto *entry : *items) {
             delete entry;
         }
         delete items;
@@ -74,7 +73,7 @@ static void insertChildHelper(const std::string &itemTitle, int destPageNum, uns
         it = items.begin() + pos;
     }
 
-    Array *a = new Array(xref);
+    auto a = std::make_unique<Array>(xref);
     Ref *pageRef = doc->getCatalog()->getPageRef(destPageNum);
     if (pageRef != nullptr) {
         a->add(Object(*pageRef));
@@ -87,13 +86,12 @@ static void insertChildHelper(const std::string &itemTitle, int destPageNum, uns
         // alternately, could put 0, or omit it
         a->add(Object(destPageNum - 1));
     }
-    a->add(Object(objName, "Fit"));
+    a->add(Object::name("Fit"));
 
-    Object outlineItem = Object(new Dict(xref));
+    Object outlineItem = Object(std::make_unique<Dict>(xref));
 
-    GooString *g = new GooString(itemTitle);
-    outlineItem.dictSet("Title", Object(g));
-    outlineItem.dictSet("Dest", Object(a));
+    outlineItem.dictSet("Title", Object(std::string { itemTitle }));
+    outlineItem.dictSet("Dest", Object(std::move(a)));
     outlineItem.dictSet("Count", Object(1));
     outlineItem.dictAdd("Parent", Object(parentObjRef));
 
@@ -134,7 +132,7 @@ static void insertChildHelper(const std::string &itemTitle, int destPageNum, uns
         nextItemObject.dictSet("Prev", Object(outlineItemRef));
         xref->setModifiedObject(&nextItemObject, (*it)->getRef());
 
-        outlineItem.dictSet("Next", Object((*(it))->getRef()));
+        outlineItem.dictSet("Next", Object((*it)->getRef()));
 
         if (it != items.begin()) {
             prevItemObject = xref->fetch((*(it - 1))->getRef());
@@ -144,7 +142,7 @@ static void insertChildHelper(const std::string &itemTitle, int destPageNum, uns
         }
     }
 
-    OutlineItem *item = new OutlineItem(outlineItem.getDict(), outlineItemRef, nullptr, xref, doc);
+    auto *item = new OutlineItem(outlineItem.getDict(), outlineItemRef, nullptr, xref, doc);
 
     items.insert(it, item);
 }
@@ -192,15 +190,14 @@ static int recursiveRemoveList(Ref ref, XRef *xref)
     return count;
 }
 
-static void removeChildHelper(unsigned int pos, PDFDoc *doc, XRef *xref, std::vector<OutlineItem *> &items)
+static void removeChildHelper(unsigned int pos, XRef *xref, std::vector<OutlineItem *> &items)
 {
     std::vector<OutlineItem *>::const_iterator it;
     if (pos >= items.size()) {
         // position is out of range, do nothing
         return;
-    } else {
-        it = items.begin() + pos;
     }
+    it = items.begin() + pos;
 
     //  relink around this node
     Object itemObject = xref->fetch((*it)->getRef());
@@ -261,7 +258,7 @@ static void removeChildHelper(unsigned int pos, PDFDoc *doc, XRef *xref, std::ve
 
 void Outline::removeChild(unsigned int pos)
 {
-    removeChildHelper(pos, doc, xref, *items);
+    removeChildHelper(pos, xref, *items);
 }
 
 //------------------------------------------------------------------------
@@ -277,9 +274,9 @@ int Outline::addOutlineTreeNodeList(const std::vector<OutlineTreeNode> &nodeList
     int itemCount = 0;
     Ref prevNodeRef = Ref::INVALID();
 
-    for (auto &node : nodeList) {
+    for (const auto &node : nodeList) {
 
-        Array *a = new Array(doc->getXRef());
+        auto a = std::make_unique<Array>(doc->getXRef());
         Ref *pageRef = doc->getCatalog()->getPageRef(node.destPageNum);
         if (pageRef != nullptr) {
             a->add(Object(*pageRef));
@@ -292,9 +289,9 @@ int Outline::addOutlineTreeNodeList(const std::vector<OutlineTreeNode> &nodeList
             // alternately, could put 0, or omit it
             a->add(Object(node.destPageNum - 1));
         }
-        a->add(Object(objName, "Fit"));
+        a->add(Object::name("Fit"));
 
-        Object outlineItem = Object(new Dict(doc->getXRef()));
+        Object outlineItem = Object(std::make_unique<Dict>(doc->getXRef()));
         Ref outlineItemRef = doc->getXRef()->addIndirectObject(outlineItem);
 
         if (firstRef == Ref::INVALID()) {
@@ -302,9 +299,8 @@ int Outline::addOutlineTreeNodeList(const std::vector<OutlineTreeNode> &nodeList
         }
         lastRef = outlineItemRef;
 
-        GooString *g = new GooString(node.title);
-        outlineItem.dictSet("Title", Object(g));
-        outlineItem.dictSet("Dest", Object(a));
+        outlineItem.dictSet("Title", Object(std::string { node.title }));
+        outlineItem.dictSet("Dest", Object(std::move(a)));
         itemCount++;
 
         if (prevNodeRef != Ref::INVALID()) {
@@ -383,7 +379,7 @@ void Outline::setOutline(const std::vector<OutlineTreeNode> &nodeList)
     // reload the outline object from the xrefs
 
     if (items) {
-        for (auto entry : *items) {
+        for (auto *entry : *items) {
             delete entry;
         }
         delete items;
@@ -412,8 +408,18 @@ OutlineItem::OutlineItem(const Dict *dict, Ref refA, OutlineItem *parentA, XRef 
 
     obj1 = dict->lookup("Title");
     if (obj1.isString()) {
-        const GooString *s = obj1.getString();
-        title = TextStringToUCS4(s->toStr());
+        const std::string &s = obj1.getString();
+        title = TextStringToUCS4(s);
+        // All downstream users treats empty titles
+        // as this item (and children) doesn't exist
+        // but there exists documents in the wild
+        // where outline is empty.
+        // In order to don't break downstreams, do
+        // replace it with a zero width space.
+        if (title.empty()) {
+            static const std::vector<Unicode> zeroWidthSpace { 0x200B };
+            title = UTF16toUCS4(zeroWidthSpace);
+        }
     }
 
     obj1 = dict->lookup("Dest");
@@ -438,7 +444,7 @@ OutlineItem::OutlineItem(const Dict *dict, Ref refA, OutlineItem *parentA, XRef 
 OutlineItem::~OutlineItem()
 {
     if (kids) {
-        for (auto entry : *kids) {
+        for (auto *entry : *kids) {
             delete entry;
         }
         delete kids;
@@ -448,11 +454,9 @@ OutlineItem::~OutlineItem()
 
 std::vector<OutlineItem *> *OutlineItem::readItemList(OutlineItem *parent, const Object *firstItemRef, XRef *xrefA, PDFDoc *docA)
 {
-    auto items = new std::vector<OutlineItem *>();
+    auto *items = new std::vector<OutlineItem *>();
 
-    // could be a hash (unordered_map) too for better avg case check
-    // small number of objects expected, likely doesn't matter
-    std::set<Ref> alreadyRead;
+    RefRecursionChecker alreadyRead;
 
     OutlineItem *parentO = parent;
     while (parentO) {
@@ -461,13 +465,12 @@ std::vector<OutlineItem *> *OutlineItem::readItemList(OutlineItem *parent, const
     }
 
     Object tempObj = firstItemRef->copy();
-    while (tempObj.isRef() && (tempObj.getRefNum() >= 0) && (tempObj.getRefNum() < xrefA->getNumObjects()) && alreadyRead.find(tempObj.getRef()) == alreadyRead.end()) {
+    while (tempObj.isRef() && (tempObj.getRefNum() >= 0) && (tempObj.getRefNum() < xrefA->getNumObjects()) && alreadyRead.insert(tempObj.getRef())) {
         Object obj = tempObj.fetch(xrefA);
         if (!obj.isDict()) {
             break;
         }
-        alreadyRead.insert(tempObj.getRef());
-        OutlineItem *item = new OutlineItem(obj.getDict(), tempObj.getRef(), parent, xrefA, docA);
+        auto *item = new OutlineItem(obj.getDict(), tempObj.getRef(), parent, xrefA, docA);
         items->push_back(item);
         tempObj = obj.dictLookupNF("Next").copy();
     }
@@ -490,9 +493,8 @@ void OutlineItem::open()
 void OutlineItem::setTitle(const std::string &titleA)
 {
     Object dict = xref->fetch(ref);
-    GooString *g = new GooString(titleA);
-    title = TextStringToUCS4(g->toStr());
-    dict.dictSet("Title", Object(g));
+    title = TextStringToUCS4(titleA);
+    dict.dictSet("Title", Object(std::string { titleA }));
     xref->setModifiedObject(&dict, ref);
 }
 
@@ -506,13 +508,14 @@ bool OutlineItem::setPageDest(int i)
     }
 
     obj1 = dict.dictLookup("Dest");
-    if (!obj1.isNull()) {
-        int arrayLength = obj1.arrayGetLength();
+    if (obj1.isArray()) {
+        Array *array = obj1.getArray();
+        const int arrayLength = array->getLength();
         for (int index = 0; index < arrayLength; index++) {
-            obj1.arrayRemove(0);
+            array->remove(0);
         }
-        obj1.arrayAdd(Object(i - 1));
-        obj1.arrayAdd(Object(objName, "Fit"));
+        array->add(Object(i - 1));
+        array->add(Object::name("Fit"));
 
         // unique_ptr will destroy previous on assignment
         action = LinkAction::parseDest(&obj1);
@@ -538,7 +541,7 @@ void OutlineItem::insertChild(const std::string &itemTitle, int destPageNum, uns
 void OutlineItem::removeChild(unsigned int pos)
 {
     open();
-    removeChildHelper(pos, doc, xref, *kids);
+    removeChildHelper(pos, xref, *kids);
 }
 
 void OutlineItem::setStartsOpen(bool value)
@@ -568,7 +571,6 @@ const std::vector<OutlineItem *> *OutlineItem::getKids()
 
     if (!kids || kids->empty()) {
         return nullptr;
-    } else {
-        return kids;
     }
+    return kids;
 }

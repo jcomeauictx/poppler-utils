@@ -1,7 +1,7 @@
 /* poppler-document.cc: qt interface to poppler
  * Copyright (C) 2005, Net Integration Technologies, Inc.
  * Copyright (C) 2005, 2008, Brad Hards <bradh@frogmouth.net>
- * Copyright (C) 2005-2010, 2012, 2013, 2015, 2017-2022, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2005-2010, 2012, 2013, 2015, 2017-2022, 2025, 2026 Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2006-2010, Pino Toscano <pino@kde.org>
  * Copyright (C) 2010, 2011 Hib Eris <hib@hiberis.nl>
  * Copyright (C) 2012 Koji Otani <sho@bbr.jp>
@@ -21,6 +21,9 @@
  * Copyright (C) 2021 Mahmoud Khalil <mahmoudkhalil11@gmail.com>
  * Copyright (C) 2021 Hubert Figuiere <hub@figuiere.net>
  * Copyright (C) 2024 Pratham Gandhi <ppg.1382@gmail.com>
+ * Copyright (C) 2024 Stefan Brüns <stefan.bruens@rwth-aachen.de>
+ * Copyright (C) 2025, 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+ * Copyright (C) 2025 Arnav V <arnav0872@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -42,7 +45,9 @@
 #include <config.h>
 #include <poppler-config.h>
 #include <ErrorCodes.h>
+#include <Form.h>
 #include <GlobalParams.h>
+#include <OptionalContent.h>
 #include <Outline.h>
 #include <PDFDoc.h>
 #include <Stream.h>
@@ -54,6 +59,7 @@
 #include <QtCore/QDebug>
 #include <QtCore/QFile>
 #include <QtCore/QByteArray>
+#include <QTimeZone>
 
 #include "poppler-form.h"
 #include "poppler-private.h"
@@ -61,7 +67,7 @@
 #include "poppler-page-private.h"
 #include "poppler-outline-private.h"
 
-#if defined(USE_CMS)
+#if USE_CMS
 #    include <lcms2.h>
 #endif
 
@@ -69,20 +75,20 @@ namespace Poppler {
 
 std::unique_ptr<Document> Document::load(const QString &filePath, const QByteArray &ownerPassword, const QByteArray &userPassword)
 {
-    DocumentData *doc = new DocumentData(filePath, GooString(ownerPassword.data()), GooString(userPassword.data()));
+    auto *doc = new DocumentData(filePath, GooString(ownerPassword.data()), GooString(userPassword.data()));
     return DocumentData::checkDocument(doc);
 }
 
 std::unique_ptr<Document> Document::load(QIODevice *device, const QByteArray &ownerPassword, const QByteArray &userPassword)
 {
-    DocumentData *doc = new DocumentData(device, GooString(ownerPassword.data()), GooString(userPassword.data()));
+    auto *doc = new DocumentData(device, GooString(ownerPassword.data()), GooString(userPassword.data()));
     return DocumentData::checkDocument(doc);
 }
 
 std::unique_ptr<Document> Document::loadFromData(const QByteArray &fileContents, const QByteArray &ownerPassword, const QByteArray &userPassword)
 {
     // create stream
-    DocumentData *doc = new DocumentData(fileContents, GooString(ownerPassword.data()), GooString(userPassword.data()));
+    auto *doc = new DocumentData(fileContents, GooString(ownerPassword.data()), GooString(userPassword.data()));
     return DocumentData::checkDocument(doc);
 }
 
@@ -97,9 +103,9 @@ std::unique_ptr<Document> DocumentData::checkDocument(DocumentData *doc)
             pdoc->m_doc->fillMembers();
         }
         return pdoc;
-    } else {
-        delete doc;
     }
+    delete doc;
+
     return nullptr;
 }
 
@@ -241,19 +247,20 @@ QByteArray Document::fontData(const FontInfo &fi) const
 {
     QByteArray result;
     if (fi.isEmbedded()) {
-        XRef *xref = m_doc->doc->getXRef()->copy();
+        const std::unique_ptr<XRef> xref = m_doc->doc->getXRef()->copy();
 
         Object refObj(fi.m_data->embRef);
-        Object strObj = refObj.fetch(xref);
+        Object strObj = refObj.fetch(xref.get());
         if (strObj.isStream()) {
-            int c;
-            strObj.streamReset();
-            while ((c = strObj.streamGetChar()) != EOF) {
-                result.append((char)c);
+            Stream *stream = strObj.getStream();
+            if (stream->rewind()) {
+                int c;
+                while ((c = stream->getChar()) != EOF) {
+                    result.append(static_cast<char>(c));
+                }
+                stream->close();
             }
-            strObj.streamClose();
         }
-        delete xref;
     }
     return result;
 }
@@ -264,8 +271,8 @@ QString Document::info(const QString &type) const
         return QString();
     }
 
-    std::unique_ptr<GooString> goo(m_doc->doc->getDocInfoStringEntry(type.toLatin1().constData()));
-    return UnicodeParsedString(goo.get());
+    std::optional<std::string> goo(m_doc->doc->getDocInfoStringEntry(type.toStdString()));
+    return goo ? UnicodeParsedString(goo.value()) : QString {};
 }
 
 bool Document::setInfo(const QString &key, const QString &val)
@@ -274,8 +281,8 @@ bool Document::setInfo(const QString &key, const QString &val)
         return false;
     }
 
-    GooString *goo = QStringToUnicodeGooString(val);
-    m_doc->doc->setDocInfoStringEntry(key.toLatin1().constData(), goo);
+    std::unique_ptr<GooString> goo = QStringToUnicodeGooString(val);
+    m_doc->doc->setDocInfoStringEntry(key.toLatin1().constData(), std::move(goo));
     return true;
 }
 
@@ -285,8 +292,8 @@ QString Document::title() const
         return QString();
     }
 
-    std::unique_ptr<GooString> goo(m_doc->doc->getDocInfoTitle());
-    return UnicodeParsedString(goo.get());
+    std::optional<std::string> goo(m_doc->doc->getDocInfoTitle());
+    return goo ? UnicodeParsedString(goo.value()) : QString {};
 }
 
 bool Document::setTitle(const QString &val)
@@ -305,8 +312,8 @@ QString Document::author() const
         return QString();
     }
 
-    std::unique_ptr<GooString> goo(m_doc->doc->getDocInfoAuthor());
-    return UnicodeParsedString(goo.get());
+    std::optional<std::string> goo(m_doc->doc->getDocInfoAuthor());
+    return goo ? UnicodeParsedString(goo.value()) : QString {};
 }
 
 bool Document::setAuthor(const QString &val)
@@ -325,8 +332,8 @@ QString Document::subject() const
         return QString();
     }
 
-    std::unique_ptr<GooString> goo(m_doc->doc->getDocInfoSubject());
-    return UnicodeParsedString(goo.get());
+    std::optional<std::string> goo(m_doc->doc->getDocInfoSubject());
+    return goo ? UnicodeParsedString(goo.value()) : QString {};
 }
 
 bool Document::setSubject(const QString &val)
@@ -345,8 +352,8 @@ QString Document::keywords() const
         return QString();
     }
 
-    std::unique_ptr<GooString> goo(m_doc->doc->getDocInfoKeywords());
-    return UnicodeParsedString(goo.get());
+    std::optional<std::string> goo(m_doc->doc->getDocInfoKeywords());
+    return goo ? UnicodeParsedString(goo.value()) : QString {};
 }
 
 bool Document::setKeywords(const QString &val)
@@ -365,8 +372,8 @@ QString Document::creator() const
         return QString();
     }
 
-    std::unique_ptr<GooString> goo(m_doc->doc->getDocInfoCreator());
-    return UnicodeParsedString(goo.get());
+    std::optional<std::string> goo(m_doc->doc->getDocInfoCreator());
+    return goo ? UnicodeParsedString(goo.value()) : QString {};
 }
 
 bool Document::setCreator(const QString &val)
@@ -385,8 +392,8 @@ QString Document::producer() const
         return QString();
     }
 
-    std::unique_ptr<GooString> goo(m_doc->doc->getDocInfoProducer());
-    return UnicodeParsedString(goo.get());
+    std::optional<std::string> goo(m_doc->doc->getDocInfoProducer());
+    return goo ? UnicodeParsedString(goo.value()) : QString {};
 }
 
 bool Document::setProducer(const QString &val)
@@ -417,7 +424,7 @@ QStringList Document::infoKeys() const
         return QStringList();
     }
 
-    QScopedPointer<XRef> xref(m_doc->doc->getXRef()->copy());
+    const std::unique_ptr<XRef> xref = m_doc->doc->getXRef()->copy();
     if (!xref) {
         return QStringList();
     }
@@ -442,8 +449,8 @@ QDateTime Document::date(const QString &type) const
         return QDateTime();
     }
 
-    std::unique_ptr<GooString> goo(m_doc->doc->getDocInfoStringEntry(type.toLatin1().constData()));
-    QString str = UnicodeParsedString(goo.get());
+    std::optional<std::string> goo(m_doc->doc->getDocInfoStringEntry(type.toStdString()));
+    QString str = goo ? UnicodeParsedString(goo.value()) : QString();
     return Poppler::convertDate(str.toLatin1().constData());
 }
 
@@ -463,8 +470,8 @@ QDateTime Document::creationDate() const
         return QDateTime();
     }
 
-    std::unique_ptr<GooString> goo(m_doc->doc->getDocInfoCreatDate());
-    QString str = UnicodeParsedString(goo.get());
+    std::optional<std::string> goo(m_doc->doc->getDocInfoCreatDate());
+    QString str = goo ? UnicodeParsedString(goo.value()) : QString {};
     return Poppler::convertDate(str.toLatin1().constData());
 }
 
@@ -484,8 +491,8 @@ QDateTime Document::modificationDate() const
         return QDateTime();
     }
 
-    std::unique_ptr<GooString> goo(m_doc->doc->getDocInfoModDate());
-    QString str = UnicodeParsedString(goo.get());
+    std::optional<std::string> goo(m_doc->doc->getDocInfoModDate());
+    QString str = goo.has_value() ? UnicodeParsedString(goo.value()) : QString {};
     return Poppler::convertDate(str.toLatin1().constData());
 }
 
@@ -556,17 +563,17 @@ bool Document::okToAssemble() const
 
 Document::PdfVersion Document::getPdfVersion() const
 {
-    return PdfVersion { m_doc->doc->getPDFMajorVersion(), m_doc->doc->getPDFMinorVersion() };
+    return PdfVersion { .major = m_doc->doc->getPDFMajorVersion(), .minor = m_doc->doc->getPDFMinorVersion() };
 }
 
 std::unique_ptr<Page> Document::page(const QString &label) const
 {
-    GooString label_g(label.toLatin1().data());
+    const GooString label_g(label.toLatin1().data());
     int index;
 
-    if (!m_doc->doc->getCatalog()->labelToIndex(&label_g, &index)) {
-        std::unique_ptr<GooString> label_ug(QStringToUnicodeGooString(label));
-        if (!m_doc->doc->getCatalog()->labelToIndex(label_ug.get(), &index)) {
+    if (!m_doc->doc->getCatalog()->labelToIndex(label_g.toStr(), &index)) {
+        const std::unique_ptr<GooString> label_ug(QStringToUnicodeGooString(label));
+        if (!m_doc->doc->getCatalog()->labelToIndex(label_ug->toStr(), &index)) {
             return nullptr;
         }
     }
@@ -585,8 +592,8 @@ QVector<OutlineItem> Document::outline() const
 
     if (::Outline *outline = m_doc->doc->getOutline()) {
         if (const std::vector<::OutlineItem *> *items = outline->getItems()) {
-            for (void *item : *items) {
-                result.push_back(OutlineItem { new OutlineItemData { static_cast<::OutlineItem *>(item), m_doc } });
+            for (::OutlineItem *item : *items) {
+                result.push_back(OutlineItem { new OutlineItemData { item, m_doc } });
             }
         }
     }
@@ -596,10 +603,9 @@ QVector<OutlineItem> Document::outline() const
 
 std::unique_ptr<LinkDestination> Document::linkDestination(const QString &name)
 {
-    GooString *namedDest = QStringToGooString(name);
-    LinkDestinationData ldd(nullptr, namedDest, m_doc, false);
+    const std::unique_ptr<GooString> namedDest = QStringToGooString(name);
+    LinkDestinationData ldd(nullptr, namedDest.get(), m_doc, false);
     auto ld = std::make_unique<LinkDestination>(ldd);
-    delete namedDest;
     return ld;
 }
 
@@ -610,7 +616,7 @@ void Document::setPaperColor(const QColor &color)
 
 void Document::setColorDisplayProfile(void *outputProfileA)
 {
-#if defined(USE_CMS)
+#if USE_CMS
     if (m_doc->m_sRGBProfile && m_doc->m_sRGBProfile.get() == outputProfileA) {
         // Catch the special case that the user passes the sRGB profile
         m_doc->m_displayProfile = m_doc->m_sRGBProfile;
@@ -628,7 +634,7 @@ void Document::setColorDisplayProfile(void *outputProfileA)
 
 void Document::setColorDisplayProfileName(const QString &name)
 {
-#if defined(USE_CMS)
+#if USE_CMS
     void *rawprofile = cmsOpenProfileFromFile(name.toLocal8Bit().constData(), "r");
     m_doc->m_displayProfile = make_GfxLCMSProfilePtr(rawprofile);
 #else
@@ -638,7 +644,7 @@ void Document::setColorDisplayProfileName(const QString &name)
 
 void *Document::colorRgbProfile() const
 {
-#if defined(USE_CMS)
+#if USE_CMS
     if (!m_doc->m_sRGBProfile) {
         m_doc->m_sRGBProfile = make_GfxLCMSProfilePtr(cmsCreate_sRGBProfile());
     }
@@ -650,7 +656,7 @@ void *Document::colorRgbProfile() const
 
 void *Document::colorDisplayProfile() const
 {
-#if defined(USE_CMS)
+#if USE_CMS
     return m_doc->m_displayProfile.get();
 #else
     return nullptr;
@@ -690,7 +696,7 @@ void Document::setRenderHint(Document::RenderHint hint, bool on)
 
     int hintForOperation = hint;
     if (touchesOverprinting && !isOverprintPreviewAvailable()) {
-        hintForOperation = hintForOperation & ~(int)Document::OverprintPreview;
+        hintForOperation = hintForOperation & ~static_cast<int>(Document::OverprintPreview);
     }
 
     if (on) {
@@ -722,9 +728,9 @@ QString Document::metadata() const
     QString result;
     Catalog *catalog = m_doc->doc->getCatalog();
     if (catalog && catalog->isOk()) {
-        std::unique_ptr<GooString> s = catalog->readMetadata();
+        std::optional<std::string> s = catalog->readMetadata();
         if (s) {
-            result = UnicodeParsedString(s.get());
+            result = UnicodeParsedString(s.value());
         }
     }
     return result;
@@ -740,7 +746,7 @@ OptContentModel *Document::optionalContentModel()
     if (m_doc->m_optContentModel.isNull()) {
         m_doc->m_optContentModel = new OptContentModel(m_doc->doc->getOptContentConfig(), nullptr);
     }
-    return (OptContentModel *)m_doc->m_optContentModel;
+    return m_doc->m_optContentModel.get();
 }
 
 void Document::applyResetFormsLink(const LinkResetForm &link)
@@ -767,10 +773,9 @@ QStringList Document::scripts() const
     const int numScripts = catalog->numJS();
     QStringList scripts;
     for (int i = 0; i < numScripts; ++i) {
-        GooString *s = catalog->getJS(i);
-        if (s) {
+        std::string s = catalog->getJS(i);
+        if (!s.empty()) {
             scripts.append(UnicodeParsedString(s));
-            delete s;
         }
     }
     return scripts;
@@ -888,27 +893,27 @@ QDateTime convertDate(const char *dateString)
     int year, mon, day, hour, min, sec, tzHours, tzMins;
     char tz;
 
-    GooString date(dateString);
-    if (parseDateString(&date, &year, &mon, &day, &hour, &min, &sec, &tz, &tzHours, &tzMins)) {
+    std::string date(dateString);
+    if (parseDateString(date, &year, &mon, &day, &hour, &min, &sec, &tz, &tzHours, &tzMins)) {
         QDate d(year, mon, day);
         QTime t(hour, min, sec);
         if (d.isValid() && t.isValid()) {
-            QDateTime dt(d, t, Qt::UTC);
+            int tzSecs = 0;
             if (tz) {
                 // then we have some form of timezone
                 if ('Z' == tz) {
                     // We are already at UTC
                 } else if ('+' == tz) {
                     // local time is ahead of UTC
-                    dt = dt.addSecs(-1 * ((tzHours * 60) + tzMins) * 60);
+                    tzSecs = (tzHours * 3600) + (tzMins * 60);
                 } else if ('-' == tz) {
                     // local time is behind UTC
-                    dt = dt.addSecs(((tzHours * 60) + tzMins) * 60);
+                    tzSecs = (tzHours * -3600) + (tzMins * -60);
                 } else {
                     qWarning("unexpected tz val");
                 }
             }
-            return dt;
+            return QDateTime(d, t, QTimeZone(tzSecs));
         }
     }
     return QDateTime();
@@ -916,7 +921,7 @@ QDateTime convertDate(const char *dateString)
 
 bool isCmsAvailable()
 {
-#if defined(USE_CMS)
+#if USE_CMS
     return true;
 #else
     return false;

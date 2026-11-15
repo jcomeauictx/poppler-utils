@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008, 2019, 2021, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2008, 2019, 2021, 2024, 2025, Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2017, Adrian Johnson <ajohnson@redneon.com>
  * Copyright (C) 2018, Adam Reichold <adam.reichold@t-online.de>
  * Copyright (C) 2019, Oliver Sander <oliver.sander@tu-dresden.de>
@@ -24,13 +24,12 @@
 #include "printencodings.h"
 
 #include "GlobalParams.h"
-#include "goo/GooString.h"
 
 void printEncodings()
 {
     std::vector<std::string> encNames = globalParams->getEncodingNames();
 
-    std::sort(encNames.begin(), encNames.end());
+    std::ranges::sort(encNames);
 
     printf("Available encodings are:\n");
     for (const std::string &enc : encNames) {

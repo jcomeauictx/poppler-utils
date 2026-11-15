@@ -14,7 +14,7 @@
 // under GPL version 2 or later
 //
 // Copyright (C) 2005, 2006, 2008 Brad Hards <bradh@frogmouth.net>
-// Copyright (C) 2005, 2009, 2014, 2015, 2017-2022 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2005, 2009, 2014, 2015, 2017-2022, 2024-2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2008 Julien Rebetez <julienr@svn.gnome.org>
 // Copyright (C) 2008 Pino Toscano <pino@kde.org>
 // Copyright (C) 2008 Carlos Garcia Campos <carlosgc@gnome.org>
@@ -39,8 +39,10 @@
 // Copyright (C) 2021 Marek Kasik <mkasik@redhat.com>
 // Copyright (C) 2022 Felix Jung <fxjung@posteo.de>
 // Copyright (C) 2022 crt <chluo@cse.cuhk.edu.hk>
-// Copyright (C) 2023, 2024 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2023-2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
 // Copyright (C) 2024 Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>. Work sponsored by Technische Universität Dresden
+// Copyright (C) 2025 Jonathan Hähne <jonathan.haehne@hotmail.com>
+// Copyright (C) 2026 Sune Stolborg Vuorela <sune@vuorela.dk>, work sponsored by the Direction Interministérielle du Numérique
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -51,23 +53,22 @@
 #define PDFDOC_H
 
 #include <algorithm>
-#include <cstdio>
 #include <mutex>
 
 #include "CryptoSignBackend.h"
-#include "poppler-config.h"
 
 #include "poppler_private_export.h"
 
 #include "XRef.h"
 #include "Catalog.h"
 #include "Page.h"
-#include "Annot.h"
 #include "ErrorCodes.h"
-#include "Form.h"
-#include "OptionalContent.h"
 #include "Stream.h"
 
+class AnnotColor;
+class AnnotWidget;
+class FormFieldSignature;
+class FormWidget;
 class GooString;
 class GooFile;
 class BaseStream;
@@ -133,14 +134,13 @@ enum PDFSubtypeConformance
 class POPPLER_PRIVATE_EXPORT PDFDoc
 {
 public:
-    explicit PDFDoc(std::unique_ptr<GooString> &&fileNameA, const std::optional<GooString> &ownerPassword = {}, const std::optional<GooString> &userPassword = {}, void *guiDataA = nullptr,
-                    const std::function<void()> &xrefReconstructedCallback = {});
+    explicit PDFDoc(std::unique_ptr<GooString> &&fileNameA, const std::optional<GooString> &ownerPassword = {}, const std::optional<GooString> &userPassword = {}, const std::function<void()> &xrefReconstructedCallback = {});
 
 #ifdef _WIN32
-    PDFDoc(wchar_t *fileNameA, int fileNameLen, const std::optional<GooString> &ownerPassword = {}, const std::optional<GooString> &userPassword = {}, void *guiDataA = nullptr, const std::function<void()> &xrefReconstructedCallback = {});
+    PDFDoc(wchar_t *fileNameA, int fileNameLen, const std::optional<GooString> &ownerPassword = {}, const std::optional<GooString> &userPassword = {}, const std::function<void()> &xrefReconstructedCallback = {});
 #endif
 
-    explicit PDFDoc(BaseStream *strA, const std::optional<GooString> &ownerPassword = {}, const std::optional<GooString> &userPassword = {}, void *guiDataA = nullptr, const std::function<void()> &xrefReconstructedCallback = {});
+    explicit PDFDoc(std::unique_ptr<BaseStream> strA, const std::optional<GooString> &ownerPassword = {}, const std::optional<GooString> &userPassword = {}, const std::function<void()> &xrefReconstructedCallback = {});
     ~PDFDoc();
 
     PDFDoc(const PDFDoc &) = delete;
@@ -161,7 +161,7 @@ public:
     // Get file name.
     const GooString *getFileName() const { return fileName.get(); }
 #ifdef _WIN32
-    wchar_t *getFileNameU() { return fileNameU; }
+    std::wstring getFileNameU() { return fileNameU; }
 #endif
 
     // Get the linearization table.
@@ -175,10 +175,10 @@ public:
     Catalog *getCatalog() const { return catalog; }
 
     // Get optional content configuration
-    OCGs *getOptContentConfig() const { return catalog->getOptContentConfig(); }
+    const OCGs *getOptContentConfig() const { return catalog->getOptContentConfig(); }
 
     // Get base stream.
-    BaseStream *getBaseStream() const { return str; }
+    BaseStream *getBaseStream() const { return str.get(); }
 
     // Get page parameters.
     double getPageMediaWidth(int page) { return getPage(page) ? getPage(page)->getMediaWidth() : 0.0; }
@@ -192,12 +192,12 @@ public:
 
     // Return the contents of the metadata stream, or nullptr if there is
     // no metadata.
-    std::unique_ptr<GooString> readMetadata() const { return catalog->readMetadata(); }
+    std::optional<std::string> readMetadata() const { return catalog->readMetadata(); }
 
     // Return the structure tree root object.
     const StructTreeRoot *getStructTreeRoot() const { return catalog->getStructTreeRoot(); }
 
-    // Get page.
+    // Get page. First page is page 1.
     Page *getPage(int page);
 
     // Display a page.
@@ -257,32 +257,31 @@ public:
 
     // Set doc info string entry. nullptr or empty value will cause a removal.
     // Takes ownership of value.
-    void setDocInfoStringEntry(const char *key, GooString *value);
+    void setDocInfoStringEntry(const char *key, std::unique_ptr<GooString> value);
 
     // Set document's properties in document's Info dictionary.
     // nullptr or empty value will cause a removal.
-    // Takes ownership of value.
-    void setDocInfoTitle(GooString *title) { setDocInfoStringEntry("Title", title); }
-    void setDocInfoAuthor(GooString *author) { setDocInfoStringEntry("Author", author); }
-    void setDocInfoSubject(GooString *subject) { setDocInfoStringEntry("Subject", subject); }
-    void setDocInfoKeywords(GooString *keywords) { setDocInfoStringEntry("Keywords", keywords); }
-    void setDocInfoCreator(GooString *creator) { setDocInfoStringEntry("Creator", creator); }
-    void setDocInfoProducer(GooString *producer) { setDocInfoStringEntry("Producer", producer); }
-    void setDocInfoCreatDate(GooString *creatDate) { setDocInfoStringEntry("CreationDate", creatDate); }
-    void setDocInfoModDate(GooString *modDate) { setDocInfoStringEntry("ModDate", modDate); }
+    void setDocInfoTitle(std::unique_ptr<GooString> title) { setDocInfoStringEntry("Title", std::move(title)); }
+    void setDocInfoAuthor(std::unique_ptr<GooString> author) { setDocInfoStringEntry("Author", std::move(author)); }
+    void setDocInfoSubject(std::unique_ptr<GooString> subject) { setDocInfoStringEntry("Subject", std::move(subject)); }
+    void setDocInfoKeywords(std::unique_ptr<GooString> keywords) { setDocInfoStringEntry("Keywords", std::move(keywords)); }
+    void setDocInfoCreator(std::unique_ptr<GooString> creator) { setDocInfoStringEntry("Creator", std::move(creator)); }
+    void setDocInfoProducer(std::unique_ptr<GooString> producer) { setDocInfoStringEntry("Producer", std::move(producer)); }
+    void setDocInfoCreatDate(std::unique_ptr<GooString> creatDate) { setDocInfoStringEntry("CreationDate", std::move(creatDate)); }
+    void setDocInfoModDate(std::unique_ptr<GooString> modDate) { setDocInfoStringEntry("ModDate", std::move(modDate)); }
 
     // Get document's properties from document's Info dictionary.
     // Returns nullptr on fail.
-    std::unique_ptr<GooString> getDocInfoStringEntry(const char *key);
+    std::optional<std::string> getDocInfoStringEntry(std::string_view key);
 
-    std::unique_ptr<GooString> getDocInfoTitle() { return getDocInfoStringEntry("Title"); }
-    std::unique_ptr<GooString> getDocInfoAuthor() { return getDocInfoStringEntry("Author"); }
-    std::unique_ptr<GooString> getDocInfoSubject() { return getDocInfoStringEntry("Subject"); }
-    std::unique_ptr<GooString> getDocInfoKeywords() { return getDocInfoStringEntry("Keywords"); }
-    std::unique_ptr<GooString> getDocInfoCreator() { return getDocInfoStringEntry("Creator"); }
-    std::unique_ptr<GooString> getDocInfoProducer() { return getDocInfoStringEntry("Producer"); }
-    std::unique_ptr<GooString> getDocInfoCreatDate() { return getDocInfoStringEntry("CreationDate"); }
-    std::unique_ptr<GooString> getDocInfoModDate() { return getDocInfoStringEntry("ModDate"); }
+    std::optional<std::string> getDocInfoTitle() { return getDocInfoStringEntry("Title"); }
+    std::optional<std::string> getDocInfoAuthor() { return getDocInfoStringEntry("Author"); }
+    std::optional<std::string> getDocInfoSubject() { return getDocInfoStringEntry("Subject"); }
+    std::optional<std::string> getDocInfoKeywords() { return getDocInfoStringEntry("Keywords"); }
+    std::optional<std::string> getDocInfoCreator() { return getDocInfoStringEntry("Creator"); }
+    std::optional<std::string> getDocInfoProducer() { return getDocInfoStringEntry("Producer"); }
+    std::optional<std::string> getDocInfoCreatDate() { return getDocInfoStringEntry("CreationDate"); }
+    std::optional<std::string> getDocInfoModDate() { return getDocInfoStringEntry("ModDate"); }
 
     // Return the PDF subtype, part, and conformance
     PDFSubtype getPDFSubtype() const { return pdfSubtype; }
@@ -296,39 +295,37 @@ public:
         const int catalogMajorVersion = catalog->getPDFMajorVersion();
         if (catalogMajorVersion > headerPdfMajorVersion) {
             return catalog->getPDFMinorVersion();
-        } else if (headerPdfMajorVersion > catalogMajorVersion) {
-            return headerPdfMinorVersion;
-        } else {
-            return std::max(headerPdfMinorVersion, catalog->getPDFMinorVersion());
         }
+        if (headerPdfMajorVersion > catalogMajorVersion) {
+            return headerPdfMinorVersion;
+        }
+        return std::max(headerPdfMinorVersion, catalog->getPDFMinorVersion());
     }
 
     // Return the PDF ID in the trailer dictionary (if any).
     bool getID(GooString *permanent_id, GooString *update_id) const;
 
     // Save one page with another name.
-    int savePageAs(const GooString &name, int pageNo);
+    int savePageAs(const std::string &name, int pageNo);
     // Save this file with another name.
-    int saveAs(const GooString &name, PDFWriteMode mode = writeStandard);
+    int saveAs(const std::string &name, PDFWriteMode mode = writeStandard);
     // Save this file in the given output stream.
     int saveAs(OutStream *outStr, PDFWriteMode mode = writeStandard);
     // Save this file with another name without saving changes
-    int saveWithoutChangesAs(const GooString &name);
+    int saveWithoutChangesAs(const std::string &name);
     // Save this file in the given output stream without saving changes
     int saveWithoutChangesAs(OutStream *outStr);
 
-    // Return a pointer to the GUI (XPDFCore or WinPDFCore object).
-    void *getGUIData() { return guiData; }
-
     // rewrite pageDict with MediaBox, CropBox and new page CTM
-    bool replacePageDict(int pageNo, int rotate, const PDFRectangle *mediaBox, const PDFRectangle *cropBox);
+    bool replacePageDict(int pageNo, int rotate, const PDFRectangle &mediaBox, const PDFRectangle *cropBox) const;
     bool markPageObjects(Dict *pageDict, XRef *xRef, XRef *countRef, unsigned int numOffset, int oldRefNum, int newRefNum, std::set<Dict *> *alreadyMarkedDicts = nullptr);
     bool markAnnotations(Object *annots, XRef *xRef, XRef *countRef, unsigned int numOffset, int oldPageNum, int newPageNum, std::set<Dict *> *alreadyMarkedDicts = nullptr);
     void markAcroForm(Object *afObj, XRef *xRef, XRef *countRef, unsigned int numOffset, int oldRefNum, int newRefNum);
     // write all objects used by pageDict to outStr
     unsigned int writePageObjects(OutStream *outStr, XRef *xRef, unsigned int numOffset, bool combine = false);
-    static void writeObject(Object *obj, OutStream *outStr, XRef *xref, unsigned int numOffset, unsigned char *fileKey, CryptAlgorithm encAlgorithm, int keyLength, int objNum, int objGen, std::set<Dict *> *alreadyWrittenDicts = nullptr);
-    static void writeObject(Object *obj, OutStream *outStr, XRef *xref, unsigned int numOffset, unsigned char *fileKey, CryptAlgorithm encAlgorithm, int keyLength, Ref ref, std::set<Dict *> *alreadyWrittenDicts = nullptr);
+    static void writeObject(Object *obj, OutStream *outStr, XRef *xref, unsigned int numOffset, const unsigned char *fileKey, CryptAlgorithm encAlgorithm, int keyLength, int objNum, int objGen,
+                            std::set<Dict *> *alreadyWrittenDicts = nullptr);
+    static void writeObject(Object *obj, OutStream *outStr, XRef *xref, unsigned int numOffset, const unsigned char *fileKey, CryptAlgorithm encAlgorithm, int keyLength, Ref ref, std::set<Dict *> *alreadyWrittenDicts = nullptr);
     static void writeHeader(OutStream *outStr, int major, int minor);
 
     static Object createTrailerDict(int uxrefSize, bool incrUpdate, Goffset startxRef, Ref *root, XRef *xRef, const char *fileName, Goffset fileSize);
@@ -341,21 +338,22 @@ public:
     // Arguments reason and location are UTF-16 big endian strings with BOM. An empty string and nullptr are acceptable too.
     // Argument imagePath is a background image (a path to a file).
     // sign() takes ownership of partialFieldName.
-    std::optional<CryptoSign::SigningError> sign(const std::string &saveFilename, const std::string &certNickname, const std::string &password, GooString *partialFieldName, int page, const PDFRectangle &rect, const GooString &signatureText,
-                                                 const GooString &signatureTextLeft, double fontSize, double leftFontSize, std::unique_ptr<AnnotColor> &&fontColor, double borderWidth, std::unique_ptr<AnnotColor> &&borderColor,
-                                                 std::unique_ptr<AnnotColor> &&backgroundColor, const GooString *reason = nullptr, const GooString *location = nullptr, const std::string &imagePath = "",
-                                                 const std::optional<GooString> &ownerPassword = {}, const std::optional<GooString> &userPassword = {});
+    std::optional<CryptoSign::SigningErrorMessage> sign(const std::string &saveFilename, const CryptoSign::SigningOperationData &data, std::unique_ptr<GooString> &&partialFieldName, int page, const PDFRectangle &rect,
+                                                        const GooString &signatureText, const GooString &signatureTextLeft, double fontSize, double leftFontSize, std::unique_ptr<AnnotColor> &&fontColor, double borderWidth,
+                                                        std::unique_ptr<AnnotColor> &&borderColor, std::unique_ptr<AnnotColor> &&backgroundColor, const GooString *reason = nullptr, const GooString *location = nullptr,
+                                                        const std::string &imagePath = "", const std::optional<GooString> &ownerPassword = {}, const std::optional<GooString> &userPassword = {});
 
     struct SignatureData
     {
         Ref ref;
-        AnnotWidget *annotWidget = nullptr;
+        std::shared_ptr<AnnotWidget> annotWidget = nullptr;
         FormWidget *formWidget = nullptr;
-        std::unique_ptr<::FormFieldSignature> field = nullptr;
+        std::unique_ptr<::FormFieldSignature> field;
     };
 
-    std::optional<SignatureData> createSignature(::Page *destPage, GooString *partialFieldName, const PDFRectangle &rect, const GooString &signatureText, const GooString &signatureTextLeft, double fontSize, double leftFontSize,
-                                                 std::unique_ptr<AnnotColor> &&fontColor, double borderWidth, std::unique_ptr<AnnotColor> &&borderColor, std::unique_ptr<AnnotColor> &&backgroundColor, const std::string &imagePath);
+    std::variant<SignatureData, CryptoSign::SigningErrorMessage> createSignature(::Page *destPage, std::unique_ptr<GooString> &&partialFieldName, const PDFRectangle &rect, const GooString &signatureText, const GooString &signatureTextLeft,
+                                                                                 double fontSize, double leftFontSize, std::unique_ptr<AnnotColor> &&fontColor, double borderWidth, std::unique_ptr<AnnotColor> &&borderColor,
+                                                                                 std::unique_ptr<AnnotColor> &&backgroundColor, const std::string &imagePath);
 
 private:
     // insert referenced objects in XRef
@@ -366,25 +364,25 @@ private:
     // not contain any ( ) < > [ ] { } / %
     static std::string sanitizedName(const std::string &name);
 
-    static void writeDictionary(Dict *dict, OutStream *outStr, XRef *xRef, unsigned int numOffset, unsigned char *fileKey, CryptAlgorithm encAlgorithm, int keyLength, Ref ref, std::set<Dict *> *alreadyWrittenDicts);
+    static void writeDictionary(Dict *dict, OutStream *outStr, XRef *xRef, unsigned int numOffset, const unsigned char *fileKey, CryptAlgorithm encAlgorithm, int keyLength, Ref ref, std::set<Dict *> *alreadyWrittenDicts);
 
     // Write object header to current file stream and return its offset
     static Goffset writeObjectHeader(Ref *ref, OutStream *outStr);
     static void writeObjectFooter(OutStream *outStr);
 
-    inline void writeObject(Object *obj, OutStream *outStr, unsigned char *fileKey, CryptAlgorithm encAlgorithm, int keyLength, int objNum, int objGen)
+    void writeObject(Object *obj, OutStream *outStr, const unsigned char *fileKey, CryptAlgorithm encAlgorithm, int keyLength, int objNum, int objGen) const
     {
-        writeObject(obj, outStr, getXRef(), 0, fileKey, encAlgorithm, keyLength, { objNum, objGen });
+        writeObject(obj, outStr, getXRef(), 0, fileKey, encAlgorithm, keyLength, { .num = objNum, .gen = objGen });
     }
-    inline void writeObject(Object *obj, OutStream *outStr, unsigned char *fileKey, CryptAlgorithm encAlgorithm, int keyLength, Ref ref) { writeObject(obj, outStr, getXRef(), 0, fileKey, encAlgorithm, keyLength, ref); }
+    void writeObject(Object *obj, OutStream *outStr, const unsigned char *fileKey, CryptAlgorithm encAlgorithm, int keyLength, Ref ref) const { writeObject(obj, outStr, getXRef(), 0, fileKey, encAlgorithm, keyLength, ref); }
     static void writeStream(Stream *str, OutStream *outStr);
     static void writeRawStream(Stream *str, OutStream *outStr);
     void writeXRefTableTrailer(Goffset uxrefOffset, XRef *uxref, bool writeAllEntries, int uxrefSize, OutStream *outStr, bool incrUpdate);
-    static void writeString(const GooString *s, OutStream *outStr, const unsigned char *fileKey, CryptAlgorithm encAlgorithm, int keyLength, Ref ref);
+    static void writeString(const std::string &s, OutStream *outStr, const unsigned char *fileKey, CryptAlgorithm encAlgorithm, int keyLength, Ref ref);
     void saveIncrementalUpdate(OutStream *outStr);
     void saveCompleteRewrite(OutStream *outStr);
 
-    Page *parsePage(int page);
+    std::unique_ptr<Page> parsePage(int page);
 
     // Get hints.
     Hints *getHints();
@@ -401,15 +399,14 @@ private:
     // Get the offset of the entries in the main XRef table of a
     // linearized document (0 for non linearized documents).
     Goffset getMainXRefEntriesOffset(bool tryingToReconstruct = false);
-    long long strToLongLong(const char *s);
+    static long long strToLongLong(const char *s);
 
     std::unique_ptr<GooString> fileName;
 #ifdef _WIN32
-    wchar_t *fileNameU = nullptr;
+    std::wstring fileNameU;
 #endif
     std::unique_ptr<GooFile> file;
-    BaseStream *str = nullptr;
-    void *guiData = nullptr;
+    std::unique_ptr<BaseStream> str;
     int headerPdfMajorVersion;
     int headerPdfMinorVersion;
     PDFSubtype pdfSubtype;
@@ -425,7 +422,7 @@ private:
     Catalog *catalog = nullptr;
     Hints *hints = nullptr;
     Outline *outline = nullptr;
-    Page **pageCache = nullptr;
+    std::vector<std::unique_ptr<Page>> pageCache;
 
     bool ok = false;
     int errCode = errNone;

@@ -4,7 +4,9 @@
 //
 // Copyright 2007 Julien Rebetez
 // Copyright 2012 Fabio D'Urso
-// Copyright 2022 Albert Astals Cid <aacid@kde.org>
+// Copyright 2022, 2025, 2026 Albert Astals Cid <aacid@kde.org>
+// Copyright 2025, 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright 2025 Arnav V <arnav0872@gmail.com>
 //
 //========================================================================
 
@@ -25,14 +27,14 @@ static bool forceIncremental = false;
 static bool checkOutput = false;
 static bool printHelp = false;
 
-static const ArgDesc argDesc[] = { { "-opw", argString, ownerPassword, sizeof(ownerPassword), "owner password (for encrypted files)" },
-                                   { "-upw", argString, userPassword, sizeof(userPassword), "user password (for encrypted files)" },
-                                   { "-i", argFlag, &forceIncremental, 0, "incremental update mode" },
-                                   { "-check", argFlag, &checkOutput, 0, "verify the generated document" },
-                                   { "-h", argFlag, &printHelp, 0, "print usage information" },
-                                   { "-help", argFlag, &printHelp, 0, "print usage information" },
-                                   { "--help", argFlag, &printHelp, 0, "print usage information" },
-                                   { "-?", argFlag, &printHelp, 0, "print usage information" },
+static const ArgDesc argDesc[] = { { .arg = "-opw", .kind = argString, .val = ownerPassword, .size = sizeof(ownerPassword), .usage = "owner password (for encrypted files)" },
+                                   { .arg = "-upw", .kind = argString, .val = userPassword, .size = sizeof(userPassword), .usage = "user password (for encrypted files)" },
+                                   { .arg = "-i", .kind = argFlag, .val = &forceIncremental, .size = 0, .usage = "incremental update mode" },
+                                   { .arg = "-check", .kind = argFlag, .val = &checkOutput, .size = 0, .usage = "verify the generated document" },
+                                   { .arg = "-h", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
+                                   { .arg = "-help", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
+                                   { .arg = "--help", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
+                                   { .arg = "-?", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
                                    {} };
 
 int main(int argc, char *argv[])
@@ -70,7 +72,7 @@ int main(int argc, char *argv[])
     }
 
     // save it back (in rewrite or incremental update mode)
-    if (doc->saveAs(*doc->getFileName(), forceIncremental ? writeForceIncremental : writeForceRewrite) != 0) {
+    if (doc->saveAs(argv[2], forceIncremental ? writeForceIncremental : writeForceRewrite) != 0) {
         fprintf(stderr, "Error saving document\n");
         res = 1;
         goto done;
@@ -106,7 +108,7 @@ static bool compareDictionaries(Dict *dictA, Dict *dictB)
      * contain the same number of entries, we don't need to check that every key
      * in dictB is also contained in dictA */
     for (int i = 0; i < length; ++i) {
-        const char *key = dictA->getKey(i);
+        const std::string &key = dictA->getKey(i);
         const Object &valA = dictA->getValNF(i);
         const Object &valB = dictB->lookupNF(key);
         if (!compareObjects(&valA, &valB)) {
@@ -123,107 +125,90 @@ static bool compareObjects(const Object *objA, const Object *objB)
     case objBool: {
         if (objB->getType() != objBool) {
             return false;
-        } else {
-            return (objA->getBool() == objB->getBool());
         }
+        return (objA->getBool() == objB->getBool());
     }
     case objInt:
     case objInt64:
     case objReal: {
         if (!objB->isNum()) {
             return false;
-        } else {
-            // Fuzzy comparison
-            const double diff = objA->getNum() - objB->getNum();
-            return (-0.01 < diff) && (diff < 0.01);
         }
+        // Fuzzy comparison
+        const double diff = objA->getNum() - objB->getNum();
+        return (-0.01 < diff) && (diff < 0.01);
     }
     case objString: {
         if (objB->getType() != objString) {
             return false;
-        } else {
-            const GooString *strA = objA->getString();
-            const GooString *strB = objB->getString();
-            return (strA->cmp(strB) == 0);
         }
+        const std::string &strA = objA->getString();
+        const std::string &strB = objB->getString();
+        return (strA == strB);
     }
     case objName: {
         if (objB->getType() != objName) {
             return false;
-        } else {
-            GooString nameA(objA->getName());
-            GooString nameB(objB->getName());
-            return (nameA.cmp(&nameB) == 0);
         }
+        return objA->getNameString() == objB->getNameString();
     }
     case objNull: {
-        if (objB->getType() != objNull) {
-            return false;
-        } else {
-            return true;
-        }
+        return objB->getType() == objNull;
     }
     case objArray: {
         if (objB->getType() != objArray) {
             return false;
-        } else {
-            Array *arrayA = objA->getArray();
-            Array *arrayB = objB->getArray();
-            const int length = arrayA->getLength();
-            if (arrayB->getLength() != length) {
+        }
+        Array *arrayA = objA->getArray();
+        Array *arrayB = objB->getArray();
+        const int length = arrayA->getLength();
+        if (arrayB->getLength() != length) {
+            return false;
+        }
+        for (int i = 0; i < length; ++i) {
+            const Object &elemA = arrayA->getNF(i);
+            const Object &elemB = arrayB->getNF(i);
+            if (!compareObjects(&elemA, &elemB)) {
                 return false;
-            } else {
-                for (int i = 0; i < length; ++i) {
-                    const Object &elemA = arrayA->getNF(i);
-                    const Object &elemB = arrayB->getNF(i);
-                    if (!compareObjects(&elemA, &elemB)) {
-                        return false;
-                    }
-                }
-                return true;
             }
         }
+        return true;
     }
     case objDict: {
         if (objB->getType() != objDict) {
             return false;
-        } else {
-            Dict *dictA = objA->getDict();
-            Dict *dictB = objB->getDict();
-            return compareDictionaries(dictA, dictB);
         }
+        Dict *dictA = objA->getDict();
+        Dict *dictB = objB->getDict();
+        return compareDictionaries(dictA, dictB);
     }
     case objStream: {
         if (objB->getType() != objStream) {
             return false;
-        } else {
-            Stream *streamA = objA->getStream();
-            Stream *streamB = objB->getStream();
-            if (!compareDictionaries(streamA->getDict(), streamB->getDict())) {
-                return false;
-            } else {
-                int c;
-                streamA->reset();
-                streamB->reset();
-                do {
-                    c = streamA->getChar();
-                    if (c != streamB->getChar()) {
-                        return false;
-                    }
-                } while (c != EOF);
-                return true;
-            }
         }
+        Stream *streamA = objA->getStream();
+        Stream *streamB = objB->getStream();
+        if (!compareDictionaries(streamA->getDict(), streamB->getDict())) {
+            return false;
+        }
+        int c;
+        (void)streamA->rewind();
+        (void)streamB->rewind();
+        do {
+            c = streamA->getChar();
+            if (c != streamB->getChar()) {
+                return false;
+            }
+        } while (c != EOF);
         return true;
     }
     case objRef: {
         if (objB->getType() != objRef) {
             return false;
-        } else {
-            const Ref refA = objA->getRef();
-            const Ref refB = objB->getRef();
-            return refA == refB;
         }
+        const Ref refA = objA->getRef();
+        const Ref refB = objB->getRef();
+        return refA == refB;
     }
     default: {
         fprintf(stderr, "compareObjects failed: unexpected object type %u\n", objA->getType());

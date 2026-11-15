@@ -1,5 +1,7 @@
 /* poppler-action.cc: glib wrapper for poppler	      -*- c-basic-offset: 8 -*-
  * Copyright (C) 2005, Red Hat, Inc.
+ * Copyright (C) 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+ * Copyright (C) 2026 Albert Astals Cid <aacid@kde.org>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -138,7 +140,7 @@ void poppler_action_free(PopplerAction *action)
         break;
     case POPPLER_ACTION_OCG_STATE:
         if (action->ocg_state.state_list) {
-            g_list_free_full(action->ocg_state.state_list, (GDestroyNotify)poppler_action_layer_free);
+            g_list_free_full(action->ocg_state.state_list, reinterpret_cast<GDestroyNotify>(poppler_action_layer_free));
         }
         break;
     case POPPLER_ACTION_JAVASCRIPT:
@@ -210,12 +212,12 @@ PopplerAction *poppler_action_copy(PopplerAction *action)
         break;
     case POPPLER_ACTION_MOVIE:
         if (action->movie.movie) {
-            new_action->movie.movie = (PopplerMovie *)g_object_ref(action->movie.movie);
+            new_action->movie.movie = static_cast<PopplerMovie *> g_object_ref(action->movie.movie);
         }
         break;
     case POPPLER_ACTION_RENDITION:
         if (action->rendition.media) {
-            new_action->rendition.media = (PopplerMedia *)g_object_ref(action->rendition.media);
+            new_action->rendition.media = static_cast<PopplerMedia *> g_object_ref(action->rendition.media);
         }
         break;
     case POPPLER_ACTION_OCG_STATE:
@@ -224,7 +226,7 @@ PopplerAction *poppler_action_copy(PopplerAction *action)
             GList *new_list = nullptr;
 
             for (l = action->ocg_state.state_list; l; l = g_list_next(l)) {
-                PopplerActionLayer *alayer = (PopplerActionLayer *)l->data;
+                auto *alayer = static_cast<PopplerActionLayer *>(l->data);
                 new_list = g_list_prepend(new_list, poppler_action_layer_copy(alayer));
             }
 
@@ -243,7 +245,7 @@ PopplerAction *poppler_action_copy(PopplerAction *action)
 
             new_action->reset_form.fields = nullptr;
             for (iter = action->reset_form.fields; iter != nullptr; iter = iter->next) {
-                new_action->reset_form.fields = g_list_append(new_action->reset_form.fields, g_strdup((char *)iter->data));
+                new_action->reset_form.fields = g_list_append(new_action->reset_form.fields, g_strdup(static_cast<char *>(iter->data)));
             }
         }
         break;
@@ -323,10 +325,10 @@ static PopplerDest *dest_new_goto(PopplerDocument *document, const LinkDest *lin
         page = poppler_document_get_page(document, dest->page_num - 1);
 
         if (page) {
-            dest->left -= page->page->getCropBox()->x1;
-            dest->bottom -= page->page->getCropBox()->x1;
-            dest->right -= page->page->getCropBox()->y1;
-            dest->top -= page->page->getCropBox()->y1;
+            dest->left -= page->page->getCropBox().x1;
+            dest->bottom -= page->page->getCropBox().x1;
+            dest->right -= page->page->getCropBox().y1;
+            dest->top -= page->page->getCropBox().y1;
 
             g_object_unref(page);
         } else {
@@ -352,7 +354,7 @@ static PopplerDest *dest_new_named(const GooString *named_dest)
     const std::string &str = named_dest->toStr();
 
     dest->type = POPPLER_DEST_NAMED;
-    dest->named_dest = poppler_named_dest_from_bytestring((const guint8 *)str.data(), str.size());
+    dest->named_dest = poppler_named_dest_from_bytestring(reinterpret_cast<const guint8 *>(str.data()), str.size());
 
     return dest;
 }
@@ -391,7 +393,7 @@ static void build_goto_remote(PopplerAction *action, const LinkGoToR *link)
         return;
     }
 
-    action->goto_remote.file_name = _poppler_goo_string_to_utf8(link->getFileName());
+    action->goto_remote.file_name = _poppler_goo_string_to_utf8(link->getFileName()->toStr());
 
     link_dest = link->getDest();
     named_dest = link->getNamedDest();
@@ -408,7 +410,7 @@ static void build_goto_remote(PopplerAction *action, const LinkGoToR *link)
 static void build_launch(PopplerAction *action, const LinkLaunch *link)
 {
     if (link->getFileName()) {
-        action->launch.file_name = _poppler_goo_string_to_utf8(link->getFileName());
+        action->launch.file_name = _poppler_goo_string_to_utf8(link->getFileName()->toStr());
     }
     if (link->getParams()) {
         action->launch.params = g_strdup(link->getParams()->c_str());
@@ -465,7 +467,7 @@ static AnnotMovie *find_annot_movie_for_action(PopplerDocument *document, const 
                         }
 
                         obj1 = annotObj.dictLookup("T");
-                        if (obj1.isString() && obj1.getString()->toStr() == title) {
+                        if (obj1.isString() && obj1.getString() == title) {
                             found = true;
                         }
                     }
@@ -475,9 +477,8 @@ static AnnotMovie *find_annot_movie_for_action(PopplerDocument *document, const 
                 }
                 if (found) {
                     break;
-                } else {
-                    annotObj.setToNull();
                 }
+                annotObj.setToNull();
             }
         }
     }
@@ -485,7 +486,7 @@ static AnnotMovie *find_annot_movie_for_action(PopplerDocument *document, const 
     if (annotObj.isDict()) {
         Object tmp;
 
-        annot = new AnnotMovie(document->doc, std::move(annotObj), &tmp);
+        annot = new AnnotMovie(document->doc.get(), std::move(annotObj), tmp);
         if (!annot->isOk()) {
             delete annot;
             annot = nullptr;
@@ -525,8 +526,8 @@ static void build_movie(PopplerDocument *document, PopplerAction *action, const 
 static void build_javascript(PopplerAction *action, const LinkJavaScript *link)
 {
     if (link->isOk()) {
-        const GooString script(link->getScript());
-        action->javascript.script = _poppler_goo_string_to_utf8(&script);
+        const std::string &script = link->getScript();
+        action->javascript.script = _poppler_goo_string_to_utf8(script);
     }
 }
 
@@ -560,7 +561,7 @@ static PopplerLayer *get_layer_for_ref(PopplerDocument *document, GList *layers,
     GList *l;
 
     for (l = layers; l; l = g_list_next(l)) {
-        Layer *layer = (Layer *)l->data;
+        auto *layer = static_cast<Layer *>(l->data);
 
         if (layer->oc) {
             const Ref ocgRef = layer->oc->getRef();
@@ -599,7 +600,7 @@ static void build_ocg_state(PopplerDocument *document, PopplerAction *action, co
     }
 
     for (const LinkOCGState::StateList &list : st_list) {
-        PopplerActionLayer *action_layer = g_slice_new0(PopplerActionLayer);
+        auto *action_layer = g_slice_new0(PopplerActionLayer);
 
         switch (list.st) {
         case LinkOCGState::On:

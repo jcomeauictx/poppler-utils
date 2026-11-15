@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2009-2010, Pino Toscano <pino@kde.org>
- * Copyright (C) 2018, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2018, 2024, Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2019, Oliver Sander <oliver.sander@tu-dresden.de>
  * Copyright (C) 2024 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
  *
@@ -31,9 +31,9 @@
 
 using namespace poppler;
 
-toc_private::toc_private() { }
+toc_private::toc_private() = default;
 
-toc_private::~toc_private() { }
+toc_private::~toc_private() = default;
 
 toc *toc_private::load_from_outline(Outline *outline)
 {
@@ -42,7 +42,7 @@ toc *toc_private::load_from_outline(Outline *outline)
     }
 
     const std::vector<OutlineItem *> *items = outline->getItems();
-    if (!items || items->size() < 1) {
+    if (!items || items->empty()) {
         return nullptr;
     }
 
@@ -53,7 +53,7 @@ toc *toc_private::load_from_outline(Outline *outline)
     return newtoc;
 }
 
-toc_item_private::toc_item_private() : is_open(false) { }
+toc_item_private::toc_item_private() = default;
 
 toc_item_private::~toc_item_private()
 {
@@ -74,7 +74,7 @@ void toc_item_private::load_children(const std::vector<OutlineItem *> *items)
     for (int i = 0; i < num_items; ++i) {
         OutlineItem *item = (*items)[i];
 
-        toc_item *new_item = new toc_item();
+        auto *new_item = new toc_item();
         new_item->d->load(item);
         children[i] = new_item;
 

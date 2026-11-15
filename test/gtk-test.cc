@@ -25,14 +25,16 @@ static gboolean splash_output = FALSE;
 static gboolean args_are_fds = FALSE;
 #endif
 static const char **file_arguments = nullptr;
-static const GOptionEntry options[] = { { "cairo", 'c', 0, G_OPTION_ARG_NONE, &cairo_output, "Cairo Output Device", nullptr },
-                                        { "splash", 's', 0, G_OPTION_ARG_NONE, &splash_output, "Splash Output Device", nullptr },
-                                        { "page", 'p', 0, G_OPTION_ARG_INT, &requested_page, "Page number", "PAGE" },
+static const GOptionEntry options[] = {
+    { .long_name = "cairo", .short_name = 'c', .flags = 0, .arg = G_OPTION_ARG_NONE, .arg_data = &cairo_output, .description = "Cairo Output Device", .arg_description = nullptr },
+    { .long_name = "splash", .short_name = 's', .flags = 0, .arg = G_OPTION_ARG_NONE, .arg_data = &splash_output, .description = "Splash Output Device", .arg_description = nullptr },
+    { .long_name = "page", .short_name = 'p', .flags = 0, .arg = G_OPTION_ARG_INT, .arg_data = &requested_page, .description = "Page number", .arg_description = "PAGE" },
 #ifndef G_OS_WIN32
-                                        { "fd", 'f', 0, G_OPTION_ARG_NONE, &args_are_fds, "File descriptors", nullptr },
+    { .long_name = "fd", .short_name = 'f', .flags = 0, .arg = G_OPTION_ARG_NONE, .arg_data = &args_are_fds, .description = "File descriptors", .arg_description = nullptr },
 #endif
-                                        { G_OPTION_REMAINING, 0, 0, G_OPTION_ARG_FILENAME_ARRAY, &file_arguments, nullptr, "PDF-FILES…" },
-                                        {} };
+    { .long_name = G_OPTION_REMAINING, .short_name = 0, .flags = 0, .arg = G_OPTION_ARG_FILENAME_ARRAY, .arg_data = static_cast<void *>(&file_arguments), .description = nullptr, .arg_description = "PDF-FILES…" },
+    {}
+};
 
 static GList *view_list = nullptr;
 
@@ -69,40 +71,40 @@ public:
 
     // Copy the rectangle (srcX, srcY, width, height) to (destX, destY)
     // in destDC.
-    void redraw(int srcX, int srcY, cairo_t *cr, int destX, int destY, int width, int height);
+    void redraw(int srcX, int srcY, cairo_t *cr, int width, int height);
 
 private:
-    int incrementalUpdate;
+    int incrementalUpdate = 1;
     void (*redrawCbk)(void *data);
     void *redrawCbkData;
 };
 
-typedef struct
+struct View
 {
     PopplerDocument *doc;
     GtkWidget *drawing_area;
     GtkWidget *spin_button;
     cairo_surface_t *surface;
     GDKSplashOutputDev *out;
-} View;
+};
 
 //------------------------------------------------------------------------
 // Constants and macros
 //------------------------------------------------------------------------
 
-#define xoutRound(x) ((int)(x + 0.5))
+#define xoutRound(x) ((int)((x) + 0.5))
 
 //------------------------------------------------------------------------
 // GDKSplashOutputDev
 //------------------------------------------------------------------------
 
-GDKSplashOutputDev::GDKSplashOutputDev(GdkScreen *screen, void (*redrawCbkA)(void *data), void *redrawCbkDataA, SplashColor sc) : SplashOutputDev(splashModeRGB8, 4, false, sc), incrementalUpdate(1)
+GDKSplashOutputDev::GDKSplashOutputDev(GdkScreen * /*screen*/, void (*redrawCbkA)(void *data), void *redrawCbkDataA, SplashColor sc) : SplashOutputDev(splashModeRGB8, 4, sc)
 {
     redrawCbk = redrawCbkA;
     redrawCbkData = redrawCbkDataA;
 }
 
-GDKSplashOutputDev::~GDKSplashOutputDev() { }
+GDKSplashOutputDev::~GDKSplashOutputDev() = default;
 
 void GDKSplashOutputDev::clear()
 {
@@ -130,7 +132,7 @@ void GDKSplashOutputDev::updateFont(GfxState *state)
     SplashOutputDev::updateFont(state);
 }
 
-void GDKSplashOutputDev::redraw(int srcX, int srcY, cairo_t *cr, int destX, int destY, int width, int height)
+void GDKSplashOutputDev::redraw(int srcX, int srcY, cairo_t *cr, int width, int height)
 {
     GdkPixbuf *pixbuf;
     int gdk_rowstride;
@@ -144,7 +146,7 @@ void GDKSplashOutputDev::redraw(int srcX, int srcY, cairo_t *cr, int destX, int 
     g_object_unref(pixbuf);
 }
 
-static gboolean drawing_area_draw(GtkWidget *drawing_area, cairo_t *cr, View *view)
+static gboolean drawing_area_draw(GtkWidget * /*drawing_area*/, cairo_t *cr, View *view)
 {
     GdkRectangle document;
     GdkRectangle clip;
@@ -172,7 +174,7 @@ static gboolean drawing_area_draw(GtkWidget *drawing_area, cairo_t *cr, View *vi
         cairo_set_source_surface(cr, view->surface, 0, 0);
         cairo_paint(cr);
     } else {
-        view->out->redraw(draw.x, draw.y, cr, draw.x, draw.y, draw.width, draw.height);
+        view->out->redraw(draw.x, draw.y, cr, draw.width, draw.height);
     }
 
     return TRUE;
@@ -189,8 +191,8 @@ static void view_set_page(View *view, int page)
 
         poppler_page = poppler_document_get_page(view->doc, page);
         poppler_page_get_size(poppler_page, &width, &height);
-        w = (int)ceil(width);
-        h = (int)ceil(height);
+        w = static_cast<int>(ceil(width));
+        h = static_cast<int>(ceil(height));
 
         if (view->surface) {
             cairo_surface_destroy(view->surface);
@@ -219,7 +221,7 @@ static void view_set_page(View *view, int page)
 
 static void redraw_callback(void *data)
 {
-    View *view = (View *)data;
+    View *view = static_cast<View *>(data);
 
     gtk_widget_queue_draw(view->drawing_area);
 }
@@ -236,7 +238,7 @@ static void view_free(View *view)
     g_slice_free(View, view);
 }
 
-static void destroy_window_callback(GtkWindow *window, View *view)
+static void destroy_window_callback(GtkWindow * /*window*/, View *view)
 {
     view_list = g_list_remove(view_list, view);
     view_free(view);
@@ -275,7 +277,7 @@ static View *view_new(PopplerDocument *doc)
         double width, height;
 
         poppler_page_get_size(page, &width, &height);
-        gtk_window_set_default_size(GTK_WINDOW(window), (gint)width, (gint)height);
+        gtk_window_set_default_size(GTK_WINDOW(window), static_cast<gint>(width), static_cast<gint>(height));
         g_object_unref(page);
     }
 
@@ -284,11 +286,7 @@ static View *view_new(PopplerDocument *doc)
     view->drawing_area = gtk_drawing_area_new();
     sw = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
-#if GTK_CHECK_VERSION(3, 7, 8)
     gtk_container_add(GTK_CONTAINER(sw), view->drawing_area);
-#else
-    gtk_scrolled_window_add_with_viewport(GTK_SCROLLED_WINDOW(sw), view->drawing_area);
-#endif
     gtk_widget_show(view->drawing_area);
 
     gtk_box_pack_end(GTK_BOX(vbox), sw, TRUE, TRUE, 0);
@@ -314,8 +312,8 @@ static View *view_new(PopplerDocument *doc)
     if (!cairo_output) {
         SplashColor sc = { 255, 255, 255 };
 
-        view->out = new GDKSplashOutputDev(gtk_widget_get_screen(window), redraw_callback, (void *)view, sc);
-        view->out->startDoc(view->doc->doc);
+        view->out = new GDKSplashOutputDev(gtk_widget_get_screen(window), redraw_callback, reinterpret_cast<void *>(view), sc);
+        view->out->startDoc(view->doc->doc.get());
     }
 
     g_signal_connect(view->drawing_area, "draw", G_CALLBACK(drawing_area_draw), view);
@@ -364,7 +362,7 @@ int main(int argc, char *argv[])
             if (errno || end == arg || v == -1 || v < G_MININT || v > G_MAXINT) {
                 g_set_error(&error, G_OPTION_ERROR, G_OPTION_ERROR_BAD_VALUE, "Failed to parse \"%s\" as file descriptor number", arg);
             } else {
-                doc = poppler_document_new_from_fd(int(v), nullptr, &error);
+                doc = poppler_document_new_from_fd(static_cast<int>(v), nullptr, &error);
             }
         } else
 #endif /* !G_OS_WIN32 */

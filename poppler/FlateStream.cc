@@ -3,9 +3,12 @@
 // FlateStream.cc
 //
 // Copyright (C) 2005, Jeff Muizelaar <jeff@infidigm.net>
-// Copyright (C) 2010, 2021, Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2010, 2021, 2025, Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2016, William Bader <williambader@hotmail.com>
 // Copyright (C) 2017, Adrian Johnson <ajohnson@redneon.com>
+// Copyright (C) 2025 Nelson Benítez León <nbenitezl@gmail.com>
+// Copyright (C) 2025 Arnav V <arnav0872@gmail.com>
+// Copyright (C) 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
 //
 // This file is under the GPLv2 or later license
 //
@@ -15,11 +18,11 @@
 
 #include "poppler-config.h"
 
-#ifdef ENABLE_ZLIB_UNCOMPRESS
+#if ENABLE_ZLIB_UNCOMPRESS
 
 #    include "FlateStream.h"
 
-FlateStream::FlateStream(Stream *strA, int predictor, int columns, int colors, int bits) : FilterStream(strA)
+FlateStream::FlateStream(std::unique_ptr<Stream> strA, int predictor, int columns, int colors, int bits) : OwnedFilterStream(std::move(strA))
 {
     if (predictor != 1) {
         pred = new StreamPredictor(this, predictor, columns, colors, bits);
@@ -39,12 +42,11 @@ FlateStream::~FlateStream()
 {
     inflateEnd(&d_stream);
     delete pred;
-    delete str;
 }
 
-void FlateStream::reset()
+bool FlateStream::rewind()
 {
-    // FIXME: what are the semantics of reset?
+    // FIXME: what are the semantics of rewind?
     // i.e. how much initialization has to happen in the constructor?
 
     /* reinitialize zlib */
@@ -52,11 +54,13 @@ void FlateStream::reset()
     memset(&d_stream, 0, sizeof(d_stream));
     inflateInit(&d_stream);
 
-    str->reset();
+    str->rewind();
     d_stream.avail_in = 0;
     status = Z_OK;
     out_pos = 0;
     out_buf_len = 0;
+
+    return true;
 }
 
 int FlateStream::getRawChar()
@@ -130,21 +134,22 @@ int FlateStream::fill_buffer()
     return 0;
 }
 
-GooString *FlateStream::getPSFilter(int psLevel, const char *indent)
+std::optional<std::string> FlateStream::getPSFilter(int psLevel, const char *indent)
 {
-    GooString *s;
-
     if (psLevel < 3 || pred) {
-        return NULL;
+        return std::nullopt;
     }
-    if (!(s = str->getPSFilter(psLevel, indent))) {
-        return NULL;
+
+    std::optional<std::string> s = str->getPSFilter(psLevel, indent);
+    if (!s.has_value()) {
+        return std::nullopt;
     }
-    s->append(indent)->append("<< >> /FlateDecode filter\n");
+    s->append(indent).append("<< >> /FlateDecode filter\n");
+
     return s;
 }
 
-bool FlateStream::isBinary(bool last) const
+bool FlateStream::isBinary(bool /*last*/) const
 {
     return str->isBinary(true);
 }

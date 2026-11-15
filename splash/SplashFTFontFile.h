@@ -14,8 +14,8 @@
 // Copyright (C) 2006 Takashi Iwai <tiwai@suse.de>
 // Copyright (C) 2017, 2018 Oliver Sander <oliver.sander@tu-dresden.de>
 // Copyright (C) 2017 Adrian Johnson <ajohnson@redneon.com>
-// Copyright (C) 2019, 2024 Albert Astals Cid <aacid@kde.org>
-// Copyright (C) 2024 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2019, 2024-2026 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2024-2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -25,9 +25,13 @@
 #ifndef SPLASHFTFONTFILE_H
 #define SPLASHFTFONTFILE_H
 
+#include <vector>
+
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include "SplashFontFile.h"
+
+#include <memory>
 
 class SplashFontFileID;
 class SplashFTFontEngine;
@@ -36,26 +40,29 @@ class SplashFTFontEngine;
 // SplashFTFontFile
 //------------------------------------------------------------------------
 
-class SplashFTFontFile : public SplashFontFile
+class SplashFTFontFile : public SplashFontFile, public std::enable_shared_from_this<SplashFTFontFile>
 {
+    class PrivateTag
+    {
+    };
+
 public:
-    static SplashFontFile *loadType1Font(SplashFTFontEngine *engineA, std::unique_ptr<SplashFontFileID> idA, SplashFontSrc *src, const char **encA, int faceIndexA);
-    static SplashFontFile *loadCIDFont(SplashFTFontEngine *engineA, std::unique_ptr<SplashFontFileID> idA, SplashFontSrc *src, int *codeToGIDA, int codeToGIDLenA, int faceIndexA);
-    static SplashFontFile *loadTrueTypeFont(SplashFTFontEngine *engineA, std::unique_ptr<SplashFontFileID> idA, SplashFontSrc *src, int *codeToGIDA, int codeToGIDLenA, int faceIndexA);
+    static std::shared_ptr<SplashFontFile> loadType1Font(SplashFTFontEngine *engineA, std::unique_ptr<SplashFontFileID> idA, std::unique_ptr<SplashFontSrc> src, const std::array<const char *, 256> &encA, int faceIndexA);
+    static std::shared_ptr<SplashFontFile> loadCIDFont(SplashFTFontEngine *engineA, std::unique_ptr<SplashFontFileID> idA, std::unique_ptr<SplashFontSrc> src, std::vector<int> &&codeToGIDA, int faceIndexA);
+    static std::shared_ptr<SplashFontFile> loadTrueTypeFont(SplashFTFontEngine *engineA, std::unique_ptr<SplashFontFileID> idA, std::unique_ptr<SplashFontSrc> src, std::vector<int> &&codeToGIDA, int faceIndexA);
 
     ~SplashFTFontFile() override;
 
     // Create a new SplashFTFont, i.e., a scaled instance of this font
     // file.
-    SplashFont *makeFont(SplashCoord *mat, const SplashCoord *textMat) override;
+    SplashFont *makeFont(const std::array<double, 4> &mat, const std::array<double, 4> &textMat) override;
+
+    SplashFTFontFile(SplashFTFontEngine *engineA, std::unique_ptr<SplashFontFileID> idA, std::unique_ptr<SplashFontSrc> src, FT_Face faceA, std::vector<int> &&codeToGIDA, bool trueTypeA, bool type1A, PrivateTag /*unused*/ = {});
 
 private:
-    SplashFTFontFile(SplashFTFontEngine *engineA, std::unique_ptr<SplashFontFileID> idA, SplashFontSrc *src, FT_Face faceA, int *codeToGIDA, int codeToGIDLenA, bool trueTypeA, bool type1A);
-
     SplashFTFontEngine *engine;
     FT_Face face;
-    int *codeToGID;
-    int codeToGIDLen;
+    std::vector<int> codeToGID;
     bool trueType;
     bool type1;
 

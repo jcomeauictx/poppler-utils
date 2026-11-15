@@ -1,5 +1,5 @@
 /* poppler-ps-converter.cc: qt interface to poppler
- * Copyright (C) 2007, 2009, 2010, 2015, 2020, 2022, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2007, 2009, 2010, 2015, 2020, 2022, 2026, Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2008, Pino Toscano <pino@kde.org>
  * Copyright (C) 2010 Hib Eris <hib@hiberis.nl>
  * Copyright (C) 2011 Glad Deschrijver <glad.deschrijver@gmail.com>
@@ -8,6 +8,7 @@
  * Copyright (C) 2014 Adrian Johnson <ajohnson@redneon.com>
  * Copyright (C) 2020 William Bader <williambader@hotmail.com>
  * Copyright (C) 2023 Kevin Ottens <kevin.ottens@enioka.com>. Work sponsored by De Bortoli Wines
+ * Copyright (C) 2025, 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,9 +32,9 @@
 
 #include "PSOutputDev.h"
 
-static void outputToQIODevice(void *stream, const char *data, size_t len)
+static void outputToQIODevice(void *stream, std::string_view string)
 {
-    static_cast<QIODevice *>(stream)->write(data, len);
+    static_cast<QIODevice *>(stream)->write(string.data(), string.length());
 }
 
 namespace Poppler {
@@ -46,36 +47,21 @@ public:
 
     QList<int> pageList;
     QString title;
-    double hDPI;
-    double vDPI;
-    int rotate;
-    int paperWidth;
-    int paperHeight;
-    int marginRight;
-    int marginBottom;
-    int marginLeft;
-    int marginTop;
+    double hDPI = 72;
+    double vDPI = 72;
+    int rotate = 0;
+    int paperWidth = -1;
+    int paperHeight = -1;
+    int marginRight = 0;
+    int marginBottom = 0;
+    int marginLeft = 0;
+    int marginTop = 0;
     PSConverter::PSOptions opts;
-    void (*pageConvertedCallback)(int page, void *payload);
-    void *pageConvertedPayload;
+    void (*pageConvertedCallback)(int page, void *payload) = nullptr;
+    void *pageConvertedPayload = nullptr;
 };
 
-PSConverterPrivate::PSConverterPrivate()
-    : BaseConverterPrivate(),
-      hDPI(72),
-      vDPI(72),
-      rotate(0),
-      paperWidth(-1),
-      paperHeight(-1),
-      marginRight(0),
-      marginBottom(0),
-      marginLeft(0),
-      marginTop(0),
-      opts(PSConverter::Printing),
-      pageConvertedCallback(nullptr),
-      pageConvertedPayload(nullptr)
-{
-}
+PSConverterPrivate::PSConverterPrivate() : opts(PSConverter::Printing) { }
 
 PSConverterPrivate::~PSConverterPrivate() = default;
 
@@ -85,7 +71,7 @@ PSConverter::PSConverter(DocumentData *document) : BaseConverter(*new PSConverte
     d->document = document;
 }
 
-PSConverter::~PSConverter() { }
+PSConverter::~PSConverter() = default;
 
 void PSConverter::setPageList(const QList<int> &pageList)
 {
@@ -206,9 +192,8 @@ static bool annotDisplayDecideCbk(Annot *annot, void *user_data)
 {
     if (annot->getType() == Annot::typeWidget) {
         return true; // Never hide forms
-    } else {
-        return *(bool *)user_data;
     }
+    return *static_cast<bool *>(user_data);
 }
 
 bool PSConverter::convert()
@@ -240,27 +225,27 @@ bool PSConverter::convert()
     }
 
     std::vector<int> pages;
-    foreach (int page, d->pageList) {
+    Q_FOREACH (int page, d->pageList) {
         pages.push_back(page);
     }
 
-    PSOutputDev *psOut = new PSOutputDev(outputToQIODevice, dev, pstitlechar, d->document->doc, pages, (d->opts & PrintToEPS) ? psModeEPS : psModePS, d->paperWidth, d->paperHeight, false, false, d->marginLeft, d->marginBottom,
-                                         d->paperWidth - d->marginRight, d->paperHeight - d->marginTop, (d->opts & ForceRasterization) ? psAlwaysRasterize : psRasterizeWhenNeeded);
+    auto *psOut = new PSOutputDev(outputToQIODevice, dev, pstitlechar, d->document->doc.get(), pages, (d->opts & PrintToEPS) ? psModeEPS : psModePS, d->paperWidth, d->paperHeight, false, false, d->marginLeft, d->marginBottom,
+                                  d->paperWidth - d->marginRight, d->paperHeight - d->marginTop, (d->opts & ForceRasterization) ? psAlwaysRasterize : psRasterizeWhenNeeded);
     if (d->opts & ForceOverprintPreview) {
         psOut->setForceRasterize(psAlwaysRasterize);
         psOut->setOverprintPreview(true);
     }
 
     if (d->opts & StrictMargins) {
-        double xScale = ((double)d->paperWidth - (double)d->marginLeft - (double)d->marginRight) / (double)d->paperWidth;
-        double yScale = ((double)d->paperHeight - (double)d->marginBottom - (double)d->marginTop) / (double)d->paperHeight;
+        double xScale = (static_cast<double>(d->paperWidth) - static_cast<double>(d->marginLeft) - static_cast<double>(d->marginRight)) / static_cast<double>(d->paperWidth);
+        double yScale = (static_cast<double>(d->paperHeight) - static_cast<double>(d->marginBottom) - static_cast<double>(d->marginTop)) / static_cast<double>(d->paperHeight);
         psOut->setScale(xScale, yScale);
     }
 
     if (psOut->isOk()) {
-        bool isPrinting = (d->opts & Printing) ? true : false;
-        bool showAnnotations = (d->opts & HideAnnotations) ? false : true;
-        foreach (int page, d->pageList) {
+        bool isPrinting = (d->opts & Printing) != 0;
+        bool showAnnotations = (d->opts & HideAnnotations) == 0;
+        Q_FOREACH (int page, d->pageList) {
             d->document->doc->displayPage(psOut, page, d->hDPI, d->vDPI, d->rotate, false, true, isPrinting, nullptr, nullptr, annotDisplayDecideCbk, &showAnnotations, true);
             if (d->pageConvertedCallback) {
                 (*d->pageConvertedCallback)(page, d->pageConvertedPayload);
@@ -269,11 +254,10 @@ bool PSConverter::convert()
         delete psOut;
         d->closeDevice();
         return true;
-    } else {
-        delete psOut;
-        d->closeDevice();
-        return false;
     }
+    delete psOut;
+    d->closeDevice();
+    return false;
 }
 
 }

@@ -1,5 +1,8 @@
 /* poppler-page.h: glib interface to poppler
  * Copyright (C) 2004, Red Hat, Inc.
+ * Copyright (C) 2025, Marco Trevisan <mail@3v1n0.net>
+ * Copyright (C) 2025, Nelson Benítez León <nbenitezl@gmail.com>
+ * Copyright (C) 2026 Maximiliano Sandoval <msandova@protonmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,19 +34,33 @@ G_BEGIN_DECLS
 #define POPPLER_PAGE(obj) (G_TYPE_CHECK_INSTANCE_CAST((obj), POPPLER_TYPE_PAGE, PopplerPage))
 #define POPPLER_IS_PAGE(obj) (G_TYPE_CHECK_INSTANCE_TYPE((obj), POPPLER_TYPE_PAGE))
 
+/**
+ * PopplerPage:
+ *
+ * A #PopplerDocument page.
+ *
+ * Since 25.06 this type supports g_autoptr
+ */
+
 POPPLER_PUBLIC
-GType poppler_page_get_type(void) G_GNUC_CONST;
+GType poppler_page_get_type(void);
 
 POPPLER_PUBLIC
 void poppler_page_render(PopplerPage *page, cairo_t *cairo);
 POPPLER_PUBLIC
-void poppler_page_render_for_printing(PopplerPage *page, cairo_t *cairo);
+void poppler_page_render_full(PopplerPage *page, cairo_t *cairo, gboolean printing, PopplerRenderAnnotsFlags flags);
 POPPLER_PUBLIC
-void poppler_page_render_for_printing_with_options(PopplerPage *page, cairo_t *cairo, PopplerPrintFlags options);
+void poppler_page_render_for_printing(PopplerPage *page, cairo_t *cairo);
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+POPPLER_PUBLIC
+void poppler_page_render_for_printing_with_options(PopplerPage *page, cairo_t *cairo, PopplerPrintFlags options) G_GNUC_DEPRECATED_FOR(poppler_page_render_full);
+G_GNUC_END_IGNORE_DEPRECATIONS
 POPPLER_PUBLIC
 cairo_surface_t *poppler_page_get_thumbnail(PopplerPage *page);
 POPPLER_PUBLIC
 void poppler_page_render_selection(PopplerPage *page, cairo_t *cairo, PopplerRectangle *selection, PopplerRectangle *old_selection, PopplerSelectionStyle style, PopplerColor *glyph_color, PopplerColor *background_color);
+POPPLER_PUBLIC
+void poppler_page_render_transparent_selection(PopplerPage *page, cairo_t *cairo, PopplerRectangle *selection, PopplerRectangle *old_selection, PopplerSelectionStyle style, PopplerColor *background_color, double background_opacity);
 
 POPPLER_PUBLIC
 void poppler_page_get_size(PopplerPage *page, double *width, double *height);
@@ -135,7 +152,7 @@ struct _PopplerRectangle
 };
 
 POPPLER_PUBLIC
-GType poppler_rectangle_get_type(void) G_GNUC_CONST;
+GType poppler_rectangle_get_type(void);
 POPPLER_PUBLIC
 PopplerRectangle *poppler_rectangle_new(void);
 POPPLER_PUBLIC
@@ -165,7 +182,7 @@ struct _PopplerPoint
 };
 
 POPPLER_PUBLIC
-GType poppler_point_get_type(void) G_GNUC_CONST;
+GType poppler_point_get_type(void);
 POPPLER_PUBLIC
 PopplerPoint *poppler_point_new(void);
 POPPLER_PUBLIC
@@ -204,7 +221,7 @@ struct _PopplerQuadrilateral
 };
 
 POPPLER_PUBLIC
-GType poppler_quadrilateral_get_type(void) G_GNUC_CONST;
+GType poppler_quadrilateral_get_type(void);
 POPPLER_PUBLIC
 PopplerQuadrilateral *poppler_quadrilateral_new(void);
 POPPLER_PUBLIC
@@ -234,7 +251,7 @@ struct _PopplerColor
 };
 
 POPPLER_PUBLIC
-GType poppler_color_get_type(void) G_GNUC_CONST;
+GType poppler_color_get_type(void);
 POPPLER_PUBLIC
 PopplerColor *poppler_color_new(void);
 POPPLER_PUBLIC
@@ -271,7 +288,7 @@ struct _PopplerTextAttributes
 };
 
 POPPLER_PUBLIC
-GType poppler_text_attributes_get_type(void) G_GNUC_CONST;
+GType poppler_text_attributes_get_type(void);
 POPPLER_PUBLIC
 PopplerTextAttributes *poppler_text_attributes_new(void);
 POPPLER_PUBLIC
@@ -299,7 +316,7 @@ struct _PopplerLinkMapping
 };
 
 POPPLER_PUBLIC
-GType poppler_link_mapping_get_type(void) G_GNUC_CONST;
+GType poppler_link_mapping_get_type(void);
 POPPLER_PUBLIC
 PopplerLinkMapping *poppler_link_mapping_new(void);
 POPPLER_PUBLIC
@@ -347,7 +364,7 @@ struct _PopplerPageTransition
 };
 
 POPPLER_PUBLIC
-GType poppler_page_transition_get_type(void) G_GNUC_CONST;
+GType poppler_page_transition_get_type(void);
 POPPLER_PUBLIC
 PopplerPageTransition *poppler_page_transition_new(void);
 POPPLER_PUBLIC
@@ -375,7 +392,7 @@ struct _PopplerImageMapping
 };
 
 POPPLER_PUBLIC
-GType poppler_image_mapping_get_type(void) G_GNUC_CONST;
+GType poppler_image_mapping_get_type(void);
 POPPLER_PUBLIC
 PopplerImageMapping *poppler_image_mapping_new(void);
 POPPLER_PUBLIC
@@ -403,7 +420,7 @@ struct _PopplerFormFieldMapping
 };
 
 POPPLER_PUBLIC
-GType poppler_form_field_mapping_get_type(void) G_GNUC_CONST;
+GType poppler_form_field_mapping_get_type(void);
 POPPLER_PUBLIC
 PopplerFormFieldMapping *poppler_form_field_mapping_new(void);
 POPPLER_PUBLIC
@@ -431,7 +448,7 @@ struct _PopplerAnnotMapping
 };
 
 POPPLER_PUBLIC
-GType poppler_annot_mapping_get_type(void) G_GNUC_CONST;
+GType poppler_annot_mapping_get_type(void);
 POPPLER_PUBLIC
 PopplerAnnotMapping *poppler_annot_mapping_new(void);
 POPPLER_PUBLIC
@@ -441,6 +458,7 @@ void poppler_annot_mapping_free(PopplerAnnotMapping *mapping);
 
 G_END_DECLS
 
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerPage, g_object_unref)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerRectangle, poppler_rectangle_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerPoint, poppler_point_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(PopplerQuadrilateral, poppler_quadrilateral_free)

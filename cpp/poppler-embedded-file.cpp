@@ -2,6 +2,9 @@
  * Copyright (C) 2009-2011, Pino Toscano <pino@kde.org>
  * Copyright (C) 2016 Jakub Alba <jakubalba@gmail.com>
  * Copyright (C) 2018, 2020, 2022 Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2025, 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+ * Copyright (C) 2025, Zsombor Hollay-Horvath <hollay.horvath@gmail.com>
+ * Copyright (C) 2025 Arnav V <arnav0872@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -75,12 +78,21 @@ std::string embedded_file::name() const
 }
 
 /**
+ \returns the name of the embedded file
+ */
+ustring embedded_file::unicodeName() const
+{
+    const GooString *goo = d->file_spec->getFileName();
+    return goo ? detail::unicode_string_to_ustring(goo->toStr()) : ustring();
+}
+
+/**
  \returns the description of the embedded file
  */
 ustring embedded_file::description() const
 {
     const GooString *goo = d->file_spec->getDescription();
-    return goo ? detail::unicode_GooString_to_ustring(goo) : ustring();
+    return goo ? detail::unicode_string_to_ustring(goo->toStr()) : ustring();
 }
 
 /**
@@ -96,28 +108,6 @@ int embedded_file::size() const
 }
 
 /**
- \returns the time_type representing the modification date of the embedded file,
-          if available
- */
-time_type embedded_file::modification_date() const
-{
-    const EmbFile *ef = d->file_spec->getEmbeddedFile();
-    const GooString *goo = ef ? ef->modDate() : nullptr;
-    return goo ? static_cast<time_type>(dateStringToTime(goo)) : time_type(-1);
-}
-
-/**
- \returns the time_type representing the creation date of the embedded file,
-          if available
- */
-time_type embedded_file::creation_date() const
-{
-    const EmbFile *ef = d->file_spec->getEmbeddedFile();
-    const GooString *goo = ef ? ef->createDate() : nullptr;
-    return goo ? static_cast<time_type>(dateStringToTime(goo)) : time_type(-1);
-}
-
-/**
  \returns the time_t representing the modification date of the embedded file,
           if available
  */
@@ -125,7 +115,7 @@ time_t embedded_file::modification_date_t() const
 {
     const EmbFile *ef = d->file_spec->getEmbeddedFile();
     const GooString *goo = ef ? ef->modDate() : nullptr;
-    return goo ? dateStringToTime(goo) : time_t(-1);
+    return goo ? dateStringToTime(goo->toStr()) : static_cast<time_t>(-1);
 }
 
 /**
@@ -136,7 +126,7 @@ time_t embedded_file::creation_date_t() const
 {
     const EmbFile *ef = d->file_spec->getEmbeddedFile();
     const GooString *goo = ef ? ef->createDate() : nullptr;
-    return goo ? dateStringToTime(goo) : time_t(-1);
+    return goo ? dateStringToTime(goo->toStr()) : static_cast<time_t>(-1);
 }
 
 /**
@@ -150,8 +140,8 @@ byte_array embedded_file::checksum() const
         return byte_array();
     }
     const char *ccs = cs->c_str();
-    byte_array data(cs->getLength());
-    for (int i = 0; i < cs->getLength(); ++i) {
+    byte_array data(cs->size());
+    for (size_t i = 0; i < cs->size(); ++i) {
         data[i] = ccs[i];
     }
     return data;
@@ -183,7 +173,9 @@ byte_array embedded_file::data() const
         return byte_array();
     }
 
-    stream->reset();
+    if (!stream->rewind()) {
+        return byte_array {};
+    }
     byte_array ret(1024);
     size_t data_len = 0;
     int i;
@@ -191,7 +183,7 @@ byte_array embedded_file::data() const
         if (data_len == ret.size()) {
             ret.resize(ret.size() * 2);
         }
-        ret[data_len] = (char)i;
+        ret[data_len] = static_cast<char>(i);
         ++data_len;
     }
     ret.resize(data_len);

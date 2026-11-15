@@ -4,7 +4,11 @@
 //
 // This file is licensed under the GPLv2 or later
 //
-// Copyright 2023, 2024 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright 2023-2025 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright 2026 Juraj Šarinay <juraj@sarinay.com>
+// Copyright 2026 Albert Astals Cid <aacid@kde.org>
+// Copyright 2026 Sune Stolborg Vuorela <sune@vuorela.dk>, work sponsored by the Direction Interministérielle du Numérique
+//
 //========================================================================
 
 #ifndef SIGNATUREBACKEND_H
@@ -16,10 +20,10 @@
 #include <variant>
 #include <functional>
 #include <optional>
+#include "Error.h"
 #include "HashAlgorithm.h"
 #include "CertificateInfo.h"
 #include "SignatureInfo.h"
-#include "goo/GooString.h"
 #include "poppler_private_export.h"
 
 namespace CryptoSign {
@@ -29,18 +33,19 @@ enum class SignatureType
     adbe_pkcs7_sha1,
     adbe_pkcs7_detached,
     ETSI_CAdES_detached,
+    g10c_pgp_signature_detached,
     unknown_signature_type,
     unsigned_signature_field
 };
 
 SignatureType signatureTypeFromString(std::string_view data);
 
-std::string toStdString(SignatureType type);
+std::string_view toStdString(SignatureType type);
 
 // experiments seems to say that this is a bit above
 // what we have seen in the wild, and much larger than
 // what we have managed to get nss and gpgme to create.
-static const int maxSupportedSignatureSize = 10000;
+static const int defaultMaxSignatureSize = 10000;
 
 enum class SigningError
 {
@@ -49,7 +54,21 @@ enum class SigningError
     WriteFailed /**Some sort of IO error, missing write permissions or ...*/,
     UserCancelled /**User cancelled the action*/,
     KeyMissing, /**The key/certificate not specified*/
+    BadPassphrase, /** Bad passphrase */
+    UnsupportedSignatureType, /** Requested signature type and key is not compatible */
+};
 
+struct SigningOperationData
+{
+    std::string nickName;
+    std::string possiblePassword;
+    SMimeSignatureType type = SMimeSignatureType::none;
+};
+
+struct SigningErrorMessage
+{
+    SigningError type;
+    ErrorString message;
 };
 
 // Classes to help manage signature backends
@@ -59,7 +78,7 @@ class VerificationInterface
 public:
     virtual void addData(unsigned char *data_block, int data_len) = 0;
     virtual SignatureValidationStatus validateSignature() = 0;
-    virtual std::chrono::system_clock::time_point getSigningTime() const = 0;
+    virtual Certificate::timePointSeconds getSigningTime() const = 0;
     virtual std::string getSignerName() const = 0;
     virtual std::string getSignerSubjectDN() const = 0;
     virtual HashAlgorithm getHashAlgorithm() const = 0;
@@ -80,7 +99,12 @@ public:
     virtual void addData(unsigned char *data_block, int data_len) = 0;
     virtual SignatureType signatureType() const = 0;
     virtual std::unique_ptr<X509CertificateInfo> getCertificateInfo() const = 0;
-    virtual std::variant<GooString, SigningError> signDetached(const std::string &password) = 0;
+    virtual std::variant<std::vector<unsigned char>, SigningErrorMessage> signDetached(const std::string &password) = 0;
+    virtual unsigned int estimateSize() const = 0;
+    // Gives a initial early failure if something is wrong and we know a sign operation will fail.
+    // This can be called after creation and before adding data. It is especially for checking
+    // that the key is found and the key can be used to create the signature type
+    virtual std::optional<SigningErrorMessage> checkOk() const = 0;
     virtual ~SigningInterface();
     SigningInterface() = default;
     SigningInterface(const SigningInterface &other) = delete;
@@ -96,7 +120,7 @@ public:
         GPGME
     };
     virtual std::unique_ptr<VerificationInterface> createVerificationHandler(std::vector<unsigned char> &&pkcs7, SignatureType type) = 0;
-    virtual std::unique_ptr<SigningInterface> createSigningHandler(const std::string &certID, HashAlgorithm digestAlgTag) = 0;
+    virtual std::unique_ptr<SigningInterface> createSigningHandler(const std::string &certID, HashAlgorithm digestAlgTag, SMimeSignatureType type) = 0;
     virtual std::vector<std::unique_ptr<X509CertificateInfo>> getAvailableSigningCertificates() = 0;
     virtual ~Backend();
     Backend() = default;
@@ -116,7 +140,7 @@ public:
     static std::optional<Backend::Type> getActive();
     static std::vector<Backend::Type> getAvailable();
     static std::unique_ptr<Backend> createActive();
-    static std::unique_ptr<Backend> create(Backend::Type);
+    static std::unique_ptr<Backend> create(Backend::Type backend);
     static std::optional<Backend::Type> typeFromString(std::string_view string);
     Factory() = delete;
     /// backend specific settings

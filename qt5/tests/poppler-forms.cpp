@@ -198,7 +198,7 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    Poppler::Document *doc = Poppler::Document::load(argv[1]);
+    Poppler::Document *doc = Poppler::Document::load(QString::fromLocal8Bit(argv[1]));
     if (!doc) {
         qWarning() << "doc not loaded";
         exit(1);
@@ -210,7 +210,7 @@ int main(int argc, char **argv)
         if (page) {
             QList<Poppler::FormField *> forms = page->formFields();
             std::cout << "\tPage " << i + 1 << std::endl;
-            foreach (const Poppler::FormField *form, forms) {
+            Q_FOREACH (const Poppler::FormField *form, forms) {
                 std::cout << "\t\tForm" << std::endl;
                 std::cout << "\t\t\tType: " << form->type() << std::endl;
                 std::cout << "\t\t\tRect: " << form->rect() << std::endl;
@@ -222,7 +222,7 @@ int main(int argc, char **argv)
                 std::cout << "\t\t\tVisible: " << form->isVisible() << std::endl;
                 switch (form->type()) {
                 case Poppler::FormField::FormButton: {
-                    const Poppler::FormFieldButton *buttonForm = static_cast<const Poppler::FormFieldButton *>(form);
+                    const auto *buttonForm = static_cast<const Poppler::FormFieldButton *>(form);
                     std::cout << "\t\t\tButtonType: " << buttonForm->buttonType() << std::endl;
                     std::cout << "\t\t\tCaption: " << buttonForm->caption() << std::endl;
                     std::cout << "\t\t\tState: " << buttonForm->state() << std::endl;
@@ -230,7 +230,7 @@ int main(int argc, char **argv)
                 } break;
 
                 case Poppler::FormField::FormText: {
-                    const Poppler::FormFieldText *textForm = static_cast<const Poppler::FormFieldText *>(form);
+                    const auto *textForm = static_cast<const Poppler::FormFieldText *>(form);
                     std::cout << "\t\t\tTextType: " << textForm->textType() << std::endl;
                     std::cout << "\t\t\tText: " << textForm->text() << std::endl;
                     std::cout << "\t\t\tIsPassword: " << textForm->isPassword() << std::endl;
@@ -241,7 +241,7 @@ int main(int argc, char **argv)
                 } break;
 
                 case Poppler::FormField::FormChoice: {
-                    const Poppler::FormFieldChoice *choiceForm = static_cast<const Poppler::FormFieldChoice *>(form);
+                    const auto *choiceForm = static_cast<const Poppler::FormFieldChoice *>(form);
                     std::cout << "\t\t\tChoiceType: " << choiceForm->choiceType() << std::endl;
                     std::cout << "\t\t\tChoices: " << choiceForm->choices() << std::endl;
                     std::cout << "\t\t\tIsEditable: " << choiceForm->isEditable() << std::endl;
@@ -253,12 +253,12 @@ int main(int argc, char **argv)
                 } break;
 
                 case Poppler::FormField::FormSignature: {
-                    const Poppler::FormFieldSignature *signatureForm = static_cast<const Poppler::FormFieldSignature *>(form);
+                    const auto *signatureForm = static_cast<const Poppler::FormFieldSignature *>(form);
                     const Poppler::SignatureValidationInfo svi = signatureForm->validateAsync(Poppler::FormFieldSignature::ValidateVerifyCertificate).first;
                     const Poppler::SignatureValidationInfo::CertificateStatus certStatus = signatureForm->validateResult();
                     std::cout << "\t\t\tSignatureStatus: " << svi.signatureStatus() << std::endl;
                     std::cout << "\t\t\tCertificateStatus: " << certStatus << std::endl;
-                    if (svi.signerName().isEmpty() == false) {
+                    if (!svi.signerName().isEmpty()) {
                         std::cout << "\t\t\tSignerName: " << svi.signerName() << std::endl;
                     } else {
                         std::cout << "\t\t\tSignerName: "

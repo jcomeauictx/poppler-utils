@@ -2,6 +2,7 @@
 
 #include "PDFDoc.h"
 #include "GlobalParams.h"
+#include "OptionalContent.h"
 
 #include "Outline.h"
 #include "poppler-private.h"
@@ -12,7 +13,7 @@ class TestUtf8Document : public QObject
 public:
     explicit TestUtf8Document(QObject *parent = nullptr) : QObject(parent) { }
 private Q_SLOTS:
-    void checkStrings();
+    static void checkStrings();
 };
 
 inline QString outlineItemTitle(OutlineItem *item)
@@ -34,17 +35,17 @@ void TestUtf8Document::checkStrings()
 
     QVERIFY(doc->getOptContentConfig() && doc->getOptContentConfig()->hasOCGs());
 
-    QCOMPARE(Poppler::UnicodeParsedString(doc->getDocInfoTitle().get()), QString::fromUtf8("表ポあA鷗ŒéＢ逍Üßªąñ丂㐀𠀀")); // clazy:exclude=qstring-allocations
+    QCOMPARE(Poppler::UnicodeParsedString(doc->getDocInfoTitle().value_or("WRONG")), QString::fromUtf8("表ポあA鷗ŒéＢ逍Üßªąñ丂㐀𠀀")); // clazy:exclude=qstring-allocations
 
     QSet<QString> expectedNames { QString::fromUtf8("گچپژ"), QString::fromUtf8("Layer 1") }; // clazy:exclude=qstring-allocations
     QSet<QString> foundNames;
 
-    for (auto &[ref, group] : doc->getOptContentConfig()->getOCGs()) {
+    for (const auto &[ref, group] : doc->getOptContentConfig()->getOCGs()) {
         foundNames.insert(Poppler::UnicodeParsedString(group->getName()));
     }
     QCOMPARE(expectedNames, foundNames);
 
-    auto outlineItems = doc->getOutline()->getItems();
+    const auto *outlineItems = doc->getOutline()->getItems();
     QVERIFY(outlineItems);
     QCOMPARE(outlineItems->size(), 3);
 

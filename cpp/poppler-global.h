@@ -3,7 +3,7 @@
  * Copyright (C) 2010, Patrick Spendrin <ps_ml@gmx.de>
  * Copyright (C) 2014, Hans-Peter Deifel <hpdeifel@gmx.de>
  * Copyright (C) 2018, Adam Reichold <adam.reichold@t-online.de>
- * Copyright (C) 2021, 2022, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2021, 2022, 2026, Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2022, Tobias C. Berner <tcberner@gmail.com>
  * Copyright (C) 2022, Oliver Sander <oliver.sander@tu-dresden.de>
  * Copyright (C) 2024, hugegameartgd@gmail.com
@@ -46,13 +46,13 @@ public:
 
 protected:
     noncopyable();
-    ~noncopyable();
+    ~noncopyable() = default;
     noncopyable &operator=(noncopyable &&other) noexcept;
 };
 
 }
 
-typedef detail::noncopyable noncopyable;
+using detail::noncopyable;
 /// \endcond
 
 enum rotation_enum
@@ -90,9 +90,7 @@ enum case_sensitivity_enum
     case_insensitive
 };
 
-typedef std::vector<char> byte_array;
-
-typedef unsigned int /* time_t */ time_type;
+using byte_array = std::vector<char>;
 
 // to disable warning only for this occurrence
 #ifdef _MSC_VER
@@ -122,15 +120,13 @@ private:
 #    pragma warning(pop)
 #endif
 
-[[deprecated]] POPPLER_CPP_EXPORT time_type convert_date(const std::string &date);
-
 POPPLER_CPP_EXPORT time_t convert_date_t(const std::string &date);
 
 POPPLER_CPP_EXPORT std::ostream &operator<<(std::ostream &stream, const byte_array &array);
 
 POPPLER_CPP_EXPORT bool set_data_dir(const std::string &new_data_dir);
 
-typedef void (*debug_func)(const std::string &, void *);
+using debug_func = void (*)(const std::string &, void *);
 
 POPPLER_CPP_EXPORT void set_debug_error_function(debug_func debug_function, void *closure);
 

@@ -39,11 +39,10 @@ public:
 protected:
     virtual void fillInfo() = 0;
 
-private Q_SLOTS:
+private:
     void slotVisibilityChanged(bool visible);
 
-private:
-    bool m_filled;
+    bool m_filled = false;
 };
 
 #endif

@@ -60,42 +60,29 @@ static void pgd_print_draw_page(GtkPrintOperation *op, GtkPrintContext *context,
 {
     PopplerPage *page;
     cairo_t *cr;
-#if 0
-        GtkPrintSettings *settings;
-#endif
-    PgdPrintOptions options;
-    PopplerPrintFlags flags = 0;
+    PopplerRenderAnnotsFlags flags = 0;
 
     page = poppler_document_get_page(demo->doc, page_nr);
     if (!page) {
         return;
     }
 
-#if 0
-        settings = gtk_print_operation_get_print_settings (op);
-        options = gtk_print_settings_get_int_with_default (settings,
-                                                           PGD_PRINT_OPTIONS,
-                                                           PRINT_DOCUMENT_MARKUPS);
-#else
-    /* Workaround for gtk+ bug, we need to save the options ourselves */
-    options = demo->options;
-#endif
-    switch (options) {
+    switch (demo->options) {
     case PRINT_DOCUMENT:
-        flags |= POPPLER_PRINT_DOCUMENT;
+        flags = POPPLER_RENDER_ANNOTS_PRINT_DOCUMENT;
         break;
     case PRINT_DOCUMENT_MARKUPS:
-        flags |= POPPLER_PRINT_MARKUP_ANNOTS;
+        flags = POPPLER_RENDER_ANNOTS_PRINT_MARKUP;
         break;
     case PRINT_DOCUMENT_STAMPS:
-        flags |= POPPLER_PRINT_STAMP_ANNOTS_ONLY;
+        flags = POPPLER_RENDER_ANNOTS_PRINT_STAMP;
         break;
     default:
         g_assert_not_reached();
     }
 
     cr = gtk_print_context_get_cairo_context(context);
-    poppler_page_render_for_printing_with_options(page, cr, flags);
+    poppler_page_render_full(page, cr, TRUE, flags);
     g_object_unref(page);
 }
 

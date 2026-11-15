@@ -13,7 +13,9 @@
 //
 // Copyright (C) 2011, 2012, 2015 Thomas Freitag <Thomas.Freitag@alfa.de>
 // Copyright (C) 2017 Adrian Johnson <ajohnson@redneon.com>
-// Copyright (C) 2018, 2021, 2022, 2024 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2018, 2021, 2022, 2024-2026 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2026 Taufeeque Sifat <entity069@protonmail.com>
+// Copyright (C) 2026 Stefan Brüns <stefan.bruens@rwth-aachen.de>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -25,28 +27,13 @@
 
 #include "SplashTypes.h"
 
+#include <array>
 #include <vector>
 
 class SplashPattern;
 class SplashScreen;
 class SplashClip;
 class SplashBitmap;
-
-//------------------------------------------------------------------------
-// line cap values
-//------------------------------------------------------------------------
-
-#define splashLineCapButt 0
-#define splashLineCapRound 1
-#define splashLineCapProjecting 2
-
-//------------------------------------------------------------------------
-// line join values
-//------------------------------------------------------------------------
-
-#define splashLineJoinMiter 0
-#define splashLineJoinRound 1
-#define splashLineJoinBevel 2
 
 //------------------------------------------------------------------------
 // SplashState
@@ -56,8 +43,7 @@ class SplashState
 {
 public:
     // Create a new state object, initialized with default settings.
-    SplashState(int width, int height, bool vectorAntialias, SplashScreenParams *screenParams);
-    SplashState(int width, int height, bool vectorAntialias, SplashScreen *screenA);
+    SplashState(int width, int height, bool vectorAntialias, const SplashScreen &screenA);
 
     // Copy a state object.
     SplashState *copy() const { return new SplashState(this); }
@@ -73,11 +59,8 @@ public:
     // Set the fill pattern.  This does not copy <fillPatternA>.
     void setFillPattern(SplashPattern *fillPatternA);
 
-    // Set the screen.  This does not copy <screenA>.
-    void setScreen(SplashScreen *screenA);
-
     // Set the line dash pattern.
-    void setLineDash(std::vector<SplashCoord> &&lineDashA, SplashCoord lineDashPhaseA);
+    void setLineDash(std::vector<double> &&lineDashA, double lineDashPhaseA);
 
     // Set the soft mask bitmap.
     void setSoftMask(SplashBitmap *softMaskA);
@@ -93,28 +76,29 @@ public:
 private:
     explicit SplashState(const SplashState *state);
 
-    SplashCoord matrix[6];
+    std::array<double, 6> matrix;
     SplashPattern *strokePattern;
     SplashPattern *fillPattern;
     SplashScreen *screen;
     SplashBlendFunc blendFunc;
-    SplashCoord strokeAlpha;
-    SplashCoord fillAlpha;
+    double strokeAlpha;
+    double fillAlpha;
     bool multiplyPatternAlpha;
-    SplashCoord patternStrokeAlpha;
-    SplashCoord patternFillAlpha;
-    SplashCoord lineWidth;
-    int lineCap;
-    int lineJoin;
-    SplashCoord miterLimit;
-    SplashCoord flatness;
-    std::vector<SplashCoord> lineDash;
-    SplashCoord lineDashPhase;
+    double patternStrokeAlpha;
+    double patternFillAlpha;
+    double lineWidth;
+    SplashLineCap lineCap;
+    SplashLineJoin lineJoin;
+    double miterLimit;
+    double flatness;
+    std::vector<double> lineDash;
+    double lineDashPhase;
     bool strokeAdjust;
-    SplashClip *clip;
+    std::unique_ptr<SplashClip> clip;
     SplashBitmap *softMask;
     bool deleteSoftMask;
     bool inNonIsolatedGroup;
+    bool inKnockoutGroup;
     bool fillOverprint;
     bool strokeOverprint;
     int overprintMode;

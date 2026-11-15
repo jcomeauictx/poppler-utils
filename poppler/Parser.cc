@@ -13,7 +13,7 @@
 // All changes made under the Poppler project to this file are licensed
 // under GPL version 2 or later
 //
-// Copyright (C) 2006, 2009, 201, 2010, 2013, 2014, 2017-2020 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2006, 2009, 201, 2010, 2013, 2014, 2017-2020, 2025, 2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2006 Krzysztof Kowalczyk <kkowalczyk@gmail.com>
 // Copyright (C) 2009 Ilya Gorenbein <igorenbein@finjan.com>
 // Copyright (C) 2012 Hib Eris <hib@hiberis.nl>
@@ -23,6 +23,9 @@
 // Copyright (C) 2018, 2019 Adam Reichold <adam.reichold@t-online.de>
 // Copyright (C) 2018 Marek Kasik <mkasik@redhat.com>
 // Copyright (C) 2024 Nelson Benítez León <nbenitezl@gmail.com>
+// Copyright (C) 2024-2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2025 Arnav V <arnav0872@gmail.com>
+// Copyright (C) 2026 Stefan Brüns <stefan.bruens@rwth-aachen.de>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -31,7 +34,7 @@
 
 #include <config.h>
 
-#include <cstddef>
+#include <climits>
 #include "Object.h"
 #include "Array.h"
 #include "Dict.h"
@@ -43,9 +46,9 @@
 // Max number of nested objects.  This is used to catch infinite loops
 // in the object structure. And also technically valid files with
 // lots of nested arrays that made us consume all the stack
-#define recursionLimit 500
+constexpr int recursionLimit = 500;
 
-Parser::Parser(XRef *xrefA, Stream *streamA, bool allowStreamsA) : lexer { xrefA, streamA }
+Parser::Parser(XRef *xrefA, std::unique_ptr<Stream> &&streamA, bool allowStreamsA) : lexer { xrefA, std::move(streamA) }
 {
     allowStreams = allowStreamsA;
     buf1 = lexer.getObj();
@@ -68,23 +71,23 @@ Object Parser::getObj(int recursion)
     return getObj(false, nullptr, cryptRC4, 0, 0, 0, recursion);
 }
 
-static std::unique_ptr<GooString> decryptedString(const GooString *s, const unsigned char *fileKey, CryptAlgorithm encAlgorithm, int keyLength, int objNum, int objGen)
+static std::string decryptedString(const std::string &s, const unsigned char *fileKey, CryptAlgorithm encAlgorithm, int keyLength, int objNum, int objGen)
 {
-    DecryptStream decrypt(new MemStream(s->c_str(), 0, s->getLength(), Object(objNull)), fileKey, encAlgorithm, keyLength, { objNum, objGen });
-    decrypt.reset();
-    std::unique_ptr<GooString> res = std::make_unique<GooString>();
+    DecryptStream decrypt(std::make_unique<MemStream>(s.c_str(), 0, s.size(), Object::null()), fileKey, encAlgorithm, keyLength, { .num = objNum, .gen = objGen });
+    if (!decrypt.rewind()) {
+        return {};
+    }
+    std::string res;
+    res.reserve(s.size());
     int c;
     while ((c = decrypt.getChar()) != EOF) {
-        res->append((char)c);
+        res.push_back(static_cast<char>(c));
     }
     return res;
 }
 
 Object Parser::getObj(bool simpleOnly, const unsigned char *fileKey, CryptAlgorithm encAlgorithm, int keyLength, int objNum, int objGen, int recursion, bool strict, bool decryptString)
 {
-    Object obj;
-    Stream *str;
-
     // refill buffer after inline image data
     if (inlineImg == 2) {
         buf1 = lexer.getObj();
@@ -93,38 +96,41 @@ Object Parser::getObj(bool simpleOnly, const unsigned char *fileKey, CryptAlgori
     }
 
     if (unlikely(recursion >= recursionLimit)) {
-        return Object(objError);
+        return Object::error();
     }
 
     // array
     if (!simpleOnly && buf1.isCmd("[")) {
         shift();
-        obj = Object(new Array(lexer.getXRef()));
+        auto array = std::make_unique<Array>(lexer.getXRef());
         while (!buf1.isCmd("]") && !buf1.isEOF() && recursion + 1 < recursionLimit) {
             Object obj2 = getObj(false, fileKey, encAlgorithm, keyLength, objNum, objGen, recursion + 1);
-            obj.arrayAdd(std::move(obj2));
+            array->add(std::move(obj2));
         }
         if (recursion + 1 >= recursionLimit && strict) {
-            goto err;
+            return Object::error();
         }
         if (buf1.isEOF()) {
             error(errSyntaxError, getPos(), "End of file inside array");
             if (strict) {
-                goto err;
+                return Object::error();
             }
         }
         shift();
 
-        // dictionary or stream
-    } else if (!simpleOnly && buf1.isCmd("<<")) {
+        return Object(std::move(array));
+    }
+
+    // dictionary or stream
+    if (!simpleOnly && buf1.isCmd("<<")) {
         shift(objNum);
-        obj = Object(new Dict(lexer.getXRef()));
+        auto dict = std::make_unique<Dict>(lexer.getXRef());
         bool hasContentsEntry = false;
         while (!buf1.isCmd(">>") && !buf1.isEOF()) {
             if (!buf1.isName()) {
                 error(errSyntaxError, getPos(), "Dictionary key must be a name object");
                 if (strict) {
-                    goto err;
+                    return Object::error();
                 }
                 shift();
             } else {
@@ -133,7 +139,7 @@ Object Parser::getObj(bool simpleOnly, const unsigned char *fileKey, CryptAlgori
                 shift();
                 if (buf1.isEOF() || buf1.isError()) {
                     if (strict && buf1.isError()) {
-                        goto err;
+                        return Object::error();
                     }
                     break;
                 }
@@ -146,40 +152,42 @@ Object Parser::getObj(bool simpleOnly, const unsigned char *fileKey, CryptAlgori
                 if (unlikely(recursion + 1 >= recursionLimit)) {
                     break;
                 }
-                obj.dictAdd(key.getName(), std::move(obj2));
+                dict->add(key.getNameString(), std::move(obj2));
             }
         }
         if (buf1.isEOF()) {
             error(errSyntaxError, getPos(), "End of file inside dictionary");
             if (strict) {
-                goto err;
+                return Object::error();
             }
         }
         if (fileKey && hasContentsEntry) {
-            Dict *dict = obj.getDict();
             const bool isSigDict = dict->is("Sig");
             if (!isSigDict) {
                 const Object &contentsObj = dict->lookupNF("Contents");
                 if (contentsObj.isString()) {
-                    std::unique_ptr<GooString> s = decryptedString(contentsObj.getString(), fileKey, encAlgorithm, keyLength, objNum, objGen);
-                    dict->set("Contents", Object(s.release()));
+                    std::string s = decryptedString(contentsObj.getString(), fileKey, encAlgorithm, keyLength, objNum, objGen);
+                    dict->set("Contents", Object(std::move(s)));
                 }
             }
         }
         // stream objects are not allowed inside content streams or
         // object streams
         if (buf2.isCmd("stream")) {
-            if (allowStreams && (str = makeStream(std::move(obj), fileKey, encAlgorithm, keyLength, objNum, objGen, recursion + 1, strict))) {
-                return Object(str);
-            } else {
-                return Object(objError);
+            if (allowStreams) {
+                if (auto str = makeStream(Object(std::move(dict)), fileKey, encAlgorithm, keyLength, objNum, objGen, recursion + 1, strict)) {
+                    return Object(std::move(str));
+                }
             }
-        } else {
-            shift();
+            return Object::error();
         }
+        shift();
 
-        // indirect reference or integer
-    } else if (buf1.isInt()) {
+        return Object(std::move(dict));
+    }
+
+    // indirect reference or integer
+    if (buf1.isInt()) {
         const int num = buf1.getInt();
         shift();
         if (buf1.isInt() && buf2.isCmd("R")) {
@@ -195,35 +203,32 @@ Object Parser::getObj(bool simpleOnly, const unsigned char *fileKey, CryptAlgori
             r.num = num;
             r.gen = gen;
             return Object(r);
-        } else {
-            return Object(num);
         }
-
-        // string
-    } else if (decryptString && buf1.isString() && fileKey) {
-        std::unique_ptr<GooString> s2 = decryptedString(buf1.getString(), fileKey, encAlgorithm, keyLength, objNum, objGen);
-        obj = Object(s2.release());
-        shift();
-
-        // simple object
-    } else {
-        // avoid re-allocating memory for complex objects like strings by
-        // shallow copy of <buf1> to <obj> and nulling <buf1> so that
-        // subsequent buf1.free() won't free this memory
-        obj = std::move(buf1);
-        shift();
+        return Object(num);
     }
 
-    return obj;
+    // string
+    if (decryptString && buf1.isString() && fileKey) {
+        std::string s2 = decryptedString(buf1.getString(), fileKey, encAlgorithm, keyLength, objNum, objGen);
+        Object obj = Object(std::move(s2));
+        shift();
 
-err:
-    return Object(objError);
+        return obj;
+    }
+
+    // simple object
+    // avoid re-allocating memory for complex objects like strings by
+    // shallow copy of <buf1> to <obj> and nulling <buf1> so that
+    // subsequent buf1.free() won't free this memory
+    Object obj = std::move(buf1);
+    shift();
+
+    return obj;
 }
 
-Stream *Parser::makeStream(Object &&dict, const unsigned char *fileKey, CryptAlgorithm encAlgorithm, int keyLength, int objNum, int objGen, int recursion, bool strict)
+std::unique_ptr<Stream> Parser::makeStream(Object &&dict, const unsigned char *fileKey, CryptAlgorithm encAlgorithm, int keyLength, int objNum, int objGen, int recursion, bool strict)
 {
     BaseStream *baseStr;
-    Stream *str;
     Goffset length;
     Goffset pos, endPos;
 
@@ -241,10 +246,11 @@ Stream *Parser::makeStream(Object &&dict, const unsigned char *fileKey, CryptAlg
 
     // get stream start position
     lexer.skipToNextLine();
-    if (!(str = lexer.getStream())) {
+    Stream *lexerStream;
+    if (!(lexerStream = lexer.getStream())) {
         return nullptr;
     }
-    pos = str->getPos();
+    pos = lexerStream->getPos();
 
     // get length
     Object obj = dict.dictLookup("Length", recursion);
@@ -313,15 +319,16 @@ Stream *Parser::makeStream(Object &&dict, const unsigned char *fileKey, CryptAlg
     }
 
     // make base stream
-    str = baseStr->makeSubStream(pos, true, length, std::move(dict));
+    auto str = baseStr->makeSubStream(pos, true, length, std::move(dict));
 
     // handle decryption
     if (fileKey) {
-        str = new DecryptStream(str, fileKey, encAlgorithm, keyLength, { objNum, objGen });
+        str = std::make_unique<DecryptStream>(std::move(str), fileKey, encAlgorithm, keyLength, Ref { .num = objNum, .gen = objGen });
     }
 
     // get filters
-    str = str->addFilters(str->getDict(), recursion);
+    Dict *streamDict = str->getDict();
+    str = Stream::addFilters(std::move(str), streamDict, recursion);
 
     if (XRef *xref = lexer.getXRef()) {
         // Don't try to reuse the entry from the block at the start

@@ -5,8 +5,9 @@
  * Copyright (C) 2016 Jakub Alba <jakubalba@gmail.com>
  * Copyright (C) 2018, 2020, Suzuki Toshiya <mpsuzuki@hiroshima-u.ac.jp>
  * Copyright (C) 2018, 2020 Adam Reichold <adam.reichold@t-online.de>
- * Copyright (C) 2018, 2020 Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2018, 2020, 2024 Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2018, Zsombor Hollay-Horvath <hollay.horvath@gmail.com>
+ * Copyright (C) 2025, 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -38,7 +39,7 @@
 class GooString;
 class PDFRectangle;
 
-#define PSTR(str) const_cast<char *>(str)
+#define PSTR(str) (const_cast<char *>(str))
 
 namespace poppler {
 
@@ -50,9 +51,9 @@ void error_function(ErrorCategory category, Goffset pos, const char *msg);
 
 rectf pdfrectangle_to_rectf(const PDFRectangle &pdfrect);
 
-ustring unicode_GooString_to_ustring(const GooString *str);
+ustring unicode_string_to_ustring(const std::string &str);
 ustring unicode_to_ustring(const Unicode *u, int length);
-GooString *ustring_to_unicode_GooString(const ustring &str);
+std::unique_ptr<GooString> ustring_to_unicode_GooString(const ustring &str);
 
 }
 

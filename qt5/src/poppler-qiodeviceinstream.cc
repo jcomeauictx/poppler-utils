@@ -1,5 +1,7 @@
 /* poppler-qiodeviceinstream.cc: Qt5 interface to poppler
  * Copyright (C) 2019 Alexander Volkov <a.volkov@rusbitech.ru>
+ * Copyright (C) 2025, 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+ * Copyright (C) 2025 Albert Astals Cid <aacid@kde.org>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,8 +22,6 @@
 
 #include <QtCore/QIODevice>
 
-#include <cstdio>
-
 namespace Poppler {
 
 QIODeviceInStream::QIODeviceInStream(QIODevice *device, Goffset startA, bool limitedA, Goffset lengthA, Object &&dictA) : BaseSeekInputStream(startA, limitedA, lengthA, std::move(dictA)), m_device(device) { }
@@ -31,14 +31,14 @@ QIODeviceInStream::~QIODeviceInStream()
     close();
 }
 
-BaseStream *QIODeviceInStream::copy()
+std::unique_ptr<BaseStream> QIODeviceInStream::copy()
 {
-    return new QIODeviceInStream(m_device, start, limited, length, dict.copy());
+    return std::make_unique<QIODeviceInStream>(m_device, start, limited, length, dict.copy());
 }
 
-Stream *QIODeviceInStream::makeSubStream(Goffset startA, bool limitedA, Goffset lengthA, Object &&dictA)
+std::unique_ptr<Stream> QIODeviceInStream::makeSubStream(Goffset startA, bool limitedA, Goffset lengthA, Object &&dictA)
 {
-    return new QIODeviceInStream(m_device, startA, limitedA, lengthA, std::move(dictA));
+    return std::make_unique<QIODeviceInStream>(m_device, startA, limitedA, lengthA, std::move(dictA));
 }
 
 Goffset QIODeviceInStream::currentPos() const

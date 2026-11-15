@@ -10,20 +10,20 @@ class TestForms : public QObject
     Q_OBJECT
 public:
     explicit TestForms(QObject *parent = nullptr) : QObject(parent) { }
-private slots:
-    void testCheckbox(); // Test for issue #655
-    void testCheckboxIssue159(); // Test for issue #159
-    void testSetIcon(); // Test that setIcon will always be valid.
-    void testSetPrintable();
-    void testSetAppearanceText();
-    void testStandAloneWidgets(); // check for 'de facto' tooltips. Issue #34
-    void testUnicodeFieldAttributes();
+private Q_SLOTS:
+    static void testCheckbox(); // Test for issue #655
+    static void testCheckboxIssue159(); // Test for issue #159
+    static void testSetIcon(); // Test that setIcon will always be valid.
+    static void testSetPrintable();
+    static void testSetAppearanceText();
+    static void testStandAloneWidgets(); // check for 'de facto' tooltips. Issue #34
+    static void testUnicodeFieldAttributes();
 };
 
 void TestForms::testCheckbox()
 {
     // Test for checkbox issue #655
-    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(TESTDATADIR "/unittestcases/latex-hyperref-checkbox-issue-655.pdf");
+    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/latex-hyperref-checkbox-issue-655.pdf"));
     QVERIFY(document);
 
     std::unique_ptr<Poppler::Page> page(document->page(0));
@@ -35,7 +35,7 @@ void TestForms::testCheckbox()
     Poppler::FormField *form = forms.at(0).get();
     QCOMPARE(form->type(), Poppler::FormField::FormButton);
 
-    Poppler::FormFieldButton *chkFormFieldButton = static_cast<Poppler::FormFieldButton *>(form);
+    auto *chkFormFieldButton = static_cast<Poppler::FormFieldButton *>(form);
 
     // Test this is actually a Checkbox
     QCOMPARE(chkFormFieldButton->buttonType(), Poppler::FormFieldButton::CheckBox);
@@ -51,7 +51,7 @@ void TestForms::testCheckbox()
 void TestForms::testStandAloneWidgets()
 {
     // Check for 'de facto' tooltips. Issue #34
-    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(TESTDATADIR "/unittestcases/tooltip.pdf");
+    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/tooltip.pdf"));
     QVERIFY(document);
 
     std::unique_ptr<Poppler::Page> page = document->page(0);
@@ -64,7 +64,7 @@ void TestForms::testStandAloneWidgets()
     for (const std::unique_ptr<Poppler::FormField> &field : forms) {
         QCOMPARE(field->type(), Poppler::FormField::FormButton);
 
-        Poppler::FormFieldButton *fieldButton = static_cast<Poppler::FormFieldButton *>(field.get());
+        auto *fieldButton = static_cast<Poppler::FormFieldButton *>(field.get());
         QCOMPARE(fieldButton->buttonType(), Poppler::FormFieldButton::Push);
 
         FormField *ff = Poppler::FormFieldData::getFormWidget(fieldButton)->getField();
@@ -80,7 +80,7 @@ void TestForms::testStandAloneWidgets()
 void TestForms::testCheckboxIssue159()
 {
     // Test for checkbox issue #159
-    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(TESTDATADIR "/unittestcases/checkbox_issue_159.pdf");
+    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/checkbox_issue_159.pdf"));
     QVERIFY(document);
 
     std::unique_ptr<Poppler::Page> page = document->page(0);
@@ -97,7 +97,7 @@ void TestForms::testCheckboxIssue159()
             continue;
         }
 
-        Poppler::FormFieldButton *fieldButton = static_cast<Poppler::FormFieldButton *>(field.get());
+        auto *fieldButton = static_cast<Poppler::FormFieldButton *>(field.get());
         if (fieldButton->buttonType() != Poppler::FormFieldButton::Radio) {
             continue;
         }
@@ -127,7 +127,7 @@ void TestForms::testCheckboxIssue159()
 
 void TestForms::testSetIcon()
 {
-    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(TESTDATADIR "/unittestcases/form_set_icon.pdf");
+    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/form_set_icon.pdf"));
     QVERIFY(document);
 
     std::unique_ptr<Poppler::Page> page = document->page(0);
@@ -144,7 +144,7 @@ void TestForms::testSetIcon()
             continue;
         }
 
-        Poppler::FormFieldButton *fieldButton = static_cast<Poppler::FormFieldButton *>(field.get());
+        auto *fieldButton = static_cast<Poppler::FormFieldButton *>(field.get());
         if (field->name() == QStringLiteral("anm0")) {
             anmButton = fieldButton;
         }
@@ -160,7 +160,7 @@ void TestForms::testSetIcon()
             continue;
         }
 
-        Poppler::FormFieldButton *fieldButton = static_cast<Poppler::FormFieldButton *>(field.get());
+        auto *fieldButton = static_cast<Poppler::FormFieldButton *>(field.get());
         if (field->name() == QStringLiteral("anm0")) {
             continue;
         }
@@ -187,7 +187,7 @@ void TestForms::testSetIcon()
 
 void TestForms::testSetPrintable()
 {
-    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(TESTDATADIR "/unittestcases/form_set_icon.pdf");
+    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/form_set_icon.pdf"));
     QVERIFY(document);
 
     std::unique_ptr<Poppler::Page> page = document->page(0);
@@ -206,7 +206,7 @@ void TestForms::testSetPrintable()
 
 void TestForms::testSetAppearanceText()
 {
-    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(TESTDATADIR "/unittestcases/checkbox_issue_159.pdf");
+    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/checkbox_issue_159.pdf"));
     QVERIFY(document);
 
     std::unique_ptr<Poppler::Page> page = document->page(0);
@@ -224,9 +224,9 @@ void TestForms::testSetAppearanceText()
 
         nTextForms++;
 
-        Poppler::FormFieldText *fft = static_cast<Poppler::FormFieldText *>(field.get());
+        auto *fft = static_cast<Poppler::FormFieldText *>(field.get());
 
-        const QString textToSet = "HOLA" + fft->name();
+        const QString textToSet = QStringLiteral("HOLA") + fft->name();
         fft->setAppearanceText(textToSet);
 
         Dict *dict = Poppler::FormFieldData::getFormWidget(fft)->getObj()->getDict();
@@ -235,10 +235,10 @@ void TestForms::testSetAppearanceText()
         QVERIFY(strObject.isStream());
 
         GooString s;
-        strObject.getStream()->fillGooString(&s);
+        strObject.getStream()->fillString(s.toNonConstStr());
 
         const QString textToFind = QStringLiteral("\n(%1) Tj\n").arg(textToSet);
-        QVERIFY(s.toStr().find(textToFind.toStdString()) != std::string::npos);
+        QVERIFY(s.toStr().contains(textToFind.toStdString()));
     }
 
     QCOMPARE(nTextForms, 5);
@@ -246,7 +246,7 @@ void TestForms::testSetAppearanceText()
 
 void TestForms::testUnicodeFieldAttributes()
 {
-    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(TESTDATADIR "/unittestcases/fieldWithUtf16Names.pdf");
+    std::unique_ptr<Poppler::Document> document = Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/fieldWithUtf16Names.pdf"));
     QVERIFY(document);
 
     std::unique_ptr<Poppler::Page> page = document->page(0);

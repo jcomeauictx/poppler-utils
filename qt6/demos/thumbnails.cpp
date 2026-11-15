@@ -38,7 +38,7 @@ ThumbnailsDock::ThumbnailsDock(QWidget *parent) : AbstractInfoDock(parent)
     connect(m_list, &QListWidget::itemActivated, this, &ThumbnailsDock::slotItemActivated);
 }
 
-ThumbnailsDock::~ThumbnailsDock() { }
+ThumbnailsDock::~ThumbnailsDock() = default;
 
 void ThumbnailsDock::fillInfo()
 {
@@ -48,7 +48,7 @@ void ThumbnailsDock::fillInfo()
         const std::unique_ptr<Poppler::Page> page = document()->page(i);
         const QImage image = page ? page->thumbnail() : QImage();
         if (!image.isNull()) {
-            QListWidgetItem *item = new QListWidgetItem();
+            auto *item = new QListWidgetItem();
             item->setText(QString::number(i + 1));
             item->setData(Qt::DecorationRole, QPixmap::fromImage(image));
             item->setData(PageRole, i);

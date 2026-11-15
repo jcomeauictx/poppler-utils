@@ -1,7 +1,7 @@
 /* poppler-page.cc: qt interface to poppler
  * Copyright (C) 2005, Net Integration Technologies, Inc.
  * Copyright (C) 2005, Brad Hards <bradh@frogmouth.net>
- * Copyright (C) 2005-2022, 2024, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2005-2022, 2024-2026, Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2005, Stefan Kebekus <stefan.kebekus@math.uni-koeln.de>
  * Copyright (C) 2006-2011, Pino Toscano <pino@kde.org>
  * Copyright (C) 2008 Carlos Garcia Campos <carlosgc@gnome.org>
@@ -27,8 +27,11 @@
  * Copyright (C) 2021 Hubert Figuiere <hub@figuiere.net>
  * Copyright (C) 2021 Thomas Huxhorn <thomas.huxhorn@web.de>
  * Copyright (C) 2023 Kevin Ottens <kevin.ottens@enioka.com>. Work sponsored by De Bortoli Wines
- * Copyright (C) 2024 Stefan Brüns <stefan.bruens@rwth-aachen.de>
+ * Copyright (C) 2024-2026 Stefan Brüns <stefan.bruens@rwth-aachen.de>
  * Copyright (C) 2024 Pratham Gandhi <ppg.1382@gmail.com>
+ * Copyright (C) 2024, 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+ * Copyright (C) 2026 Aditya Tiwari <suntiwari3495@gmail.com>
+ * Copyright (C) 2026 Marek Kasik <mkasik@redhat.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -67,6 +70,7 @@
 #include <QPainterOutputDev.h>
 #include <Rendition.h>
 #include <SplashOutputDev.h>
+#include <goo/gmem.h>
 #include <splash/SplashBitmap.h>
 
 #include "poppler-private.h"
@@ -113,8 +117,8 @@ public:
 class Qt6SplashOutputDev : public SplashOutputDev, public OutputDevCallbackHelper
 {
 public:
-    Qt6SplashOutputDev(SplashColorMode colorModeA, int bitmapRowPadA, bool reverseVideoA, bool ignorePaperColorA, SplashColorPtr paperColorA, bool bitmapTopDownA, SplashThinLineMode thinLineMode, bool overprintPreviewA)
-        : SplashOutputDev(colorModeA, bitmapRowPadA, reverseVideoA, paperColorA, bitmapTopDownA, thinLineMode, overprintPreviewA), ignorePaperColor(ignorePaperColorA)
+    Qt6SplashOutputDev(SplashColorMode colorModeA, int bitmapRowPadA, bool ignorePaperColorA, SplashColorPtr paperColorA, bool bitmapTopDownA, SplashThinLineMode thinLineMode, bool overprintPreviewA)
+        : SplashOutputDev(colorModeA, bitmapRowPadA, paperColorA, bitmapTopDownA, thinLineMode, overprintPreviewA), ignorePaperColor(ignorePaperColorA)
     {
     }
 
@@ -163,9 +167,8 @@ public:
                     gfree(data);
                 }
                 return i;
-            } else {
-                return QImage(data, bw, bh, brs, format).copy();
             }
+            return QImage(data, bw, bh, brs, format).copy();
         }
 
         return QImage();
@@ -196,12 +199,12 @@ private:
 
 QImageDumpingQPainterOutputDev::~QImageDumpingQPainterOutputDev() = default;
 
-std::unique_ptr<Link> PageData::convertLinkActionToLink(::LinkAction *a, const QRectF &linkArea)
+std::unique_ptr<Link> PageData::convertLinkActionToLink(const ::LinkAction *a, const QRectF &linkArea) const
 {
     return convertLinkActionToLink(a, parentDoc, linkArea);
 }
 
-std::unique_ptr<Link> PageData::convertLinkActionToLink(::LinkAction *a, DocumentData *parentDoc, const QRectF &linkArea)
+std::unique_ptr<Link> PageData::convertLinkActionToLink(const ::LinkAction *a, DocumentData *parentDoc, const QRectF &linkArea)
 {
     if (!a) {
         return nullptr;
@@ -210,14 +213,14 @@ std::unique_ptr<Link> PageData::convertLinkActionToLink(::LinkAction *a, Documen
     std::unique_ptr<Link> popplerLink;
     switch (a->getKind()) {
     case actionGoTo: {
-        LinkGoTo *g = (LinkGoTo *)a;
+        const auto *g = static_cast<const LinkGoTo *>(a);
         const LinkDestinationData ldd(g->getDest(), g->getNamedDest(), parentDoc, false);
         // create link: no ext file, namedDest, object pointer
         popplerLink = std::make_unique<LinkGoto>(linkArea, QString(), LinkDestination(ldd));
     } break;
 
     case actionGoToR: {
-        LinkGoToR *g = (LinkGoToR *)a;
+        const auto *g = static_cast<const LinkGoToR *>(a);
         // copy link file
         const QString fileName = UnicodeParsedString(g->getFileName());
         const LinkDestinationData ldd(g->getDest(), g->getNamedDest(), parentDoc, !fileName.isEmpty());
@@ -226,13 +229,13 @@ std::unique_ptr<Link> PageData::convertLinkActionToLink(::LinkAction *a, Documen
     } break;
 
     case actionLaunch: {
-        LinkLaunch *e = (LinkLaunch *)a;
+        const auto *e = static_cast<const LinkLaunch *>(a);
         const GooString *p = e->getParams();
-        popplerLink = std::make_unique<LinkExecute>(linkArea, UnicodeParsedString(e->getFileName()), p ? p->c_str() : nullptr);
+        popplerLink = std::make_unique<LinkExecute>(linkArea, UnicodeParsedString(e->getFileName()), p ? QString::fromStdString(p->toStr()) : QString {});
     } break;
 
     case actionNamed: {
-        const std::string &name = ((LinkNamed *)a)->getName();
+        const std::string &name = (static_cast<const LinkNamed *>(a))->getName();
         if (name == "NextPage") {
             popplerLink = std::make_unique<LinkAction>(linkArea, LinkAction::PageNext);
         } else if (name == "PrevPage") {
@@ -268,21 +271,21 @@ std::unique_ptr<Link> PageData::convertLinkActionToLink(::LinkAction *a, Documen
     } break;
 
     case actionURI: {
-        popplerLink = std::make_unique<LinkBrowse>(linkArea, ((LinkURI *)a)->getURI().c_str());
+        popplerLink = std::make_unique<LinkBrowse>(linkArea, QString::fromStdString((static_cast<const LinkURI *>(a))->getURI()));
     } break;
 
     case actionSound: {
-        ::LinkSound *ls = (::LinkSound *)a;
+        const auto *ls = static_cast<const ::LinkSound *>(a);
         popplerLink = std::make_unique<LinkSound>(linkArea, ls->getVolume(), ls->getSynchronous(), ls->getRepeat(), ls->getMix(), new SoundObject(ls->getSound()));
     } break;
 
     case actionJavaScript: {
-        ::LinkJavaScript *ljs = (::LinkJavaScript *)a;
+        const auto *ljs = static_cast<const ::LinkJavaScript *>(a);
         popplerLink = std::make_unique<LinkJavaScript>(linkArea, UnicodeParsedString(ljs->getScript()));
     } break;
 
     case actionMovie: {
-        ::LinkMovie *lm = (::LinkMovie *)a;
+        const auto *lm = static_cast<const ::LinkMovie *>(a);
 
         const QString title = (lm->hasAnnotTitle() ? UnicodeParsedString(lm->getAnnotTitle()) : QString());
 
@@ -311,7 +314,7 @@ std::unique_ptr<Link> PageData::convertLinkActionToLink(::LinkAction *a, Documen
     } break;
 
     case actionRendition: {
-        ::LinkRendition *lrn = (::LinkRendition *)a;
+        const auto *lrn = static_cast<const ::LinkRendition *>(a);
 
         Ref reference = Ref::INVALID();
         if (lrn->hasScreenAnnot()) {
@@ -322,51 +325,53 @@ std::unique_ptr<Link> PageData::convertLinkActionToLink(::LinkAction *a, Documen
     } break;
 
     case actionOCGState: {
-        ::LinkOCGState *plocg = (::LinkOCGState *)a;
+        const auto *plocg = static_cast<const ::LinkOCGState *>(a);
 
-        LinkOCGStatePrivate *locgp = new LinkOCGStatePrivate(linkArea, plocg->getStateList(), plocg->getPreserveRB());
+        auto *locgp = new LinkOCGStatePrivate(linkArea, plocg->getStateList(), plocg->getPreserveRB());
         popplerLink = std::make_unique<LinkOCGState>(locgp);
     } break;
 
     case actionHide: {
-        ::LinkHide *lh = (::LinkHide *)a;
+        const auto *lh = static_cast<const ::LinkHide *>(a);
 
-        LinkHidePrivate *lhp = new LinkHidePrivate(linkArea, lh->hasTargetName() ? UnicodeParsedString(lh->getTargetName()) : QString(), lh->isShowAction());
+        auto *lhp = new LinkHidePrivate(linkArea, lh->hasTargetName() ? UnicodeParsedString(lh->getTargetName()) : QString(), lh->isShowAction());
         popplerLink = std::make_unique<LinkHide>(lhp);
     } break;
 
     case actionResetForm: {
-        ::LinkResetForm *lrf = (::LinkResetForm *)a;
+        const auto *lrf = static_cast<const ::LinkResetForm *>(a);
         std::vector<std::string> stdStringFields = lrf->getFields();
         QStringList qStringFields;
         for (const std::string &str : stdStringFields) {
             qStringFields << QString::fromStdString(str);
         }
-        LinkResetFormPrivate *lrfp = new LinkResetFormPrivate(linkArea, qStringFields, lrf->getExclude());
+        auto *lrfp = new LinkResetFormPrivate(linkArea, qStringFields, lrf->getExclude());
         popplerLink = std::make_unique<LinkResetForm>(lrfp);
     } break;
 
     case actionSubmitForm: {
-        ::LinkSubmitForm *lsf = (::LinkSubmitForm *)a;
+        const auto *lsf = static_cast<const ::LinkSubmitForm *>(a);
         const std::vector<std::string> &stdStringFields = lsf->getFields();
         QVector<int> fieldIds;
         fieldIds.reserve(stdStringFields.size());
         Form *form = parentDoc->doc->getCatalog()->getForm();
-        for (const std::string &fieldStr : stdStringFields) {
-            ::FormField *field = form->findFieldByFullyQualifiedNameOrRef(fieldStr);
-            if (!field->getNoExport()) {
-                int numWidgets = field->getNumWidgets();
-                for (int i = 0; i < numWidgets; i++) {
-                    ::FormWidget *widget = field->getWidget(i);
-                    if (widget) {
-                        fieldIds.append(field->getWidget(i)->getID());
+        if (form) {
+            for (const std::string &fieldStr : stdStringFields) {
+                ::FormField *field = form->findFieldByFullyQualifiedNameOrRef(fieldStr);
+                if (field && !field->getNoExport()) {
+                    int numWidgets = field->getNumWidgets();
+                    for (int i = 0; i < numWidgets; i++) {
+                        ::FormWidget *widget = field->getWidget(i);
+                        if (widget) {
+                            fieldIds.append(field->getWidget(i)->getID());
+                        }
                     }
                 }
             }
         }
         QString qStringUrl = QString::fromStdString(lsf->getUrl());
-        LinkSubmitForm::SubmitFormFlags qFlags = static_cast<LinkSubmitForm::SubmitFormFlags>(lsf->getFlags());
-        LinkSubmitFormPrivate *lsfp = new LinkSubmitFormPrivate(linkArea, fieldIds, qStringUrl, qFlags);
+        auto qFlags = static_cast<LinkSubmitForm::SubmitFormFlags>(lsf->getFlags());
+        auto *lsfp = new LinkSubmitFormPrivate(linkArea, fieldIds, qStringUrl, qFlags);
         popplerLink = std::make_unique<LinkSubmitForm>(lsfp);
     } break;
 
@@ -385,16 +390,16 @@ std::unique_ptr<Link> PageData::convertLinkActionToLink(::LinkAction *a, Documen
     return popplerLink;
 }
 
-inline TextPage *PageData::prepareTextSearch(const QString &text, Page::Rotation rotate, QVector<Unicode> *u)
+inline std::unique_ptr<TextPage> PageData::prepareTextSearch(const QString &text, Page::Rotation rotate, QVector<Unicode> *u) const
 {
     *u = text.toUcs4();
 
-    const int rotation = (int)rotate * 90;
+    const int rotation = static_cast<int>(rotate) * 90;
 
     // fetch ourselves a textpage
     TextOutputDev td(nullptr, true, 0, false, false);
     parentDoc->doc->displayPage(&td, index + 1, 72, 72, rotation, false, true, false, nullptr, nullptr, nullptr, nullptr, true);
-    TextPage *textPage = td.takeText();
+    std::unique_ptr<TextPage> textPage = td.takeText();
 
     return textPage;
 }
@@ -404,9 +409,11 @@ inline bool PageData::performSingleTextSearch(TextPage *textPage, QVector<Unicod
 {
     if (direction == Page::FromTop) {
         return textPage->findText(u.data(), u.size(), true, true, false, false, sCase, sDiacritics, sAcrossLines, false, sWords, &sLeft, &sTop, &sRight, &sBottom, nullptr, nullptr);
-    } else if (direction == Page::NextResult) {
+    }
+    if (direction == Page::NextResult) {
         return textPage->findText(u.data(), u.size(), false, true, true, false, sCase, sDiacritics, sAcrossLines, false, sWords, &sLeft, &sTop, &sRight, &sBottom, nullptr, nullptr);
-    } else if (direction == Page::PreviousResult) {
+    }
+    if (direction == Page::PreviousResult) {
         return textPage->findText(u.data(), u.size(), false, true, true, false, sCase, sDiacritics, sAcrossLines, true, sWords, &sLeft, &sTop, &sRight, &sBottom, nullptr, nullptr);
     }
 
@@ -435,7 +442,7 @@ inline QList<QRectF> PageData::performMultipleTextSearch(TextPage *textPage, QVe
             QRectF resultN;
 
             resultN.setLeft(continueMatch.x1);
-            resultN.setTop(continueMatch.y1);
+            resultN.setTop(continueMatch.y2);
             resultN.setRight(continueMatch.x2);
             resultN.setBottom(continueMatch.y1);
 
@@ -463,7 +470,7 @@ Page::~Page()
 }
 
 // Callback that filters out everything but form fields
-static auto annotDisplayDecideCbk = [](Annot *annot, void *user_data) {
+static auto annotDisplayDecideCbk = [](Annot *annot, void * /*user_data*/) {
     // Hide everything but forms
     return (annot->getType() == Annot::typeWidget);
 };
@@ -473,12 +480,12 @@ static auto annotDisplayDecideCbk = [](Annot *annot, void *user_data) {
 static bool (*nullAnnotCallBack)(Annot *annot, void *user_data) = nullptr;
 
 static auto shouldAbortRenderInternalCallback = [](void *user_data) {
-    OutputDevCallbackHelper *helper = reinterpret_cast<OutputDevCallbackHelper *>(user_data);
+    auto *helper = reinterpret_cast<OutputDevCallbackHelper *>(user_data);
     return helper->shouldAbortRenderCallback(helper->payload);
 };
 
 static auto shouldAbortExtractionInternalCallback = [](void *user_data) {
-    TextExtractionAbortHelper *helper = reinterpret_cast<TextExtractionAbortHelper *>(user_data);
+    auto *helper = reinterpret_cast<TextExtractionAbortHelper *>(user_data);
     return helper->shouldAbortExtractionCallback(helper->payload);
 };
 
@@ -500,13 +507,13 @@ static bool renderToQPainter(QImageDumpingQPainterOutputDev *qpainter_output, QP
     }
     painter->translate(x == -1 ? 0 : -x, y == -1 ? 0 : -y);
 
-    qpainter_output->startDoc(page->parentDoc->doc);
+    qpainter_output->startDoc(page->parentDoc->doc.get());
 
     const bool hideAnnotations = page->parentDoc->m_hints & Document::HideAnnotations;
 
     OutputDevCallbackHelper *abortHelper = qpainter_output;
-    page->parentDoc->doc->displayPageSlice(qpainter_output, page->index + 1, xres, yres, (int)rotate * 90, false, true, false, x, y, w, h, abortHelper->shouldAbortRenderCallback ? shouldAbortRenderInternalCallback : nullAbortCallBack,
-                                           abortHelper, (hideAnnotations) ? annotDisplayDecideCbk : nullAnnotCallBack, nullptr, true);
+    page->parentDoc->doc->displayPageSlice(qpainter_output, page->index + 1, xres, yres, static_cast<int>(rotate) * 90, false, true, false, x, y, w, h,
+                                           abortHelper->shouldAbortRenderCallback ? shouldAbortRenderInternalCallback : nullAbortCallBack, abortHelper, hideAnnotations ? annotDisplayDecideCbk : nullAnnotCallBack, nullptr, true);
     if (savePainter) {
         painter->restore();
     }
@@ -539,12 +546,12 @@ static QFont::HintingPreference QFontHintingFromPopplerHinting(int renderHints)
 QImage Page::renderToImage(double xres, double yres, int xPos, int yPos, int w, int h, Rotation rotate, RenderToImagePartialUpdateFunc partialUpdateCallback, ShouldRenderToImagePartialQueryFunc shouldDoPartialUpdateCallback,
                            ShouldAbortQueryFunc shouldAbortRenderCallback, const QVariant &payload) const
 {
-    int rotation = (int)rotate * 90;
+    int rotation = static_cast<int>(rotate) * 90;
     QImage img;
     switch (m_page->parentDoc->m_backend) {
     case Poppler::Document::SplashBackend: {
         SplashColor bgColor;
-        const bool overprintPreview = m_page->parentDoc->m_hints & Document::OverprintPreview ? true : false;
+        const bool overprintPreview = (m_page->parentDoc->m_hints & Document::OverprintPreview) != 0;
         if (overprintPreview) {
             unsigned char c, m, y, k;
 
@@ -583,25 +590,25 @@ QImage Page::renderToImage(double xres, double yres, int xPos, int yPos, int w, 
 
         const bool ignorePaperColor = m_page->parentDoc->m_hints & Document::IgnorePaperColor;
 
-        Qt6SplashOutputDev splash_output(colorMode, 4, false, ignorePaperColor, ignorePaperColor ? nullptr : bgColor, true, thinLineMode, overprintPreview);
+        Qt6SplashOutputDev splash_output(colorMode, 4, ignorePaperColor, ignorePaperColor ? nullptr : bgColor, true, thinLineMode, overprintPreview);
 
         splash_output.setCallbacks(partialUpdateCallback, shouldDoPartialUpdateCallback, shouldAbortRenderCallback, payload);
 
-        splash_output.setFontAntialias(m_page->parentDoc->m_hints & Document::TextAntialiasing ? true : false);
-        splash_output.setVectorAntialias(m_page->parentDoc->m_hints & Document::Antialiasing ? true : false);
-        splash_output.setFreeTypeHinting(m_page->parentDoc->m_hints & Document::TextHinting ? true : false, m_page->parentDoc->m_hints & Document::TextSlightHinting ? true : false);
+        splash_output.setFontAntialias((m_page->parentDoc->m_hints & Document::TextAntialiasing) != 0);
+        splash_output.setVectorAntialias((m_page->parentDoc->m_hints & Document::Antialiasing) != 0);
+        splash_output.setFreeTypeHinting((m_page->parentDoc->m_hints & Document::TextHinting) != 0, (m_page->parentDoc->m_hints & Document::TextSlightHinting) != 0);
 
-#ifdef USE_CMS
+#if USE_CMS
         splash_output.setDisplayProfile(m_page->parentDoc->m_displayProfile);
 #endif
 
-        splash_output.startDoc(m_page->parentDoc->doc);
+        splash_output.startDoc(m_page->parentDoc->doc.get());
 
         const bool hideAnnotations = m_page->parentDoc->m_hints & Document::HideAnnotations;
 
         OutputDevCallbackHelper *abortHelper = &splash_output;
         m_page->parentDoc->doc->displayPageSlice(&splash_output, m_page->index + 1, xres, yres, rotation, false, true, false, xPos, yPos, w, h, shouldAbortRenderCallback ? shouldAbortRenderInternalCallback : nullAbortCallBack, abortHelper,
-                                                 (hideAnnotations) ? annotDisplayDecideCbk : nullAnnotCallBack, nullptr, true);
+                                                 hideAnnotations ? annotDisplayDecideCbk : nullAnnotCallBack, nullptr, true);
 
         img = splash_output.getXBGRImage(true /* takeImageData */);
         break;
@@ -619,14 +626,14 @@ QImage Page::renderToImage(double xres, double yres, int xPos, int yPos, int w, 
 
         qpainter_output.setHintingPreference(QFontHintingFromPopplerHinting(m_page->parentDoc->m_hints));
 
-#ifdef USE_CMS
+#if USE_CMS
         qpainter_output.setDisplayProfile(m_page->parentDoc->m_displayProfile);
 #endif
 
         qpainter_output.setCallbacks(partialUpdateCallback, shouldDoPartialUpdateCallback, shouldAbortRenderCallback, payload);
         renderToQPainter(&qpainter_output, &painter, m_page, xres, yres, xPos, yPos, w, h, rotate, DontSaveAndRestore);
         painter.end();
-        img = tmpimg;
+        img = std::move(tmpimg);
         break;
     }
     }
@@ -678,27 +685,26 @@ QImage Page::thumbnail() const
 QString Page::text(const QRectF &r, TextLayout textLayout) const
 {
     TextOutputDev *output_dev;
-    GooString *s;
+    GooString s;
     QString result;
 
     const bool rawOrder = textLayout == RawOrderLayout;
-    output_dev = new TextOutputDev(nullptr, false, 0, rawOrder, false);
+    const bool physLayout = textLayout == PhysicalLayout;
+    output_dev = new TextOutputDev(nullptr, physLayout, 0, rawOrder, false);
     m_page->parentDoc->doc->displayPageSlice(output_dev, m_page->index + 1, 72, 72, 0, false, true, false, -1, -1, -1, -1, nullptr, nullptr, nullptr, nullptr, true);
     if (r.isNull()) {
-        const PDFRectangle *rect = m_page->page->getCropBox();
-        if (orientation() == Orientation::Portrait || orientation() == Orientation::UpsideDown) {
-            s = output_dev->getText(rect->x1, rect->y1, rect->x2, rect->y2);
-        } else {
-            s = output_dev->getText(rect->y1, rect->x1, rect->y2, rect->x2);
-        }
+        s = output_dev->getText(std::nullopt);
     } else {
-        s = output_dev->getText(r.left(), r.top(), r.right(), r.bottom());
+        if (textLayout == ReadingOrder) {
+            qWarning() << "ReadingOrder is not supported with non null rect";
+            return {};
+        }
+        s = output_dev->getText(PDFRectangle { r.left(), r.top(), r.right(), r.bottom() });
     }
 
-    result = QString::fromUtf8(s->c_str());
+    result = QString::fromStdString(s.toStr());
 
     delete output_dev;
-    delete s;
     return result;
 }
 
@@ -709,34 +715,30 @@ QString Page::text(const QRectF &r) const
 
 bool Page::search(const QString &text, double &sLeft, double &sTop, double &sRight, double &sBottom, SearchDirection direction, SearchFlags flags, Rotation rotate) const
 {
-    const bool sCase = flags.testFlag(IgnoreCase) ? false : true;
-    const bool sWords = flags.testFlag(WholeWords) ? true : false;
-    const bool sDiacritics = flags.testFlag(IgnoreDiacritics) ? true : false;
-    const bool sAcrossLines = flags.testFlag(AcrossLines) ? true : false;
+    const bool sCase = !flags.testFlag(IgnoreCase);
+    const bool sWords = flags.testFlag(WholeWords);
+    const bool sDiacritics = flags.testFlag(IgnoreDiacritics);
+    const bool sAcrossLines = flags.testFlag(AcrossLines);
 
     QVector<Unicode> u;
-    TextPage *textPage = m_page->prepareTextSearch(text, rotate, &u);
+    std::unique_ptr<TextPage> textPage = m_page->prepareTextSearch(text, rotate, &u);
 
-    const bool found = m_page->performSingleTextSearch(textPage, u, sLeft, sTop, sRight, sBottom, direction, sCase, sWords, sDiacritics, sAcrossLines);
-
-    textPage->decRefCnt();
+    const bool found = Poppler::PageData::performSingleTextSearch(textPage.get(), u, sLeft, sTop, sRight, sBottom, direction, sCase, sWords, sDiacritics, sAcrossLines);
 
     return found;
 }
 
 QList<QRectF> Page::search(const QString &text, SearchFlags flags, Rotation rotate) const
 {
-    const bool sCase = flags.testFlag(IgnoreCase) ? false : true;
-    const bool sWords = flags.testFlag(WholeWords) ? true : false;
-    const bool sDiacritics = flags.testFlag(IgnoreDiacritics) ? true : false;
-    const bool sAcrossLines = flags.testFlag(AcrossLines) ? true : false;
+    const bool sCase = !flags.testFlag(IgnoreCase);
+    const bool sWords = flags.testFlag(WholeWords);
+    const bool sDiacritics = flags.testFlag(IgnoreDiacritics);
+    const bool sAcrossLines = flags.testFlag(AcrossLines);
 
     QVector<Unicode> u;
-    TextPage *textPage = m_page->prepareTextSearch(text, rotate, &u);
+    std::unique_ptr<TextPage> textPage = m_page->prepareTextSearch(text, rotate, &u);
 
-    QList<QRectF> results = m_page->performMultipleTextSearch(textPage, u, sCase, sWords, sDiacritics, sAcrossLines);
-
-    textPage->decRefCnt();
+    QList<QRectF> results = Poppler::PageData::performMultipleTextSearch(textPage.get(), u, sCase, sWords, sDiacritics, sAcrossLines);
 
     return results;
 }
@@ -752,7 +754,7 @@ std::vector<std::unique_ptr<TextBox>> Page::textList(Rotation rotate, ShouldAbor
 
     TextOutputDev output_dev(nullptr, false, 0, false, false);
 
-    int rotation = (int)rotate * 90;
+    int rotation = static_cast<int>(rotate) * 90;
 
     TextExtractionAbortHelper abortHelper(shouldAbortExtractionCallback, closure);
     m_page->parentDoc->doc->displayPageSlice(&output_dev, m_page->index + 1, 72, 72, rotation, false, false, false, -1, -1, -1, -1, shouldAbortExtractionCallback ? shouldAbortExtractionInternalCallback : nullAbortCallBack, &abortHelper,
@@ -766,17 +768,16 @@ std::vector<std::unique_ptr<TextBox>> Page::textList(Rotation rotate, ShouldAbor
 
     QHash<const TextWord *, TextBox *> wordBoxMap;
 
-    output_list.reserve(word_list->getLength());
-    for (int i = 0; i < word_list->getLength(); i++) {
-        TextWord *word = word_list->get(i);
-        GooString *gooWord = word->getText();
-        QString string = QString::fromUtf8(gooWord->c_str());
-        delete gooWord;
+    const std::vector<TextWord *> &words = word_list->getWords();
+    output_list.reserve(words.size());
+    for (const TextWord *word : words) {
+        const std::unique_ptr<std::string> wordText = word->getText();
+        const QString string = QString::fromUtf8(wordText->c_str());
         double xMin, yMin, xMax, yMax;
         word->getBBox(&xMin, &yMin, &xMax, &yMax);
 
         auto text_box = std::make_unique<TextBox>(string, QRectF(xMin, yMin, xMax - xMin, yMax - yMin));
-        text_box->m_data->hasSpaceAfter = word->hasSpaceAfter() == true;
+        text_box->m_data->hasSpaceAfter = word->hasSpaceAfter();
         text_box->m_data->charBBoxes.reserve(word->getLength());
         for (int j = 0; j < word->getLength(); ++j) {
             word->getCharBBox(j, &xMin, &yMin, &xMax, &yMax);
@@ -788,8 +789,7 @@ std::vector<std::unique_ptr<TextBox>> Page::textList(Rotation rotate, ShouldAbor
         output_list.push_back(std::move(text_box));
     }
 
-    for (int i = 0; i < word_list->getLength(); i++) {
-        TextWord *word = word_list->get(i);
+    for (const TextWord *word : words) {
         TextBox *text_box = wordBoxMap.value(word);
         text_box->m_data->nextWord = wordBoxMap.value(word->nextWord());
     }
@@ -819,7 +819,7 @@ std::unique_ptr<Link> Page::action(PageAction act) const
         }
         Dict *dict = o.getDict();
         const char *key = act == Page::Opening ? "O" : "C";
-        Object o2 = dict->lookup((char *)key);
+        Object o2 = dict->lookup(const_cast<char *>(key));
         std::unique_ptr<::LinkAction> lact = ::LinkAction::parseAction(&o2, m_page->parentDoc->doc->getCatalog()->getBaseURI());
         if (lact != nullptr) {
             return m_page->convertLinkActionToLink(lact.get(), QRectF());
@@ -833,9 +833,8 @@ QSizeF Page::pageSizeF() const
     Page::Orientation orient = orientation();
     if ((Page::Landscape == orient) || (Page::Seascape == orient)) {
         return QSizeF(m_page->page->getCropHeight(), m_page->page->getCropWidth());
-    } else {
-        return QSizeF(m_page->page->getCropWidth(), m_page->page->getCropHeight());
     }
+    return QSizeF(m_page->page->getCropWidth(), m_page->page->getCropHeight());
 }
 
 QSize Page::pageSize() const
@@ -937,12 +936,12 @@ double Page::duration() const
 
 QString Page::label() const
 {
-    GooString goo;
-    if (!m_page->parentDoc->doc->getCatalog()->indexToLabel(m_page->index, &goo)) {
+    std::string label;
+    if (!m_page->parentDoc->doc->getCatalog()->indexToLabel(m_page->index, &label)) {
         return QString();
     }
 
-    return UnicodeParsedString(&goo);
+    return UnicodeParsedString(label);
 }
 
 int Page::index() const

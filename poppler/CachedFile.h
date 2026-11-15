@@ -8,17 +8,16 @@
 //
 // Copyright 2009 Stefan Thomas <thomas@eload24.com>
 // Copyright 2010 Hib Eris <hib@hiberis.nl>
-// Copyright 2010, 2018-2020, 2022 Albert Astals Cid <aacid@kde.org>
+// Copyright 2010, 2018-2020, 2022, 2025, 2026 Albert Astals Cid <aacid@kde.org>
+// Copyright 2025 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
 //
 //========================================================================
 
 #ifndef CACHEDFILE_H
 #define CACHEDFILE_H
 
-#include "poppler-config.h"
 #include "poppler_private_export.h"
 
-#include "Object.h"
 #include "Stream.h"
 
 #include <vector>
@@ -27,7 +26,6 @@
 
 #define CachedFileChunkSize 8192 // This should be a multiple of cachedStreamBufSize
 
-class GooString;
 class CachedFileLoader;
 
 //------------------------------------------------------------------------
@@ -45,47 +43,41 @@ class POPPLER_PRIVATE_EXPORT CachedFile
     friend class CachedFileWriter;
 
 public:
-    explicit CachedFile(CachedFileLoader *cacheLoader);
+    explicit CachedFile(std::unique_ptr<CachedFileLoader> &&cacheLoader);
 
     CachedFile(const CachedFile &) = delete;
     CachedFile &operator=(const CachedFile &) = delete;
 
     unsigned int getLength() const { return length; }
-    long int tell();
+    long int tell() const;
     int seek(long int offset, int origin);
     size_t read(void *ptr, size_t unitsize, size_t count);
     size_t write(const char *ptr, size_t size, size_t fromByte);
     int cache(const std::vector<ByteRange> &ranges);
 
-    // Reference counting.
-    void incRefCnt();
-    void decRefCnt();
-
-private:
     ~CachedFile();
 
+private:
     enum ChunkState
     {
         chunkStateNew = 0,
         chunkStateLoaded
     };
 
-    typedef struct
+    using Chunk = struct
     {
         ChunkState state;
         char data[CachedFileChunkSize];
-    } Chunk;
+    };
 
     int cache(size_t offset, size_t length);
 
-    CachedFileLoader *loader;
+    const std::unique_ptr<CachedFileLoader> loader;
 
     size_t length;
     size_t streamPos;
 
-    std::vector<Chunk> *chunks;
-
-    int refCnt; // reference count
+    std::vector<Chunk> chunks;
 };
 
 //------------------------------------------------------------------------
@@ -104,7 +96,7 @@ public:
     // The caller is responsible for deleting the cachedFile and chunksA.
     CachedFileWriter(CachedFile *cachedFile, std::vector<int> *chunksA);
 
-    ~CachedFileWriter();
+    ~CachedFileWriter() = default;
 
     // Writes size bytes from ptr to cachedFile, returns number of bytes written.
     size_t write(const char *ptr, size_t size);

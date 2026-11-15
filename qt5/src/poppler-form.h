@@ -13,8 +13,9 @@
  * Copyright (C) 2020, Thorsten Behrens <Thorsten.Behrens@CIB.de>
  * Copyright (C) 2020, Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>. Work sponsored by Technische Universität Dresden
  * Copyright (C) 2021, Theofilos Intzoglou <int.teo@gmail.com>
- * Copyright (C) 2023, 2024, g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+ * Copyright (C) 2023-2026, g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
  * Copyright (C) 2024, Pratham Gandhi <ppg.1382@gmail.com>
+ * Copyright (C) 2026 Sune Stolborg Vuorela <sune@vuorela.dk>, work sponsored by the Direction Interministérielle du Numérique
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -534,6 +535,17 @@ public:
     Q_DECLARE_FLAGS(KeyUsageExtensions, KeyUsageExtension)
 
     /**
+     * The type of the certificate
+     *
+     * \since 25.03
+     */
+    enum class CertificateType
+    {
+        X509,
+        PGP
+    };
+
+    /**
       Predefined keys for elements in an entity's distinguished name.
      */
     enum EntityInfoKey
@@ -614,9 +626,14 @@ public:
     KeyUsageExtensions keyUsageExtensions() const;
 
     /**
-      The public key value.
+      The raw public key value, though it might also be empty depending
+      on the signature types involved
+
+      There should be no need for any normal applications to present
+      the raw public key anywhere, though should it be needed it can be
+      parsed out of \ref certificateData
      */
-    QByteArray publicKey() const;
+    POPPLER_QT5_DEPRECATED QByteArray publicKey() const;
 
     /**
       The public key type.
@@ -632,6 +649,13 @@ public:
       Returns true if certificate is self-signed otherwise returns false.
      */
     bool isSelfSigned() const;
+
+    /**
+     * \return certificate type
+     *
+     * \since 25.03
+     */
+    CertificateType certificateType() const;
 
     /**
       The DER encoded certificate.
@@ -816,7 +840,7 @@ public:
     ~AsyncObject() override;
 Q_SIGNALS:
     void done();
-public Q_SLOTS:
+
 private:
     std::unique_ptr<AsyncObjectPrivate> d;
 };
@@ -839,7 +863,8 @@ public:
         AdbePkcs7detached,
         EtsiCAdESdetached,
         UnknownSignatureType, ///< \since 0.90
-        UnsignedSignature ///< \since 22.02
+        UnsignedSignature, ///< \since 22.02
+        G10cPgpSignatureDetached, ///< non standard signature type \since 25.01
     };
 
     /**
@@ -933,7 +958,13 @@ public:
     {
         FieldAlreadySigned, ///< Trying to sign a field that is already signed
         GenericSigningError,
-        SigningSuccess
+        SigningSuccess,
+        InternalError, ///< Unexpected error, likely a bug in poppler \since 25.07
+        KeyMissing, ///< Key not found (Either the input key is not from the list or the available keys has changed underneath) \since 25.07
+        WriteFailed, ///< Write failed (permissions, faulty disk, ...) \since 25.07
+        UserCancelled, ///< User cancelled the process \since 25.07
+        BadPassphrase, ///< User entered bad passphrase \since 25.07
+        UnsupportedSignatureType, ///< User asked for a signature type that the current backend/key combo can't deliver
     };
 
     /**
@@ -944,6 +975,13 @@ public:
       \since 22.02
      */
     SigningResult sign(const QString &outputFileName, const PDFConverter::NewSignatureData &data) const;
+
+    /**
+     * A string with a string that might offer more details of the signing result failure
+     * \note the string here is likely not super useful for end users, but might give more details to a trained supporter / bug triager
+     * \since 25.07
+     */
+    ErrorString lastSigningErrorDetails() const;
 
 private:
     Q_DISABLE_COPY(FormFieldSignature)
@@ -997,7 +1035,7 @@ enum class CryptoSignBackendFeature
  *
  * \since 23.06
  */
-bool POPPLER_QT5_EXPORT hasCryptoSignBackendFeature(CryptoSignBackend, CryptoSignBackendFeature);
+bool POPPLER_QT5_EXPORT hasCryptoSignBackendFeature(CryptoSignBackend backend, CryptoSignBackendFeature feature);
 
 /**
   Returns is poppler was compiled with NSS support
@@ -1035,6 +1073,23 @@ void POPPLER_QT5_EXPORT setNSSDir(const QString &pathURL);
   \since 21.01
 */
 void POPPLER_QT5_EXPORT setNSSPasswordCallback(const std::function<char *(const char *)> &f);
+
+/**
+ * Allow pgp signatures in pdf files (standard-extension, experimental)
+ * Not supported for NSS backend
+ *
+ * \param allowed new value for pgp signatures allowed
+ *
+ * \since 25.03
+ */
+void POPPLER_QT5_EXPORT setPgpSignaturesAllowed(bool allowed);
+
+/**
+ * \returns if pgp signatures are allowed.
+ *
+ * \since 25.03
+ */
+bool POPPLER_QT5_EXPORT arePgpSignaturesAllowed();
 }
 
 #endif

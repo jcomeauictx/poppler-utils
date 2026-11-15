@@ -11,7 +11,7 @@
 // All changes made under the Poppler project to this file are licensed
 // under GPL version 2 or later
 //
-// Copyright (C) 2018, 2019, 2021 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2018, 2019, 2021, 2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2018 Stefan Brüns <stefan.bruens@rwth-aachen.de>
 //
 // To see a description of the changes please see the Changelog file that
@@ -22,6 +22,7 @@
 #ifndef SPLASHPATH_H
 #define SPLASHPATH_H
 
+#include "SplashErrorCodes.h"
 #include "SplashTypes.h"
 #include "poppler_private_export.h"
 
@@ -31,7 +32,7 @@
 
 struct SplashPathPoint
 {
-    SplashCoord x, y;
+    double x, y;
 };
 
 //------------------------------------------------------------------------
@@ -80,14 +81,14 @@ public:
     void append(SplashPath *path);
 
     // Start a new subpath.
-    SplashError moveTo(SplashCoord x, SplashCoord y);
+    SplashError moveTo(double x, double y);
 
     // Add a line segment to the last subpath.
-    SplashError lineTo(SplashCoord x, SplashCoord y);
+    SplashError lineTo(double x, double y);
 
     // Add a third-order (cubic) Bezier curve segment to the last
     // subpath.
-    SplashError curveTo(SplashCoord x1, SplashCoord y1, SplashCoord x2, SplashCoord y2, SplashCoord x3, SplashCoord y3);
+    SplashError curveTo(double x1, double y1, double x2, double y2, double x3, double y3);
 
     // Close the last subpath, adding a line segment if necessary.  If
     // <force> is true, this adds a line segment even if the current
@@ -100,10 +101,10 @@ public:
     void addStrokeAdjustHint(int ctrl0, int ctrl1, int firstPt, int lastPt);
 
     // Add (<dx>, <dy>) to every point on this path.
-    void offset(SplashCoord dx, SplashCoord dy);
+    void offset(double dx, double dy);
 
     // Get the points on the path.
-    int getLength() { return length; }
+    int getLength() const { return length; }
     void getPoint(int i, double *x, double *y, unsigned char *f)
     {
         *x = pts[i].x;
@@ -112,16 +113,16 @@ public:
     }
 
     // Get the current point.
-    bool getCurPt(SplashCoord *x, SplashCoord *y);
+    bool getCurPt(double *x, double *y);
 
     // Reserve space for at least n points
     void reserve(int n);
 
 protected:
     void grow(int nPts);
-    bool noCurrentPoint() { return curSubpath == length; }
-    bool onePointSubpath() { return curSubpath == length - 1; }
-    bool openSubpath() { return curSubpath < length - 1; }
+    bool noCurrentPoint() const { return curSubpath == length; }
+    bool onePointSubpath() const { return curSubpath == length - 1; }
+    bool openSubpath() const { return curSubpath < length - 1; }
 
     SplashPathPoint *pts; // array of points
     unsigned char *flags; // array of flags

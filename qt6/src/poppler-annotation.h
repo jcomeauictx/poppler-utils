@@ -12,7 +12,11 @@
  * Copyright (C) 2020, 2024, Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>. Work sponsored by Technische Universität Dresden
  * Copyright (C) 2021, Oliver Sander <oliver.sander@tu-dresden.de>
  * Copyright (C) 2021, Mahmoud Ahmed Khalil <mahmoudkhalil11@gmail.com>
- * Copyright (C) 2024, g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+ * Copyright (C) 2024, 2025, g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+ * Copyright (C) 2025, Aditya Tiwari <suntiwari3495@gmail.com>
+ * Copyright (C) 2026, Sune Stolborg Vuorela <sune@vuorela.dk>, work sponsored by the Direction Interministérielle du Numérique
+ * Copyright (C) 2026, Valentin Pohu <pohuvalentin@gmail.com>
+ *
  * Adapting code from
  *   Copyright (C) 2004 by Enrico Ros <eros.kde@email.it>
  *
@@ -509,6 +513,19 @@ public:
        - NewParagraph
        - Note (this is the default icon to use)
        - Paragraph
+
+       Since 26.1.0 Poppler knows how to render the following additional
+       icon names, which are somewhat standard and other PDF renderers may
+       also support:
+       - Check
+       - Circle
+       - Cross
+       - CrossHairs
+       - RightArrow
+       - RightPointer
+       - Star
+       - UpArrow
+       - UpLeftArrow
     */
     QString textIcon() const;
 
@@ -801,6 +818,8 @@ public:
         KeyMissing, ///< Key not found (Either the input key is not from the list or the available keys has changed underneath) \since 24.12
         WriteFailed, ///< Write failed (permissions, faulty disk, ...) \since 24.12
         UserCancelled, ///< User cancelled the process \since 24.12
+        BadPassphrase, ///< User entered bad passphrase \since 25.03
+        UnsupportedSignatureType, ///< User asked for a signature type that the current backend/key combo can't deliver \since 26.09
     };
 
     SignatureAnnotation();
@@ -856,6 +875,13 @@ public:
 
     [[nodiscard]] SigningResult sign(const QString &outputFileName, const PDFConverter::NewSignatureData &data);
 
+    /**
+     * A string with a string that might offer more details of the signing result failure
+     * \note the string here is likely not super useful for end users, but might give more details to a trained supporter / bug triager
+     * \since 25.07
+     */
+    ErrorString lastSigningErrorDetails() const;
+
 private:
     explicit SignatureAnnotation(SignatureAnnotationPrivate &dd);
     Q_DECLARE_PRIVATE(SignatureAnnotation)
@@ -909,7 +935,7 @@ public:
     void setLinkHighlightMode(HighlightMode mode);
 
     QPointF linkRegionPoint(int id) const;
-    void setLinkRegionPoint(int id, const QPointF point);
+    void setLinkRegionPoint(int id, QPointF point);
 
 private:
     LinkAnnotation();
@@ -1195,8 +1221,8 @@ public:
      * The instance object of a RichMediaAnnotation::Configuration object.
      *
      * The instance object represents one media object, that should be shown
-     * on the page. It has a media type and a Params object, to define the
-     * media specific parameters.
+     * on the page. It has a media type, an asset holding the media file and
+     * a Params object, to define the media specific parameters
      */
     class POPPLER_QT6_EXPORT Instance
     {
@@ -1227,9 +1253,17 @@ public:
          */
         RichMediaAnnotation::Params *params() const;
 
+        /**
+         * Returns the embedded file of the instance asset or @c nullptr if the asset is missing or has no embedded file
+         * \note The caller does not get ownership of the returned object
+         * \since 26.11
+         */
+        EmbeddedFile *embeddedFile() const;
+
     private:
         void setType(Type type);
-        void setParams(RichMediaAnnotation::Params *params);
+        void setParams(std::unique_ptr<RichMediaAnnotation::Params> &&params);
+        void setEmbeddedFile(std::unique_ptr<EmbeddedFile> &&embeddedFile);
 
         class Private;
         QScopedPointer<Private> d;
@@ -1311,7 +1345,7 @@ public:
 
     private:
         void setName(const QString &name);
-        void setEmbeddedFile(EmbeddedFile *embeddedFile);
+        void setEmbeddedFile(std::unique_ptr<EmbeddedFile> &&embeddedFile);
 
         class Private;
         QScopedPointer<Private> d;
@@ -1446,8 +1480,8 @@ public:
         RichMediaAnnotation::Deactivation *deactivation() const;
 
     private:
-        void setActivation(RichMediaAnnotation::Activation *activation);
-        void setDeactivation(RichMediaAnnotation::Deactivation *deactivation);
+        void setActivation(std::unique_ptr<RichMediaAnnotation::Activation> &&activation);
+        void setDeactivation(std::unique_ptr<RichMediaAnnotation::Deactivation> &&deactivation);
 
         class Private;
         QScopedPointer<Private> d;
@@ -1464,8 +1498,8 @@ public:
     RichMediaAnnotation::Content *content() const;
 
 private:
-    void setSettings(RichMediaAnnotation::Settings *settings);
-    void setContent(RichMediaAnnotation::Content *content);
+    void setSettings(std::unique_ptr<RichMediaAnnotation::Settings> &&settings);
+    void setContent(std::unique_ptr<RichMediaAnnotation::Content> &&content);
 
     RichMediaAnnotation();
     explicit RichMediaAnnotation(RichMediaAnnotationPrivate &dd);

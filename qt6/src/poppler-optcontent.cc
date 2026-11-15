@@ -3,11 +3,14 @@
  * Copyright (C) 2007, Brad Hards <bradh@kde.org>
  * Copyright (C) 2008, 2014, Pino Toscano <pino@kde.org>
  * Copyright (C) 2008, Carlos Garcia Campos <carlosgc@gnome.org>
- * Copyright (C) 2015-2019, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2015-2019, 2025, 2026, Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2017, Hubert Figuière <hub@figuiere.net>
- * Copyright (C) 2018 Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>. Work sponsored by the LiMux project of the city of Munich
- * Copyright (C) 2018 Adam Reichold <adam.reichold@t-online.de>
+ * Copyright (C) 2018, Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>. Work sponsored by the LiMux project of the city of Munich
+ * Copyright (C) 2018, Adam Reichold <adam.reichold@t-online.de>
  * Copyright (C) 2019, 2020 Oliver Sander <oliver.sander@tu-dresden.de>
+ * Copyright (C) 2025, 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+ * Copyright (C) 2026, Adam Sampson <ats@offog.org>
+ * Copyright (C) 2026, Valentin Pohu <pohuvalentin@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -54,7 +57,7 @@ RadioButtonGroup::RadioButtonGroup(OptContentModelPrivate *ocModel, Array *rbarr
     }
 }
 
-RadioButtonGroup::~RadioButtonGroup() { }
+RadioButtonGroup::~RadioButtonGroup() = default;
 
 QSet<OptContentItem *> RadioButtonGroup::setItemOn(OptContentItem *itemToSetOn)
 {
@@ -95,7 +98,7 @@ OptContentItem::OptContentItem(const QString &label)
 
 OptContentItem::OptContentItem() : m_parent(nullptr), m_enabled(true) { }
 
-OptContentItem::~OptContentItem() { }
+OptContentItem::~OptContentItem() = default;
 
 void OptContentItem::appendRBGroup(RadioButtonGroup *rbgroup)
 {
@@ -151,13 +154,13 @@ QSet<OptContentItem *> OptContentItem::recurseListChildren(bool includeMe) const
     return ret;
 }
 
-OptContentModelPrivate::OptContentModelPrivate(OptContentModel *qq, OCGs *optContent) : q(qq)
+OptContentModelPrivate::OptContentModelPrivate(OptContentModel *qq, const OCGs *optContent) : q(qq)
 {
     m_rootNode = new OptContentItem();
     const auto &ocgs = optContent->getOCGs();
 
     for (const auto &ocg : ocgs) {
-        OptContentItem *node = new OptContentItem(ocg.second.get());
+        auto *node = new OptContentItem(ocg.second.get());
         m_optContentItems.insert(QString::number(ocg.first.num), node);
     }
 
@@ -183,7 +186,7 @@ OptContentModelPrivate::~OptContentModelPrivate()
     delete m_rootNode;
 }
 
-void OptContentModelPrivate::parseOrderArray(OptContentItem *parentNode, Array *orderArray)
+void OptContentModelPrivate::parseOrderArray(OptContentItem *parentNode, const Array *orderArray)
 {
     OptContentItem *lastItem = parentNode;
     for (int i = 0; i < orderArray->getLength(); ++i) {
@@ -199,11 +202,11 @@ void OptContentModelPrivate::parseOrderArray(OptContentItem *parentNode, Array *
                     qDebug() << "could not find group for object" << item.getRefNum();
                 }
             }
-        } else if ((orderItem.isArray()) && (orderItem.arrayGetLength() > 0)) {
+        } else if (orderItem.isArrayOfLengthAtLeast(1)) {
             parseOrderArray(lastItem, orderItem.getArray());
         } else if (orderItem.isString()) {
-            const GooString *label = orderItem.getString();
-            OptContentItem *header = new OptContentItem(UnicodeParsedString(label));
+            const std::string &label = orderItem.getString();
+            auto *header = new OptContentItem(UnicodeParsedString(label));
             m_headerOptContentItems.append(header);
             addChild(parentNode, header);
             parentNode = header;
@@ -214,7 +217,7 @@ void OptContentModelPrivate::parseOrderArray(OptContentItem *parentNode, Array *
     }
 }
 
-void OptContentModelPrivate::parseRBGroupsArray(Array *rBGroupArray)
+void OptContentModelPrivate::parseRBGroupsArray(const Array *rBGroupArray)
 {
     if (!rBGroupArray) {
         return;
@@ -227,12 +230,12 @@ void OptContentModelPrivate::parseRBGroupsArray(Array *rBGroupArray)
             return;
         }
         Array *rbarray = rbObj.getArray();
-        RadioButtonGroup *rbg = new RadioButtonGroup(this, rbarray);
+        auto *rbg = new RadioButtonGroup(this, rbarray);
         m_rbgroups.append(rbg);
     }
 }
 
-OptContentModel::OptContentModel(OCGs *optContent, QObject *parent) : QAbstractItemModel(parent)
+OptContentModel::OptContentModel(const OCGs *optContent, QObject *parent) : QAbstractItemModel(parent)
 {
     d = new OptContentModelPrivate(this, optContent);
 }
@@ -240,14 +243,6 @@ OptContentModel::OptContentModel(OCGs *optContent, QObject *parent) : QAbstractI
 OptContentModel::~OptContentModel()
 {
     delete d;
-}
-
-void OptContentModelPrivate::setRootNode(OptContentItem *node)
-{
-    q->beginResetModel();
-    delete m_rootNode;
-    m_rootNode = node;
-    q->endResetModel();
 }
 
 QModelIndex OptContentModel::index(int row, int column, const QModelIndex &parent) const
@@ -290,12 +285,11 @@ int OptContentModel::rowCount(const QModelIndex &parent) const
     OptContentItem *parentNode = d->nodeFromIndex(parent);
     if (!parentNode) {
         return 0;
-    } else {
-        return parentNode->childList().count();
     }
+    return parentNode->childList().count();
 }
 
-int OptContentModel::columnCount(const QModelIndex &parent) const
+int OptContentModel::columnCount(const QModelIndex & /*parent*/) const
 {
     return 1;
 }
@@ -314,14 +308,16 @@ QVariant OptContentModel::data(const QModelIndex &index, int role) const
     case Qt::EditRole:
         if (node->state() == OptContentItem::On) {
             return true;
-        } else if (node->state() == OptContentItem::Off) {
+        }
+        if (node->state() == OptContentItem::Off) {
             return false;
         }
         break;
     case Qt::CheckStateRole:
         if (node->state() == OptContentItem::On) {
             return Qt::Checked;
-        } else if (node->state() == OptContentItem::Off) {
+        }
+        if (node->state() == OptContentItem::Off) {
             return Qt::Unchecked;
         }
         break;
@@ -349,9 +345,9 @@ bool OptContentModel::setData(const QModelIndex &index, const QVariant &value, i
             Q_FOREACH (OptContentItem *item, changedItems) {
                 indexes.append(d->indexFromItem(item, 0));
             }
-            std::stable_sort(indexes.begin(), indexes.end());
+            std::stable_sort(indexes.begin(), indexes.end()); // NOLINT(modernize-use-ranges) We need Qt 6.8 for QModelIndexList to support ranges and our minimum requirement is 6.2
             Q_FOREACH (const QModelIndex &changedIndex, indexes) {
-                emit dataChanged(changedIndex, changedIndex);
+                Q_EMIT dataChanged(changedIndex, changedIndex);
             }
             return true;
         }
@@ -410,9 +406,9 @@ void OptContentModel::applyLink(LinkOCGState *link)
         Q_FOREACH (OptContentItem *item, changedItems) {
             indexes.append(d->indexFromItem(item, 0));
         }
-        std::stable_sort(indexes.begin(), indexes.end());
+        std::stable_sort(indexes.begin(), indexes.end()); // NOLINT(modernize-use-ranges) We need Qt 6.8 for QModelIndexList to support ranges and our minimum requirement is 6.2
         Q_FOREACH (const QModelIndex &changedIndex, indexes) {
-            emit dataChanged(changedIndex, changedIndex);
+            Q_EMIT dataChanged(changedIndex, changedIndex);
         }
     }
 }
@@ -431,8 +427,7 @@ OptContentItem *OptContentModelPrivate::nodeFromIndex(const QModelIndex &index, 
 {
     if (index.isValid()) {
         return static_cast<OptContentItem *>(index.internalPointer());
-    } else {
-        return canBeNull ? nullptr : m_rootNode;
     }
+    return canBeNull ? nullptr : m_rootNode;
 }
 }

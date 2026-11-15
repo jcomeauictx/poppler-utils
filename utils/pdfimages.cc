@@ -15,7 +15,7 @@
 // All changes made under the Poppler project to this file are licensed
 // under GPL version 2 or later
 //
-// Copyright (C) 2007-2008, 2010, 2018, 2022, 2024 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2007-2008, 2010, 2018, 2022, 2024-2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2010 Hib Eris <hib@hiberis.nl>
 // Copyright (C) 2010 Jakob Voss <jakob.voss@gbv.de>
 // Copyright (C) 2012, 2013, 2017 Adrian Johnson <ajohnson@redneon.com>
@@ -25,6 +25,8 @@
 // Copyright (C) 2019 Hartmut Goebel <h.goebel@crazy-compilers.com>
 // Copyright (C) 2024 Fernando Herrera <fherrera@onirica.com>
 // Copyright (C) 2024 Sebastian J. Bronner <waschtl@sbronner.com>
+// Copyright (C) 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2026 Michael <ttmigueltt@gmail.com>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -34,18 +36,9 @@
 #include "config.h"
 #include <poppler-config.h>
 #include <cstdio>
-#include <cstdlib>
-#include <cstddef>
-#include <cstring>
 #include "parseargs.h"
 #include "goo/GooString.h"
-#include "goo/gmem.h"
 #include "GlobalParams.h"
-#include "Object.h"
-#include "Stream.h"
-#include "Array.h"
-#include "Dict.h"
-#include "XRef.h"
 #include "Catalog.h"
 #include "Page.h"
 #include "PDFDoc.h"
@@ -66,36 +59,40 @@ static bool dumpCCITT = false;
 static bool allFormats = false;
 static bool pageNames = false;
 static bool printFilenames = false;
-static char ownerPassword[33] = "\001";
-static char userPassword[33] = "\001";
+static char ownerPassword[128] = "\001";
+static char userPassword[128] = "\001";
 static bool quiet = false;
 static bool printVersion = false;
 static bool printHelp = false;
+static int minHeight = 0;
+static int minWidth = 0;
 
-static const ArgDesc argDesc[] = { { "-f", argInt, &firstPage, 0, "first page to convert" },
-                                   { "-l", argInt, &lastPage, 0, "last page to convert" },
-#ifdef ENABLE_LIBPNG
-                                   { "-png", argFlag, &enablePNG, 0, "change the default output format to PNG" },
+static const ArgDesc argDesc[] = { { .arg = "-f", .kind = argInt, .val = &firstPage, .size = 0, .usage = "first page to convert" },
+                                   { .arg = "-l", .kind = argInt, .val = &lastPage, .size = 0, .usage = "last page to convert" },
+#if ENABLE_LIBPNG
+                                   { .arg = "-png", .kind = argFlag, .val = &enablePNG, .size = 0, .usage = "change the default output format to PNG" },
 #endif
-#ifdef ENABLE_LIBTIFF
-                                   { "-tiff", argFlag, &enableTiff, 0, "change the default output format to TIFF" },
+#if ENABLE_LIBTIFF
+                                   { .arg = "-tiff", .kind = argFlag, .val = &enableTiff, .size = 0, .usage = "change the default output format to TIFF" },
 #endif
-                                   { "-j", argFlag, &dumpJPEG, 0, "write JPEG images as JPEG files" },
-                                   { "-jp2", argFlag, &dumpJP2, 0, "write JPEG2000 images as JP2 files" },
-                                   { "-jbig2", argFlag, &dumpJBIG2, 0, "write JBIG2 images as JBIG2 files" },
-                                   { "-ccitt", argFlag, &dumpCCITT, 0, "write CCITT images as CCITT files" },
-                                   { "-all", argFlag, &allFormats, 0, "equivalent to -png -tiff -j -jp2 -jbig2 -ccitt" },
-                                   { "-list", argFlag, &listImages, 0, "print list of images instead of saving" },
-                                   { "-opw", argString, ownerPassword, sizeof(ownerPassword), "owner password (for encrypted files)" },
-                                   { "-upw", argString, userPassword, sizeof(userPassword), "user password (for encrypted files)" },
-                                   { "-p", argFlag, &pageNames, 0, "include page numbers in output file names" },
-                                   { "-print-filenames", argFlag, &printFilenames, 0, "print image filenames to stdout" },
-                                   { "-q", argFlag, &quiet, 0, "don't print any messages or errors" },
-                                   { "-v", argFlag, &printVersion, 0, "print copyright and version info" },
-                                   { "-h", argFlag, &printHelp, 0, "print usage information" },
-                                   { "-help", argFlag, &printHelp, 0, "print usage information" },
-                                   { "--help", argFlag, &printHelp, 0, "print usage information" },
-                                   { "-?", argFlag, &printHelp, 0, "print usage information" },
+                                   { .arg = "-j", .kind = argFlag, .val = &dumpJPEG, .size = 0, .usage = "write JPEG images as JPEG files" },
+                                   { .arg = "-jp2", .kind = argFlag, .val = &dumpJP2, .size = 0, .usage = "write JPEG2000 images as JP2 files" },
+                                   { .arg = "-jbig2", .kind = argFlag, .val = &dumpJBIG2, .size = 0, .usage = "write JBIG2 images as JBIG2 files" },
+                                   { .arg = "-ccitt", .kind = argFlag, .val = &dumpCCITT, .size = 0, .usage = "write CCITT images as CCITT files" },
+                                   { .arg = "-all", .kind = argFlag, .val = &allFormats, .size = 0, .usage = "equivalent to -png -tiff -j -jp2 -jbig2 -ccitt" },
+                                   { .arg = "-list", .kind = argFlag, .val = &listImages, .size = 0, .usage = "print list of images instead of saving" },
+                                   { .arg = "-opw", .kind = argString, .val = ownerPassword, .size = sizeof(ownerPassword), .usage = "owner password (for encrypted files)" },
+                                   { .arg = "-upw", .kind = argString, .val = userPassword, .size = sizeof(userPassword), .usage = "user password (for encrypted files)" },
+                                   { .arg = "-p", .kind = argFlag, .val = &pageNames, .size = 0, .usage = "include page numbers in output file names" },
+                                   { .arg = "-print-filenames", .kind = argFlag, .val = &printFilenames, .size = 0, .usage = "print image filenames to stdout" },
+                                   { .arg = "-min-height", .kind = argInt, .val = &minHeight, .size = 0, .usage = "images with smaller height will be ignored" },
+                                   { .arg = "-min-width", .kind = argInt, .val = &minWidth, .size = 0, .usage = "images with smaller width will be ignored" },
+                                   { .arg = "-q", .kind = argFlag, .val = &quiet, .size = 0, .usage = "don't print any messages or errors" },
+                                   { .arg = "-v", .kind = argFlag, .val = &printVersion, .size = 0, .usage = "print copyright and version info" },
+                                   { .arg = "-h", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
+                                   { .arg = "-help", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
+                                   { .arg = "--help", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
+                                   { .arg = "-?", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
                                    {} };
 
 int main(int argc, char *argv[])
@@ -119,7 +116,7 @@ int main(int argc, char *argv[])
         }
         return 99;
     }
-    GooString *fileName = new GooString(argv[1]);
+    auto *fileName = new GooString(argv[1]);
     if (!listImages) {
         imgRoot = argv[2];
     }
@@ -137,7 +134,7 @@ int main(int argc, char *argv[])
     if (userPassword[0] != '\001') {
         userPW = GooString(userPassword);
     }
-    if (fileName->cmp("-") == 0) {
+    if (fileName->toStr() == "-") {
         delete fileName;
         fileName = new GooString("fd://0");
     }
@@ -174,7 +171,9 @@ int main(int argc, char *argv[])
     }
 
     // write image files
-    ImageOutputDev *imgOut = new ImageOutputDev(imgRoot, pageNames, listImages);
+    auto *imgOut = new ImageOutputDev(imgRoot, pageNames, listImages);
+    imgOut->setMinHeight(minHeight);
+    imgOut->setMinWidth(minWidth);
     if (imgOut->isOk()) {
         if (allFormats) {
             imgOut->enablePNG(true);

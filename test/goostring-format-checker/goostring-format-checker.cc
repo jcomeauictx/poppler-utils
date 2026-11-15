@@ -6,7 +6,9 @@
  * Clang++ compiler plugin that checks usage of GooString::format-like functions
  *
  * Copyright (C) 2014 Fabio D'Urso <fabiodurso@hotmail.it>
- * Copyright (C) 2021 Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2021, 2025 Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+ * Copyright (C) 2026 Stefan Brüns <stefan.bruens@rwth-aachen.de>
  */
 
 #include <cctype>
@@ -69,12 +71,12 @@ GooStringFormatCheckerVisitor::GooStringFormatCheckerVisitor(CompilerInstance *c
     diag_badFuncZeroArgs = diag->getCustomDiagID(DiagnosticsEngine::Error, "Cannot enforce format string checks on a function that takes no arguments");
     diag_badFuncNonVariadic = diag->getCustomDiagID(DiagnosticsEngine::Error, "Cannot enforce format string checks on a non-variadic function");
     diag_badFuncLastArgInvalidType = diag->getCustomDiagID(DiagnosticsEngine::Error, "Cannot enforce format string checks if the last non-variadic argument is not const char *");
-    diag_notStringLiteral = diag->getCustomDiagID(DiagnosticsEngine::Warning, "Format string is not a string literal. Skipping format checks");
-    diag_notPlainASCII = diag->getCustomDiagID(DiagnosticsEngine::Warning, "Format string contains non-ASCII or NUL characters. Skipping format checks");
+    diag_notStringLiteral = diag->getCustomDiagID(DiagnosticsEngine::Error, "Format string is not a string literal. Skipping format checks");
+    diag_notPlainASCII = diag->getCustomDiagID(DiagnosticsEngine::Error, "Format string contains non-ASCII or NUL characters. Skipping format checks");
     diag_wrongOrder = diag->getCustomDiagID(DiagnosticsEngine::Error, "Argument %0 must be consumed before argument %1");
     diag_unescapedBracket = diag->getCustomDiagID(DiagnosticsEngine::Error, "Unescaped '}' character");
     diag_unterminatedPlaceholder = diag->getCustomDiagID(DiagnosticsEngine::Error, "Unterminated placeholder");
-    diag_unconsumedArgs = diag->getCustomDiagID(DiagnosticsEngine::Warning, "Unconsumed argument(s)");
+    diag_unconsumedArgs = diag->getCustomDiagID(DiagnosticsEngine::Error, "Unconsumed argument(s)");
     diag_missingColon = diag->getCustomDiagID(DiagnosticsEngine::Error, "Invalid placeholder '{%0}': missing colon character");
     diag_missingArgNumber = diag->getCustomDiagID(DiagnosticsEngine::Error, "Invalid placeholder '{%0}': missing <arg> number");
     diag_badArgNumber = diag->getCustomDiagID(DiagnosticsEngine::Error, "Invalid placeholder '{%0}': bad <arg> number");
@@ -319,6 +321,10 @@ int GooStringFormatCheckerVisitor::verifyPlaceholder(const CallExpr *callExpr, c
         const CXXRecordDecl *pointeeType = valueType->isPointerType() ? valueType->getPointeeType()->getAsCXXRecordDecl() : 0;
         if (pointeeType == 0 || pointeeType->getQualifiedNameAsString() != "GooString") {
             diag->Report(argExpr->getExprLoc(), diag_wrongArgExprType) << "GooString *" << placeholderText << qualType.getAsString();
+        }
+    } else if (format == "r") {
+        if (!valueType->isPointerType() || valueType->getPointeeType().withConst().getAsString() != "const std::string") {
+            diag->Report(argExpr->getExprLoc(), diag_wrongArgExprType) << "(const) std::string *" << placeholderText << qualType.getAsString();
         }
     } else {
         diag->Report(placeholderLocation, diag_badType) << placeholderText;

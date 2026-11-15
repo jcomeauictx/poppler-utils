@@ -15,8 +15,8 @@ public:
     ~PDFDisplay() override;
 
 protected:
-    void paintEvent(QPaintEvent *) override;
-    void keyPressEvent(QKeyEvent *) override;
+    void paintEvent(QPaintEvent *event) override;
+    void keyPressEvent(QKeyEvent *e) override;
 
 private:
     void display();
@@ -46,9 +46,9 @@ void PDFDisplay::display()
     }
 }
 
-PDFDisplay::~PDFDisplay() { }
+PDFDisplay::~PDFDisplay() = default;
 
-void PDFDisplay::paintEvent(QPaintEvent *e)
+void PDFDisplay::paintEvent(QPaintEvent * /*e*/)
 {
     QPainter paint(this); // paint widget
     if (!image.isNull()) {
@@ -84,7 +84,7 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    std::unique_ptr<Poppler::Document> doc = Poppler::Document::load(argv[2], argv[1]);
+    std::unique_ptr<Poppler::Document> doc = Poppler::Document::load(QString::fromLocal8Bit(argv[2]), argv[1]);
     if (!doc) {
         qWarning() << "doc not loaded";
         exit(1);
@@ -110,7 +110,7 @@ int main(int argc, char **argv)
     qDebug() << "OK to add notes: " << doc->okToAddNotes();
     qDebug() << "      Page mode: " << doc->pageMode();
     QStringList fontNameList;
-    foreach (const Poppler::FontInfo &font, doc->fonts())
+    Q_FOREACH (const Poppler::FontInfo &font, doc->fonts())
         fontNameList += font.name();
     qDebug() << "          Fonts: " << fontNameList.join(QStringLiteral(", "));
 
@@ -121,7 +121,7 @@ int main(int argc, char **argv)
     test.setWindowTitle(QStringLiteral("Poppler-Qt6 Test"));
     test.show(); // show it
 
-    return a.exec(); // start event loop
+    return QApplication::exec(); // start event loop
 }
 
 #include "test-password-qt6.moc"

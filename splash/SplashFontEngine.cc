@@ -14,14 +14,14 @@
 // Copyright (C) 2006 Takashi Iwai <tiwai@suse.de>
 // Copyright (C) 2009 Petr Gajdos <pgajdos@novell.com>
 // Copyright (C) 2009 Kovid Goyal <kovid@kovidgoyal.net>
-// Copyright (C) 2009, 2024 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2009, 2024-2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2011 Andreas Hartmetz <ahartmetz@gmail.com>
 // Copyright (C) 2013 Thomas Freitag <Thomas.Freitag@alfa.de>
 // Copyright (C) 2015 Dmytro Morgun <lztoad@gmail.com>
 // Copyright (C) 2017 Adrian Johnson <ajohnson@redneon.com>
 // Copyright (C) 2018 Oliver Sander <oliver.sander@tu-dresden.de>
 // Copyright (C) 2019 Christian Persch <chpe@src.gnome.org>
-// Copyright (C) 2024 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2024-2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -30,15 +30,8 @@
 
 #include <config.h>
 
-#include <cstdlib>
-#include <cstdio>
-#ifdef HAVE_UNISTD_H
-#    include <unistd.h>
-#endif
 #include <algorithm>
 
-#include "goo/gmem.h"
-#include "goo/GooString.h"
 #include "SplashMath.h"
 #include "SplashFTFontEngine.h"
 #include "SplashFontFile.h"
@@ -52,7 +45,7 @@
 
 SplashFontEngine::SplashFontEngine(bool enableFreeType, bool enableFreeTypeHinting, bool enableSlightHinting, bool aa)
 {
-    std::fill(fontCache.begin(), fontCache.end(), nullptr);
+    std::ranges::fill(fontCache, nullptr);
 
     if (enableFreeType) {
         ftEngine = SplashFTFontEngine::init(aa, enableFreeTypeHinting, enableSlightHinting);
@@ -63,20 +56,18 @@ SplashFontEngine::SplashFontEngine(bool enableFreeType, bool enableFreeTypeHinti
 
 SplashFontEngine::~SplashFontEngine()
 {
-    for (auto font : fontCache) {
+    for (auto *font : fontCache) {
         delete font;
     }
 
-    if (ftEngine) {
-        delete ftEngine;
-    }
+    delete ftEngine;
 }
 
-SplashFontFile *SplashFontEngine::getFontFile(const SplashFontFileID &id)
+std::shared_ptr<SplashFontFile> SplashFontEngine::getFontFile(const SplashFontFileID &id)
 {
-    for (auto font : fontCache) {
+    for (auto *font : fontCache) {
         if (font) {
-            SplashFontFile *fontFile = font->getFontFile();
+            std::shared_ptr<SplashFontFile> fontFile = font->getFontFile();
             if (fontFile && fontFile->getID().matches(id)) {
                 return fontFile;
             }
@@ -85,122 +76,58 @@ SplashFontFile *SplashFontEngine::getFontFile(const SplashFontFileID &id)
     return nullptr;
 }
 
-SplashFontFile *SplashFontEngine::loadType1Font(std::unique_ptr<SplashFontFileID> idA, SplashFontSrc *src, const char **enc, int faceIndex)
+std::shared_ptr<SplashFontFile> SplashFontEngine::loadType1Font(std::unique_ptr<SplashFontFileID> idA, std::unique_ptr<SplashFontSrc> src, const std::array<const char *, 256> &enc, int faceIndex)
 {
-    SplashFontFile *fontFile = nullptr;
-
     if (ftEngine) {
-        fontFile = ftEngine->loadType1Font(std::move(idA), src, enc, faceIndex);
+        return ftEngine->loadType1Font(std::move(idA), std::move(src), enc, faceIndex);
     }
 
-    // delete the (temporary) font file -- with Unix hard link
-    // semantics, this will remove the last link; otherwise it will
-    // return an error, leaving the file to be deleted later (if
-    // loadXYZFont failed, the file will always be deleted)
-    if (src->isFile) {
-        src->unref();
-    }
-
-    return fontFile;
+    return nullptr;
 }
 
-SplashFontFile *SplashFontEngine::loadType1CFont(std::unique_ptr<SplashFontFileID> idA, SplashFontSrc *src, const char **enc, int faceIndex)
+std::shared_ptr<SplashFontFile> SplashFontEngine::loadType1CFont(std::unique_ptr<SplashFontFileID> idA, std::unique_ptr<SplashFontSrc> src, const std::array<const char *, 256> &enc, int faceIndex)
 {
-    SplashFontFile *fontFile = nullptr;
-
     if (ftEngine) {
-        fontFile = ftEngine->loadType1CFont(std::move(idA), src, enc, faceIndex);
+        return ftEngine->loadType1CFont(std::move(idA), std::move(src), enc, faceIndex);
     }
 
-    // delete the (temporary) font file -- with Unix hard link
-    // semantics, this will remove the last link; otherwise it will
-    // return an error, leaving the file to be deleted later (if
-    // loadXYZFont failed, the file will always be deleted)
-    if (src->isFile) {
-        src->unref();
-    }
-
-    return fontFile;
+    return nullptr;
 }
 
-SplashFontFile *SplashFontEngine::loadOpenTypeT1CFont(std::unique_ptr<SplashFontFileID> idA, SplashFontSrc *src, const char **enc, int faceIndex)
+std::shared_ptr<SplashFontFile> SplashFontEngine::loadOpenTypeT1CFont(std::unique_ptr<SplashFontFileID> idA, std::unique_ptr<SplashFontSrc> src, const std::array<const char *, 256> &enc, int faceIndex)
 {
-    SplashFontFile *fontFile = nullptr;
-
     if (ftEngine) {
-        fontFile = ftEngine->loadOpenTypeT1CFont(std::move(idA), src, enc, faceIndex);
+        return ftEngine->loadOpenTypeT1CFont(std::move(idA), std::move(src), enc, faceIndex);
     }
 
-    // delete the (temporary) font file -- with Unix hard link
-    // semantics, this will remove the last link; otherwise it will
-    // return an error, leaving the file to be deleted later (if
-    // loadXYZFont failed, the file will always be deleted)
-    if (src->isFile) {
-        src->unref();
-    }
-
-    return fontFile;
+    return nullptr;
 }
 
-SplashFontFile *SplashFontEngine::loadCIDFont(std::unique_ptr<SplashFontFileID> idA, SplashFontSrc *src, int faceIndex)
+std::shared_ptr<SplashFontFile> SplashFontEngine::loadCIDFont(std::unique_ptr<SplashFontFileID> idA, std::unique_ptr<SplashFontSrc> src, int faceIndex)
 {
-    SplashFontFile *fontFile = nullptr;
-
     if (ftEngine) {
-        fontFile = ftEngine->loadCIDFont(std::move(idA), src, faceIndex);
+        return ftEngine->loadCIDFont(std::move(idA), std::move(src), faceIndex);
     }
 
-    // delete the (temporary) font file -- with Unix hard link
-    // semantics, this will remove the last link; otherwise it will
-    // return an error, leaving the file to be deleted later (if
-    // loadXYZFont failed, the file will always be deleted)
-    if (src->isFile) {
-        src->unref();
-    }
-
-    return fontFile;
+    return nullptr;
 }
 
-SplashFontFile *SplashFontEngine::loadOpenTypeCFFFont(std::unique_ptr<SplashFontFileID> idA, SplashFontSrc *src, int *codeToGID, int codeToGIDLen, int faceIndex)
+std::shared_ptr<SplashFontFile> SplashFontEngine::loadOpenTypeCFFFont(std::unique_ptr<SplashFontFileID> idA, std::unique_ptr<SplashFontSrc> src, std::vector<int> &&codeToGID, int faceIndex)
 {
-    SplashFontFile *fontFile = nullptr;
-
     if (ftEngine) {
-        fontFile = ftEngine->loadOpenTypeCFFFont(std::move(idA), src, codeToGID, codeToGIDLen, faceIndex);
+        return ftEngine->loadOpenTypeCFFFont(std::move(idA), std::move(src), std::move(codeToGID), faceIndex);
     }
 
-    // delete the (temporary) font file -- with Unix hard link
-    // semantics, this will remove the last link; otherwise it will
-    // return an error, leaving the file to be deleted later (if
-    // loadXYZFont failed, the file will always be deleted)
-    if (src->isFile) {
-        src->unref();
-    }
-
-    return fontFile;
+    return nullptr;
 }
 
-SplashFontFile *SplashFontEngine::loadTrueTypeFont(std::unique_ptr<SplashFontFileID> idA, SplashFontSrc *src, int *codeToGID, int codeToGIDLen, int faceIndex)
+std::shared_ptr<SplashFontFile> SplashFontEngine::loadTrueTypeFont(std::unique_ptr<SplashFontFileID> idA, std::unique_ptr<SplashFontSrc> src, std::vector<int> &&codeToGID, int faceIndex)
 {
-    SplashFontFile *fontFile = nullptr;
-
     if (ftEngine) {
-        fontFile = ftEngine->loadTrueTypeFont(std::move(idA), src, codeToGID, codeToGIDLen, faceIndex);
+        return ftEngine->loadTrueTypeFont(std::move(idA), std::move(src), std::move(codeToGID), faceIndex);
     }
 
-    if (!fontFile) {
-        gfree(codeToGID);
-    }
-
-    // delete the (temporary) font file -- with Unix hard link
-    // semantics, this will remove the last link; otherwise it will
-    // return an error, leaving the file to be deleted later (if
-    // loadXYZFont failed, the file will always be deleted)
-    if (src->isFile) {
-        src->unref();
-    }
-
-    return fontFile;
+    return nullptr;
 }
 
 bool SplashFontEngine::getAA()
@@ -215,9 +142,9 @@ void SplashFontEngine::setAA(bool aa)
     }
 }
 
-SplashFont *SplashFontEngine::getFont(SplashFontFile *fontFile, const SplashCoord *textMat, const SplashCoord *ctm)
+SplashFont *SplashFontEngine::getFont(std::shared_ptr<SplashFontFile> fontFile, const std::array<double, 4> &textMat, const std::array<double, 6> &ctm)
 {
-    SplashCoord mat[4];
+    std::array<double, 4> mat;
 
     mat[0] = textMat[0] * ctm[0] + textMat[1] * ctm[2];
     mat[1] = -(textMat[0] * ctm[1] + textMat[1] * ctm[3]);
@@ -232,7 +159,7 @@ SplashFont *SplashFontEngine::getFont(SplashFontFile *fontFile, const SplashCoor
     }
 
     // Try to find the font in the cache
-    auto fontIt = std::find_if(fontCache.begin(), fontCache.end(), [&](const SplashFont *font) { return font && font->matches(fontFile, mat, textMat); });
+    auto fontIt = std::ranges::find_if(fontCache, [&](const SplashFont *font) { return font && font->matches(fontFile, mat, textMat); }); // NOLINT(readability-qualified-auto) https://github.com/llvm/llvm-project/issues/175731
 
     // The requested font has been found in the cache
     if (fontIt != fontCache.end()) {
@@ -241,11 +168,11 @@ SplashFont *SplashFontEngine::getFont(SplashFontFile *fontFile, const SplashCoor
     }
 
     // The requested font has not been found in the cache
-    auto newFont = fontFile->makeFont(mat, textMat);
+    auto *newFont = fontFile->makeFont(mat, textMat);
     if (fontCache.back()) {
         delete fontCache.back();
     }
-    std::rotate(fontCache.begin(), fontCache.end() - 1, fontCache.end());
+    std::ranges::rotate(fontCache, fontCache.end() - 1);
 
     fontCache[0] = newFont;
     return fontCache[0];

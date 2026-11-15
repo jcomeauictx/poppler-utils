@@ -14,7 +14,7 @@
 // under GPL version 2 or later
 //
 // Copyright (C) 2005 Brad Hards <bradh@frogmouth.net>
-// Copyright (C) 2006, 2008, 2010-2013, 2017-2022, 2024 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2006, 2008, 2010-2013, 2017-2022, 2024-2026, Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2007-2008 Julien Rebetez <julienr@svn.gnome.org>
 // Copyright (C) 2007 Carlos Garcia Campos <carlosgc@gnome.org>
 // Copyright (C) 2010 Ilya Gorenbein <igorenbein@finjan.com>
@@ -27,7 +27,8 @@
 // Copyright (C) 2018 Marek Kasik <mkasik@redhat.com>
 // Copyright (C) 2021 Mahmoud Khalil <mahmoudkhalil11@gmail.com>
 // Copyright (C) 2021 Georgiy Sgibnev <georgiy@sgibnev.com>. Work sponsored by lab50.net.
-// Copyright (C) 2023, 2024 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2023-2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2026 Ojas Maheshwari <workonlyojas@gmail.com>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -39,11 +40,9 @@
 
 #include <functional>
 
-#include "poppler-config.h"
 #include "poppler_private_export.h"
 #include "Object.h"
 #include "Stream.h"
-#include "PopplerCache.h"
 
 class Dict;
 class Stream;
@@ -81,15 +80,15 @@ struct XRefEntry
         DontRewrite // Entry must not be written back in case of full rewrite
     };
 
-    inline bool getFlag(Flag flag) const
+    bool getFlag(Flag flag) const
     {
-        const int mask = (1 << (int)flag);
+        const int mask = (1 << static_cast<int>(flag));
         return (flags & mask) != 0;
     }
 
-    inline void setFlag(Flag flag, bool value)
+    void setFlag(Flag flag, bool value)
     {
-        const int mask = (1 << (int)flag);
+        const int mask = (1 << static_cast<int>(flag));
         if (value) {
             flags |= mask;
         } else {
@@ -122,7 +121,7 @@ public:
     XRef &operator=(const XRef &) = delete;
 
     // Copy xref but with new base stream!
-    XRef *copy() const;
+    std::unique_ptr<XRef> copy() const;
 
     // Is xref table valid?
     bool isOk() const { return ok; }
@@ -161,7 +160,7 @@ public:
     Object getCatalog();
 
     // Fetch an indirect reference.
-    Object fetch(const Ref ref, int recursion = 0);
+    Object fetch(Ref ref, int recursion = 0);
     // If endPos is not null, returns file position after parsing the object. This will
     // be a few bytes after the end of the object due to the parser reading ahead.
     // Returns -1 if object is in compressed stream.
@@ -185,7 +184,7 @@ public:
     // Return the catalog object reference.
     int getRootNum() const { return rootNum; }
     int getRootGen() const { return rootGen; }
-    Ref getRoot() const { return { rootNum, rootGen }; }
+    Ref getRoot() const { return { .num = rootNum, .gen = rootGen }; }
 
     // Get end position for a stream in a damaged file.
     // Returns false if unknown or file is not damaged.
@@ -223,8 +222,7 @@ public:
     // For stream compression, if the data is already compressed
     // don't compress again. If it is not compressed, use compress (Flate / zlib)
     // Returns ref to a new object.
-    Ref addStreamObject(Dict *dict, char *buffer, const Goffset bufferSize, StreamCompression compression);
-    Ref addStreamObject(Dict *dict, uint8_t *buffer, const Goffset bufferSize, StreamCompression compression);
+    Ref addStreamObject(std::unique_ptr<Dict> dict, std::vector<char> buffer, StreamCompression compression);
 
     // Output XRef table to stream
     void writeTableToFile(OutStream *outStr, bool writeAllEntries);
@@ -242,6 +240,7 @@ private:
     XRefEntry *entries; // xref entries
     int capacity; // size of <entries> array
     int size; // number of entries
+    int last = -1; // last inserted entry
     int rootNum, rootGen; // catalog dict
     bool ok; // true if xref table is valid
     int errCode; // error code (if <ok> is false)
@@ -251,7 +250,7 @@ private:
     Goffset *streamEnds; // 'endstream' positions - only used in
                          //   damaged files
     int streamEndsLen; // number of valid entries in streamEnds
-    PopplerCache<Goffset, ObjectStream> objStrs; // cached object streams
+    std::unordered_map<Goffset, std::unique_ptr<ObjectStream>> objStrs; // object streams map
     bool encrypted; // true if file is encrypted
     int encRevision;
     int encVersion; // encryption algorithm
@@ -265,7 +264,7 @@ private:
     bool xRefStream; // true if last XRef section is a stream
     Goffset mainXRefOffset; // position of the main XRef table/stream
     bool scannedSpecialFlags; // true if scanSpecialFlags has been called
-    bool strOwner; // true if str is owned by the instance
+    std::unique_ptr<BaseStream> strOwner; // ownership if any of str (can be null if others own the stream)
     mutable std::recursive_mutex mutex;
     std::function<void()> xrefReconstructedCb;
 
@@ -273,6 +272,13 @@ private:
 
     int reserve(int newSize);
     int resize(int newSize);
+    void constructTrailerDict(Goffset pos, bool needCatalogDict);
+    void saveTrailerDict(Dict *dict, bool isXRefStream, bool needCatalogDict);
+    void constructObjectStreamEntries(Object *objStr, int objStrObjNum);
+
+    char *constructObjectEntry(char *p, Goffset pos, int *objNum);
+    bool constructXRefEntry(int num, int gen, Goffset pos, XRefEntryType type);
+
     bool readXRef(Goffset *pos, std::vector<Goffset> *followedXRefStm, std::vector<int> *xrefStreamObjsNum);
     bool readXRefTable(Parser *parser, Goffset *pos, std::vector<Goffset> *followedXRefStm, std::vector<int> *xrefStreamObjsNum);
     bool readXRefStreamSection(Stream *xrefStr, const int *w, int first, int n);

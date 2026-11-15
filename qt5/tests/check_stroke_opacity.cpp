@@ -12,30 +12,30 @@ class TestStrokeOpacity : public QObject
     Q_OBJECT
 public:
     explicit TestStrokeOpacity(QObject *parent = nullptr) : QObject(parent) { }
-private slots:
-    void checkStrokeOpacity_data();
-    void checkStrokeOpacity();
+private Q_SLOTS:
+    static void checkStrokeOpacity_data();
+    static void checkStrokeOpacity();
 };
 
 void TestStrokeOpacity::checkStrokeOpacity_data()
 {
     QTest::addColumn<int>("backendType");
 
-    QTest::newRow("splash") << (int)Poppler::Document::SplashBackend;
-    QTest::newRow("qpainter") << (int)Poppler::Document::QPainterBackend;
+    QTest::newRow("splash") << static_cast<int>(Poppler::Document::SplashBackend);
+    QTest::newRow("qpainter") << static_cast<int>(Poppler::Document::QPainterBackend);
 }
 
 void TestStrokeOpacity::checkStrokeOpacity()
 {
     QFETCH(int, backendType);
 
-    auto doc = std::unique_ptr<Poppler::Document>(Poppler::Document::load(TESTDATADIR "/unittestcases/stroke-alpha-pattern.pdf"));
+    auto doc = std::unique_ptr<Poppler::Document>(Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/stroke-alpha-pattern.pdf")));
     QVERIFY(doc != nullptr);
 
-    doc->setRenderBackend((Poppler::Document::RenderBackend)backendType);
+    doc->setRenderBackend(static_cast<Poppler::Document::RenderBackend>(backendType));
 
     // BUG: For some reason splash gets the opacity wrong when antialiasing is switched off
-    if (backendType == (int)Poppler::Document::SplashBackend) {
+    if (backendType == static_cast<int>(Poppler::Document::SplashBackend)) {
         doc->setRenderHint(Poppler::Document::Antialiasing, true);
     }
 

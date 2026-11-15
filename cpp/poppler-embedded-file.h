@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2009-2010, Pino Toscano <pino@kde.org>
- * Copyright (C) 2021, 2022, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2021, 2022, 2025, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2025, Zsombor Hollay-Horvath <hollay.horvath@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,8 +23,6 @@
 
 #include "poppler-global.h"
 
-#include <vector>
-
 namespace poppler {
 
 class embedded_file_private;
@@ -34,11 +33,10 @@ public:
     ~embedded_file();
 
     bool is_valid() const;
-    std::string name() const;
+    [[deprecated]] std::string name() const;
+    ustring unicodeName() const;
     ustring description() const;
     int size() const;
-    [[deprecated]] time_type modification_date() const;
-    [[deprecated]] time_type creation_date() const;
     time_t modification_date_t() const;
     time_t creation_date_t() const;
     byte_array checksum() const;

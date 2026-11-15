@@ -1,7 +1,9 @@
 /* poppler-structure.cc: glib interface to poppler
  *
  * Copyright (C) 2013 Igalia S.L.
- * Copyright (C) 2018 Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2018, 2025 Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2025, 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+ * Copyright (C) 2026 Adam Sampson <ats@offog.org>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -44,10 +46,11 @@
  * #PopplerStructureElementIter methods to traverse the structure tree.
  */
 
-typedef struct _PopplerStructureElementClass
+struct _PopplerStructureElementClass
 {
     GObjectClass parent_class;
-} PopplerStructureElementClass;
+};
+using PopplerStructureElementClass = _PopplerStructureElementClass;
 
 G_DEFINE_TYPE(PopplerStructureElement, poppler_structure_element, G_TYPE_OBJECT)
 
@@ -58,14 +61,14 @@ static PopplerStructureElement *_poppler_structure_element_new(PopplerDocument *
     g_assert(POPPLER_IS_DOCUMENT(document));
     g_assert(element);
 
-    poppler_structure_element = (PopplerStructureElement *)g_object_new(POPPLER_TYPE_STRUCTURE_ELEMENT, nullptr, NULL);
-    poppler_structure_element->document = (PopplerDocument *)g_object_ref(document);
+    poppler_structure_element = static_cast<PopplerStructureElement *>(g_object_new(POPPLER_TYPE_STRUCTURE_ELEMENT, nullptr, NULL));
+    poppler_structure_element->document = static_cast<PopplerDocument *> g_object_ref(document);
     poppler_structure_element->elem = element;
 
     return poppler_structure_element;
 }
 
-static void poppler_structure_element_init(PopplerStructureElement *poppler_structure_element) { }
+static void poppler_structure_element_init(PopplerStructureElement * /*poppler_structure_element*/) { }
 
 static void poppler_structure_element_finalize(GObject *object)
 {
@@ -225,60 +228,77 @@ struct EnumNameValue
     template<>                                                                                                                                                                                                                                 \
     const EnumNameValue<E> EnumNameValue<E>::values[] =
 
-ENUM_VALUES(PopplerStructurePlacement, Placement) { { "Block", POPPLER_STRUCTURE_PLACEMENT_BLOCK }, { "Inline", POPPLER_STRUCTURE_PLACEMENT_INLINE }, { "Before", POPPLER_STRUCTURE_PLACEMENT_BEFORE },
-                                                    { "Start", POPPLER_STRUCTURE_PLACEMENT_START }, { "End", POPPLER_STRUCTURE_PLACEMENT_END },       {} };
+ENUM_VALUES(PopplerStructurePlacement, Placement) { { .name = "Block", .value = POPPLER_STRUCTURE_PLACEMENT_BLOCK },   { .name = "Inline", .value = POPPLER_STRUCTURE_PLACEMENT_INLINE },
+                                                    { .name = "Before", .value = POPPLER_STRUCTURE_PLACEMENT_BEFORE }, { .name = "Start", .value = POPPLER_STRUCTURE_PLACEMENT_START },
+                                                    { .name = "End", .value = POPPLER_STRUCTURE_PLACEMENT_END },       {} };
 
-ENUM_VALUES(PopplerStructureWritingMode, WritingMode) { { "LrTb", POPPLER_STRUCTURE_WRITING_MODE_LR_TB }, { "RlTb", POPPLER_STRUCTURE_WRITING_MODE_RL_TB }, { "TbRl", POPPLER_STRUCTURE_WRITING_MODE_TB_RL }, {} };
+ENUM_VALUES(PopplerStructureWritingMode,
+            WritingMode) { { .name = "LrTb", .value = POPPLER_STRUCTURE_WRITING_MODE_LR_TB }, { .name = "RlTb", .value = POPPLER_STRUCTURE_WRITING_MODE_RL_TB }, { .name = "TbRl", .value = POPPLER_STRUCTURE_WRITING_MODE_TB_RL }, {} };
 
-ENUM_VALUES(PopplerStructureBorderStyle, BorderStyle) { { "None", POPPLER_STRUCTURE_BORDER_STYLE_NONE },     { "Hidden", POPPLER_STRUCTURE_BORDER_STYLE_HIDDEN },
-                                                        { "Dotted", POPPLER_STRUCTURE_BORDER_STYLE_DOTTED }, { "Dashed", POPPLER_STRUCTURE_BORDER_STYLE_DASHED },
-                                                        { "Solid", POPPLER_STRUCTURE_BORDER_STYLE_SOLID },   { "Double", POPPLER_STRUCTURE_BORDER_STYLE_DOUBLE },
-                                                        { "Groove", POPPLER_STRUCTURE_BORDER_STYLE_GROOVE }, { "Inset", POPPLER_STRUCTURE_BORDER_STYLE_INSET },
-                                                        { "Outset", POPPLER_STRUCTURE_BORDER_STYLE_OUTSET }, {} };
+ENUM_VALUES(PopplerStructureBorderStyle, BorderStyle) { { .name = "None", .value = POPPLER_STRUCTURE_BORDER_STYLE_NONE },     { .name = "Hidden", .value = POPPLER_STRUCTURE_BORDER_STYLE_HIDDEN },
+                                                        { .name = "Dotted", .value = POPPLER_STRUCTURE_BORDER_STYLE_DOTTED }, { .name = "Dashed", .value = POPPLER_STRUCTURE_BORDER_STYLE_DASHED },
+                                                        { .name = "Solid", .value = POPPLER_STRUCTURE_BORDER_STYLE_SOLID },   { .name = "Double", .value = POPPLER_STRUCTURE_BORDER_STYLE_DOUBLE },
+                                                        { .name = "Groove", .value = POPPLER_STRUCTURE_BORDER_STYLE_GROOVE }, { .name = "Inset", .value = POPPLER_STRUCTURE_BORDER_STYLE_INSET },
+                                                        { .name = "Outset", .value = POPPLER_STRUCTURE_BORDER_STYLE_OUTSET }, {} };
 
-ENUM_VALUES(PopplerStructureTextAlign,
-            TextAlign) { { "Start", POPPLER_STRUCTURE_TEXT_ALIGN_START }, { "Center", POPPLER_STRUCTURE_TEXT_ALIGN_CENTER }, { "End", POPPLER_STRUCTURE_TEXT_ALIGN_END }, { "Justify", POPPLER_STRUCTURE_TEXT_ALIGN_JUSTIFY }, {} };
+ENUM_VALUES(PopplerStructureTextAlign, TextAlign) { { .name = "Start", .value = POPPLER_STRUCTURE_TEXT_ALIGN_START },
+                                                    { .name = "Center", .value = POPPLER_STRUCTURE_TEXT_ALIGN_CENTER },
+                                                    { .name = "End", .value = POPPLER_STRUCTURE_TEXT_ALIGN_END },
+                                                    { .name = "Justify", .value = POPPLER_STRUCTURE_TEXT_ALIGN_JUSTIFY },
+                                                    {} };
 
-ENUM_VALUES(PopplerStructureBlockAlign,
-            BlockAlign) { { "Before", POPPLER_STRUCTURE_BLOCK_ALIGN_BEFORE }, { "Middle", POPPLER_STRUCTURE_BLOCK_ALIGN_MIDDLE }, { "After", POPPLER_STRUCTURE_BLOCK_ALIGN_AFTER }, { "Justify", POPPLER_STRUCTURE_BLOCK_ALIGN_JUSTIFY }, {} };
+ENUM_VALUES(PopplerStructureBlockAlign, BlockAlign) { { .name = "Before", .value = POPPLER_STRUCTURE_BLOCK_ALIGN_BEFORE },
+                                                      { .name = "Middle", .value = POPPLER_STRUCTURE_BLOCK_ALIGN_MIDDLE },
+                                                      { .name = "After", .value = POPPLER_STRUCTURE_BLOCK_ALIGN_AFTER },
+                                                      { .name = "Justify", .value = POPPLER_STRUCTURE_BLOCK_ALIGN_JUSTIFY },
+                                                      {} };
 
-ENUM_VALUES(PopplerStructureInlineAlign, InlineAlign) { { "Start", POPPLER_STRUCTURE_INLINE_ALIGN_START }, { "Center", POPPLER_STRUCTURE_INLINE_ALIGN_CENTER }, { "End", POPPLER_STRUCTURE_INLINE_ALIGN_END }, {} };
+ENUM_VALUES(PopplerStructureInlineAlign,
+            InlineAlign) { { .name = "Start", .value = POPPLER_STRUCTURE_INLINE_ALIGN_START }, { .name = "Center", .value = POPPLER_STRUCTURE_INLINE_ALIGN_CENTER }, { .name = "End", .value = POPPLER_STRUCTURE_INLINE_ALIGN_END }, {} };
 
-ENUM_VALUES(PopplerStructureTextDecoration, TextDecorationType) { { "None", POPPLER_STRUCTURE_TEXT_DECORATION_NONE },
-                                                                  { "Underline", POPPLER_STRUCTURE_TEXT_DECORATION_UNDERLINE },
-                                                                  { "Overline", POPPLER_STRUCTURE_TEXT_DECORATION_OVERLINE },
-                                                                  { "LineThrough", POPPLER_STRUCTURE_TEXT_DECORATION_LINETHROUGH },
+ENUM_VALUES(PopplerStructureTextDecoration, TextDecorationType) { { .name = "None", .value = POPPLER_STRUCTURE_TEXT_DECORATION_NONE },
+                                                                  { .name = "Underline", .value = POPPLER_STRUCTURE_TEXT_DECORATION_UNDERLINE },
+                                                                  { .name = "Overline", .value = POPPLER_STRUCTURE_TEXT_DECORATION_OVERLINE },
+                                                                  { .name = "LineThrough", .value = POPPLER_STRUCTURE_TEXT_DECORATION_LINETHROUGH },
                                                                   {} };
 
-ENUM_VALUES(PopplerStructureRubyAlign, RubyAlign) { { "Start", POPPLER_STRUCTURE_RUBY_ALIGN_START },     { "Center", POPPLER_STRUCTURE_RUBY_ALIGN_CENTER },         { "End", POPPLER_STRUCTURE_RUBY_ALIGN_END },
-                                                    { "Justify", POPPLER_STRUCTURE_RUBY_ALIGN_JUSTIFY }, { "Distribute", POPPLER_STRUCTURE_RUBY_ALIGN_DISTRIBUTE }, {} };
+ENUM_VALUES(PopplerStructureRubyAlign,
+            RubyAlign) { { .name = "Start", .value = POPPLER_STRUCTURE_RUBY_ALIGN_START },     { .name = "Center", .value = POPPLER_STRUCTURE_RUBY_ALIGN_CENTER },         { .name = "End", .value = POPPLER_STRUCTURE_RUBY_ALIGN_END },
+                         { .name = "Justify", .value = POPPLER_STRUCTURE_RUBY_ALIGN_JUSTIFY }, { .name = "Distribute", .value = POPPLER_STRUCTURE_RUBY_ALIGN_DISTRIBUTE }, {} };
 
-ENUM_VALUES(PopplerStructureRubyPosition, RubyPosition) {
-    { "Before", POPPLER_STRUCTURE_RUBY_POSITION_BEFORE }, { "After", POPPLER_STRUCTURE_RUBY_POSITION_AFTER }, { "Warichu", POPPLER_STRUCTURE_RUBY_POSITION_WARICHU }, { "Inline", POPPLER_STRUCTURE_RUBY_POSITION_INLINE }, {}
-};
+ENUM_VALUES(PopplerStructureRubyPosition, RubyPosition) { { .name = "Before", .value = POPPLER_STRUCTURE_RUBY_POSITION_BEFORE },
+                                                          { .name = "After", .value = POPPLER_STRUCTURE_RUBY_POSITION_AFTER },
+                                                          { .name = "Warichu", .value = POPPLER_STRUCTURE_RUBY_POSITION_WARICHU },
+                                                          { .name = "Inline", .value = POPPLER_STRUCTURE_RUBY_POSITION_INLINE },
+                                                          {} };
 
-ENUM_VALUES(PopplerStructureGlyphOrientation, GlyphOrientationVertical) { { "Auto", POPPLER_STRUCTURE_GLYPH_ORIENTATION_AUTO }, { "90", POPPLER_STRUCTURE_GLYPH_ORIENTATION_90 },
-                                                                          { "180", POPPLER_STRUCTURE_GLYPH_ORIENTATION_180 },   { "270", POPPLER_STRUCTURE_GLYPH_ORIENTATION_270 },
-                                                                          { "360", POPPLER_STRUCTURE_GLYPH_ORIENTATION_0 },     { "-90", POPPLER_STRUCTURE_GLYPH_ORIENTATION_270 },
-                                                                          { "-180", POPPLER_STRUCTURE_GLYPH_ORIENTATION_180 },  {} };
+ENUM_VALUES(PopplerStructureGlyphOrientation, GlyphOrientationVertical) { { .name = "Auto", .value = POPPLER_STRUCTURE_GLYPH_ORIENTATION_AUTO }, { .name = "90", .value = POPPLER_STRUCTURE_GLYPH_ORIENTATION_90 },
+                                                                          { .name = "180", .value = POPPLER_STRUCTURE_GLYPH_ORIENTATION_180 },   { .name = "270", .value = POPPLER_STRUCTURE_GLYPH_ORIENTATION_270 },
+                                                                          { .name = "360", .value = POPPLER_STRUCTURE_GLYPH_ORIENTATION_0 },     { .name = "-90", .value = POPPLER_STRUCTURE_GLYPH_ORIENTATION_270 },
+                                                                          { .name = "-180", .value = POPPLER_STRUCTURE_GLYPH_ORIENTATION_180 },  {} };
 
-ENUM_VALUES(PopplerStructureListNumbering, ListNumbering) { { "None", POPPLER_STRUCTURE_LIST_NUMBERING_NONE },
-                                                            { "Disc", POPPLER_STRUCTURE_LIST_NUMBERING_DISC },
-                                                            { "Circle", POPPLER_STRUCTURE_LIST_NUMBERING_CIRCLE },
-                                                            { "Square", POPPLER_STRUCTURE_LIST_NUMBERING_SQUARE },
-                                                            { "Decimal", POPPLER_STRUCTURE_LIST_NUMBERING_DECIMAL },
-                                                            { "UpperRoman", POPPLER_STRUCTURE_LIST_NUMBERING_UPPER_ROMAN },
-                                                            { "LowerRoman", POPPLER_STRUCTURE_LIST_NUMBERING_LOWER_ROMAN },
-                                                            { "UpperAlpha", POPPLER_STRUCTURE_LIST_NUMBERING_UPPER_ALPHA },
-                                                            { "LowerAlpha", POPPLER_STRUCTURE_LIST_NUMBERING_LOWER_ALPHA },
+ENUM_VALUES(PopplerStructureListNumbering, ListNumbering) { { .name = "None", .value = POPPLER_STRUCTURE_LIST_NUMBERING_NONE },
+                                                            { .name = "Disc", .value = POPPLER_STRUCTURE_LIST_NUMBERING_DISC },
+                                                            { .name = "Circle", .value = POPPLER_STRUCTURE_LIST_NUMBERING_CIRCLE },
+                                                            { .name = "Square", .value = POPPLER_STRUCTURE_LIST_NUMBERING_SQUARE },
+                                                            { .name = "Decimal", .value = POPPLER_STRUCTURE_LIST_NUMBERING_DECIMAL },
+                                                            { .name = "UpperRoman", .value = POPPLER_STRUCTURE_LIST_NUMBERING_UPPER_ROMAN },
+                                                            { .name = "LowerRoman", .value = POPPLER_STRUCTURE_LIST_NUMBERING_LOWER_ROMAN },
+                                                            { .name = "UpperAlpha", .value = POPPLER_STRUCTURE_LIST_NUMBERING_UPPER_ALPHA },
+                                                            { .name = "LowerAlpha", .value = POPPLER_STRUCTURE_LIST_NUMBERING_LOWER_ALPHA },
                                                             {} };
 
-ENUM_VALUES(PopplerStructureFormRole,
-            Role) { { "rb", POPPLER_STRUCTURE_FORM_ROLE_RADIO_BUTTON }, { "cb", POPPLER_STRUCTURE_FORM_ROLE_CHECKBOX }, { "pb", POPPLER_STRUCTURE_FORM_ROLE_PUSH_BUTTON }, { "tv", POPPLER_STRUCTURE_FORM_ROLE_TEXT_VALUE }, {} };
+ENUM_VALUES(PopplerStructureFormRole, Role) { { .name = "rb", .value = POPPLER_STRUCTURE_FORM_ROLE_RADIO_BUTTON },
+                                              { .name = "cb", .value = POPPLER_STRUCTURE_FORM_ROLE_CHECKBOX },
+                                              { .name = "pb", .value = POPPLER_STRUCTURE_FORM_ROLE_PUSH_BUTTON },
+                                              { .name = "tv", .value = POPPLER_STRUCTURE_FORM_ROLE_TEXT_VALUE },
+                                              {} };
 
-ENUM_VALUES(PopplerStructureFormState, checked) { { "on", POPPLER_STRUCTURE_FORM_STATE_ON }, { "off", POPPLER_STRUCTURE_FORM_STATE_OFF }, { "neutral", POPPLER_STRUCTURE_FORM_STATE_NEUTRAL }, {} };
+ENUM_VALUES(PopplerStructureFormState,
+            checked) { { .name = "on", .value = POPPLER_STRUCTURE_FORM_STATE_ON }, { .name = "off", .value = POPPLER_STRUCTURE_FORM_STATE_OFF }, { .name = "neutral", .value = POPPLER_STRUCTURE_FORM_STATE_NEUTRAL }, {} };
 
-ENUM_VALUES(PopplerStructureTableScope, Scope) { { "Row", POPPLER_STRUCTURE_TABLE_SCOPE_ROW }, { "Column", POPPLER_STRUCTURE_TABLE_SCOPE_COLUMN }, { "Both", POPPLER_STRUCTURE_TABLE_SCOPE_BOTH }, {} };
+ENUM_VALUES(PopplerStructureTableScope,
+            Scope) { { .name = "Row", .value = POPPLER_STRUCTURE_TABLE_SCOPE_ROW }, { .name = "Column", .value = POPPLER_STRUCTURE_TABLE_SCOPE_COLUMN }, { .name = "Both", .value = POPPLER_STRUCTURE_TABLE_SCOPE_BOTH }, {} };
 
 #undef ENUM_VALUES
 
@@ -428,7 +448,7 @@ gchar *poppler_structure_element_get_id(PopplerStructureElement *poppler_structu
     g_return_val_if_fail(poppler_structure_element->elem != nullptr, NULL);
 
     const GooString *string = poppler_structure_element->elem->getID();
-    return string ? _poppler_goo_string_to_utf8(string) : nullptr;
+    return string ? _poppler_goo_string_to_utf8(string->toStr()) : nullptr;
 }
 
 /**
@@ -447,7 +467,7 @@ gchar *poppler_structure_element_get_title(PopplerStructureElement *poppler_stru
     g_return_val_if_fail(poppler_structure_element->elem != nullptr, NULL);
 
     const GooString *string = poppler_structure_element->elem->getTitle();
-    return string ? _poppler_goo_string_to_utf8(string) : nullptr;
+    return string ? _poppler_goo_string_to_utf8(string->toStr()) : nullptr;
 }
 
 /**
@@ -473,7 +493,7 @@ gchar *poppler_structure_element_get_abbreviation(PopplerStructureElement *poppl
     }
 
     const GooString *string = poppler_structure_element->elem->getExpandedAbbr();
-    return string ? _poppler_goo_string_to_utf8(string) : nullptr;
+    return string ? _poppler_goo_string_to_utf8(string->toStr()) : nullptr;
 }
 
 /**
@@ -494,7 +514,7 @@ gchar *poppler_structure_element_get_language(PopplerStructureElement *poppler_s
     g_return_val_if_fail(poppler_structure_element->elem != nullptr, NULL);
 
     const GooString *string = poppler_structure_element->elem->getLanguage();
-    return string ? _poppler_goo_string_to_utf8(string) : nullptr;
+    return string ? _poppler_goo_string_to_utf8(string->toStr()) : nullptr;
 }
 
 /**
@@ -519,7 +539,7 @@ gchar *poppler_structure_element_get_alt_text(PopplerStructureElement *poppler_s
     g_return_val_if_fail(poppler_structure_element->elem != nullptr, NULL);
 
     const GooString *string = poppler_structure_element->elem->getAltText();
-    return string ? _poppler_goo_string_to_utf8(string) : nullptr;
+    return string ? _poppler_goo_string_to_utf8(string->toStr()) : nullptr;
 }
 
 /**
@@ -546,7 +566,7 @@ gchar *poppler_structure_element_get_actual_text(PopplerStructureElement *popple
     g_return_val_if_fail(poppler_structure_element->elem != nullptr, NULL);
 
     const GooString *string = poppler_structure_element->elem->getActualText();
-    return string ? _poppler_goo_string_to_utf8(string) : nullptr;
+    return string ? _poppler_goo_string_to_utf8(string->toStr()) : nullptr;
 }
 
 /**
@@ -568,7 +588,7 @@ gchar *poppler_structure_element_get_text(PopplerStructureElement *poppler_struc
     g_return_val_if_fail(poppler_structure_element->elem != nullptr, NULL);
 
     GooString *string = poppler_structure_element->elem->getText(flags & POPPLER_STRUCTURE_GET_TEXT_RECURSIVE);
-    gchar *result = string ? _poppler_goo_string_to_utf8(string) : nullptr;
+    gchar *result = string ? _poppler_goo_string_to_utf8(string->toStr()) : nullptr;
     delete string;
     return result;
 }
@@ -609,7 +629,7 @@ PopplerStructureElementIter *poppler_structure_element_iter_copy(PopplerStructur
     g_return_val_if_fail(iter != nullptr, NULL);
 
     new_iter = g_slice_dup(PopplerStructureElementIter, iter);
-    new_iter->document = (PopplerDocument *)g_object_ref(new_iter->document);
+    new_iter->document = static_cast<PopplerDocument *> g_object_ref(new_iter->document);
 
     return new_iter;
 }
@@ -666,7 +686,7 @@ void poppler_structure_element_iter_free(PopplerStructureElementIter *iter)
  * }
  * </programlisting></informalexample>
  *
- * Return value: (transfer full): a new #PopplerStructureElementIter, or %NULL if document
+ * Return value: (nullable) (transfer full): a new #PopplerStructureElementIter, or %NULL if document
  *    doesn't have structure tree.
  *
  * Since: 0.26
@@ -687,7 +707,7 @@ PopplerStructureElementIter *poppler_structure_element_iter_new(PopplerDocument 
     }
 
     iter = g_slice_new0(PopplerStructureElementIter);
-    iter->document = (PopplerDocument *)g_object_ref(poppler_document);
+    iter->document = static_cast<PopplerDocument *> g_object_ref(poppler_document);
     iter->is_root = TRUE;
     iter->root = root;
 
@@ -757,8 +777,8 @@ PopplerStructureElementIter *poppler_structure_element_iter_get_child(PopplerStr
     elem = parent->is_root ? parent->root->getChild(parent->index) : parent->elem->getChild(parent->index);
 
     if (elem->getNumChildren() > 0) {
-        PopplerStructureElementIter *child = g_slice_new0(PopplerStructureElementIter);
-        child->document = (PopplerDocument *)g_object_ref(parent->document);
+        auto *child = g_slice_new0(PopplerStructureElementIter);
+        child->document = static_cast<PopplerDocument *> g_object_ref(parent->document);
         child->elem = elem;
         return child;
     }
@@ -791,9 +811,9 @@ enum
 
 static PopplerTextSpan *text_span_poppler_text_span(const TextSpan &span)
 {
-    PopplerTextSpan *new_span = g_slice_new0(PopplerTextSpan);
-    if (GooString *text = span.getText()) {
-        new_span->text = _poppler_goo_string_to_utf8(text);
+    auto *new_span = g_slice_new0(PopplerTextSpan);
+    if (const GooString *text = span.getText()) {
+        new_span->text = _poppler_goo_string_to_utf8(text->toStr());
     }
 
     new_span->color.red = colToDbl(span.getColor().r) * 65535;
@@ -803,14 +823,16 @@ static PopplerTextSpan *text_span_poppler_text_span(const TextSpan &span)
     if (span.getFont()) {
         // GfxFont sometimes does not have a family name but there
         // is always a font name that can be used as fallback.
-        const GooString *font_name = span.getFont()->getFamily();
-        if (font_name) {
-            new_span->font_name = _poppler_goo_string_to_utf8(font_name);
-        } else if (span.getFont()->getName()) {
-            const GooString aux(*span.getFont()->getName());
-            new_span->font_name = _poppler_goo_string_to_utf8(&aux);
+        const std::optional<std::string> &font_name = span.getFont()->getFamily();
+        if (font_name.has_value()) {
+            new_span->font_name = _poppler_goo_string_to_utf8(font_name.value());
         } else {
-            new_span->font_name = nullptr;
+            const std::optional<std::string> &fontName = span.getFont()->getName();
+            if (fontName) {
+                new_span->font_name = _poppler_goo_string_to_utf8(fontName.value());
+            } else {
+                new_span->font_name = nullptr;
+            }
         }
 
         if (span.getFont()->isFixedWidth()) {
@@ -1025,7 +1047,7 @@ PopplerTextSpan **poppler_structure_element_get_text_spans(PopplerStructureEleme
     }
 
     const TextSpanArray spans(poppler_structure_element->elem->getTextSpans());
-    PopplerTextSpan **text_spans = g_new0(PopplerTextSpan *, spans.size());
+    auto **text_spans = g_new0(PopplerTextSpan *, spans.size());
 
     size_t i = 0;
     for (const TextSpan &s : spans) {
@@ -1115,7 +1137,7 @@ static inline void convert_doubles_array(const Object *object, gdouble **values,
     g_assert(values != nullptr);
 
     *n_values = object->arrayGetLength();
-    gdouble *doubles = g_new(gdouble, *n_values);
+    auto *doubles = g_new(gdouble, *n_values);
 
     for (guint i = 0; i < *n_values; i++) {
         doubles[i] = object->arrayGet(i).getNum();
@@ -1127,7 +1149,7 @@ static inline void convert_doubles_array(const Object *object, gdouble **values,
 static inline void convert_color(const Object *object, PopplerColor *color)
 {
     g_assert(color != nullptr);
-    g_assert(object->isArray() && object->arrayGetLength() != 3);
+    g_assert(object->isArrayOfLength(3));
 
     color->red = object->arrayGet(0).getNum() * 65535;
     color->green = object->arrayGet(1).getNum() * 65535;
@@ -1953,7 +1975,7 @@ gchar **poppler_structure_element_get_table_headers(PopplerStructureElement *pop
     g_assert(value->isArray());
 
     const guint n_values = value->arrayGetLength();
-    gchar **result = g_new0(gchar *, n_values + 1);
+    auto **result = g_new0(gchar *, n_values + 1);
 
     for (guint i = 0; i < n_values; i++) {
         Object item = value->arrayGet(i);

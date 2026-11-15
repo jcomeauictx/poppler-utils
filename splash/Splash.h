@@ -12,12 +12,15 @@
 // under GPL version 2 or later
 //
 // Copyright (C) 2005 Marco Pesenti Gritti <mpg@redhat.com>
-// Copyright (C) 2007, 2011, 2018, 2019, 2021, 2022 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2007, 2011, 2018, 2019, 2021, 2022, 2025, 2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2010-2013, 2015 Thomas Freitag <Thomas.Freitag@alfa.de>
 // Copyright (C) 2010 Christian Feuersänger <cfeuersaenger@googlemail.com>
 // Copyright (C) 2012, 2017 Adrian Johnson <ajohnson@redneon.com>
 // Copyright (C) 2020 Oliver Sander <oliver.sander@tu-dresden.de>
 // Copyright (C) 2020 Tobias Deiminger <haxtibal@posteo.de>
+// Copyright (C) 2026 Taufeeque Sifat <entity069@protonmail.com>
+// Copyright (C) 2026 Stefan Brüns <stefan.bruens@rwth-aachen.de>
+// Copyright (C) 2026 William Bader <william@newspapersystems.com>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -27,7 +30,6 @@
 #ifndef SPLASH_H
 #define SPLASH_H
 
-#include <cstddef>
 #include "SplashTypes.h"
 #include "SplashClip.h"
 #include "SplashPattern.h"
@@ -47,15 +49,15 @@ struct SplashPipe;
 // Retrieves the next line of pixels in an image mask.  Normally,
 // fills in *<line> and returns true.  If the image stream is
 // exhausted, returns false.
-typedef bool (*SplashImageMaskSource)(void *data, SplashColorPtr pixel);
+using SplashImageMaskSource = bool (*)(void *data, SplashColorPtr pixel);
 
 // Retrieves the next line of pixels in an image.  Normally, fills in
 // *<line> and returns true.  If the image stream is exhausted,
 // returns false.
-typedef bool (*SplashImageSource)(void *data, SplashColorPtr colorLine, unsigned char *alphaLine);
+using SplashImageSource = bool (*)(void *data, SplashColorPtr colorLine, unsigned char *alphaLine);
 
 // Use ICCColorSpace to transform a bitmap
-typedef void (*SplashICCTransform)(void *data, SplashBitmap *bitmap);
+using SplashICCTransform = void (*)(void *data, SplashBitmap *bitmap);
 
 //------------------------------------------------------------------------
 
@@ -84,7 +86,7 @@ class POPPLER_PRIVATE_EXPORT Splash
 public:
     // Create a new rasterizer object.
     Splash(SplashBitmap *bitmapA, bool vectorAntialiasA, SplashScreenParams *screenParams = nullptr);
-    Splash(SplashBitmap *bitmapA, bool vectorAntialiasA, SplashScreen *screenA);
+    Splash(SplashBitmap *bitmapA, bool vectorAntialiasA, const SplashScreen &screenA);
 
     ~Splash();
 
@@ -93,54 +95,54 @@ public:
 
     //----- state read
 
-    SplashCoord *getMatrix();
+    const std::array<double, 6> &getMatrix() const;
     SplashPattern *getStrokePattern();
     SplashPattern *getFillPattern();
-    SplashScreen *getScreen();
+    const SplashScreen &getScreen() const;
     SplashBlendFunc getBlendFunc();
-    SplashCoord getStrokeAlpha();
-    SplashCoord getFillAlpha();
-    SplashCoord getLineWidth();
-    int getLineCap();
-    int getLineJoin();
-    SplashCoord getMiterLimit();
-    SplashCoord getFlatness();
-    SplashCoord getLineDashPhase();
+    double getStrokeAlpha();
+    double getFillAlpha();
+    double getLineWidth();
+    SplashLineCap getLineCap();
+    SplashLineJoin getLineJoin();
+    double getMiterLimit();
+    double getFlatness();
+    double getLineDashPhase();
     bool getStrokeAdjust();
-    SplashClip *getClip();
+    const SplashClip &getClip() const;
     SplashBitmap *getSoftMask();
     bool getInNonIsolatedGroup();
+    bool getInKnockoutGroup();
 
     //----- state write
 
-    void setMatrix(SplashCoord *matrix);
+    void setMatrix(const std::array<double, 6> &matrix);
     void setStrokePattern(SplashPattern *strokePattern);
     void setFillPattern(SplashPattern *fillPattern);
-    void setScreen(SplashScreen *screen);
     void setBlendFunc(SplashBlendFunc func);
-    void setStrokeAlpha(SplashCoord alpha);
-    void setFillAlpha(SplashCoord alpha);
-    void setPatternAlpha(SplashCoord strokeAlpha, SplashCoord fillAlpha);
+    void setStrokeAlpha(double alpha);
+    void setFillAlpha(double alpha);
+    void setPatternAlpha(double strokeAlpha, double fillAlpha);
     void clearPatternAlpha();
     void setFillOverprint(bool fop);
     void setStrokeOverprint(bool sop);
     void setOverprintMode(int opm);
-    void setLineWidth(SplashCoord lineWidth);
-    void setLineCap(int lineCap);
-    void setLineJoin(int lineJoin);
-    void setMiterLimit(SplashCoord miterLimit);
-    void setFlatness(SplashCoord flatness);
+    void setLineWidth(double lineWidth);
+    void setLineCap(SplashLineCap lineCap);
+    void setLineJoin(SplashLineJoin lineJoin);
+    void setMiterLimit(double miterLimit);
+    void setFlatness(double flatness);
     // the <lineDash> array will be copied
-    void setLineDash(std::vector<SplashCoord> &&lineDash, SplashCoord lineDashPhase);
+    void setLineDash(std::vector<double> &&lineDash, double lineDashPhase);
     void setStrokeAdjust(bool strokeAdjust);
     // NB: uses transformed coordinates.
-    void clipResetToRect(SplashCoord x0, SplashCoord y0, SplashCoord x1, SplashCoord y1);
+    void clipResetToRect(double x0, double y0, double x1, double y1);
     // NB: uses transformed coordinates.
-    SplashError clipToRect(SplashCoord x0, SplashCoord y0, SplashCoord x1, SplashCoord y1);
+    SplashError clipToRect(double x0, double y0, double x1, double y1);
     // NB: uses untransformed coordinates.
-    SplashError clipToPath(SplashPath *path, bool eo);
+    SplashError clipToPath(const SplashPath &path, bool eo);
     void setSoftMask(SplashBitmap *softMask);
-    void setInNonIsolatedGroup(SplashBitmap *alpha0BitmapA, int alpha0XA, int alpha0YA);
+    void setInTransparencyGroup(SplashBitmap *groupBackBitmapA, int groupBackXA, int groupBackYA, bool nonIsolated, bool knockout);
     void setTransfer(unsigned char *red, unsigned char *green, unsigned char *blue, unsigned char *gray);
     void setOverprintMask(unsigned int overprintMask, bool additive);
 
@@ -155,20 +157,17 @@ public:
     void clear(SplashColorPtr color, unsigned char alpha = 0x00);
 
     // Stroke a path using the current stroke pattern.
-    SplashError stroke(SplashPath *path);
+    SplashError stroke(const SplashPath &path);
 
     // Fill a path using the current fill pattern.
     SplashError fill(SplashPath *path, bool eo);
 
-    // Fill a path, XORing with the current fill pattern.
-    SplashError xorFill(SplashPath *path, bool eo);
-
     // Draw a character, using the current fill pattern.
-    SplashError fillChar(SplashCoord x, SplashCoord y, int c, SplashFont *font);
+    SplashError fillChar(double x, double y, int c, SplashFont *font);
 
     // Draw a glyph, using the current fill pattern.  This function does
     // not free any data, i.e., it ignores glyph->freeData.
-    void fillGlyph(SplashCoord x, SplashCoord y, SplashGlyphBitmap *glyph);
+    void fillGlyph(double x, double y, SplashGlyphBitmap *glyph);
 
     // Draws an image mask using the fill color.  This will read <h>
     // lines of <w> pixels from <src>, starting with the top line.  "1"
@@ -183,7 +182,7 @@ public:
     // Note that the Splash y axis points downward, and the image source
     // is assumed to produce pixels in raster order, starting from the
     // top line.
-    SplashError fillImageMask(SplashImageMaskSource src, void *srcData, int w, int h, SplashCoord *mat, bool glyphMode);
+    SplashError fillImageMask(SplashImageMaskSource src, void *srcData, int w, int h, const std::array<double, 6> &mat, bool glyphMode);
 
     // Draw an image.  This will read <h> lines of <w> pixels from
     // <src>, starting with the top line.  These pixels are assumed to
@@ -200,21 +199,26 @@ public:
     //    BGR8         BGR8
     //    CMYK8        CMYK8
     // The matrix behaves as for fillImageMask.
-    SplashError drawImage(SplashImageSource src, SplashICCTransform tf, void *srcData, SplashColorMode srcMode, bool srcAlpha, int w, int h, SplashCoord *mat, bool interpolate, bool tilingPattern = false);
+    SplashError drawImage(SplashImageSource src, SplashICCTransform tf, void *srcData, SplashColorMode srcMode, bool srcAlpha, int w, int h, const std::array<double, 6> &mat, bool interpolate, bool tilingPattern = false);
 
     // Composite a rectangular region from <src> onto this Splash
     // object.
-    SplashError composite(SplashBitmap *src, int xSrc, int ySrc, int xDest, int yDest, int w, int h, bool noClip, bool nonIsolated, bool knockout = false, SplashCoord knockoutOpacity = 1.0);
+    SplashError composite(const SplashBitmap &src, int xSrc, int ySrc, int xDest, int yDest, int w, int h, bool noClip, bool nonIsolated, bool knockout = false, double knockoutOpacity = 1.0);
 
     // Composite this Splash object onto a background color.  The
     // background alpha is assumed to be 1.
     void compositeBackground(SplashColorConstPtr color);
 
     // Copy a rectangular region from <src> onto the bitmap belonging to
-    // this Splash object.  The destination alpha values are all set to
+    // this Splash object.  On success, the destination alpha values are all set to
     // zero.
-    SplashError blitTransparent(SplashBitmap *src, int xSrc, int ySrc, int xDest, int yDest, int w, int h);
-    void blitImage(SplashBitmap *src, bool srcAlpha, int xDest, int yDest);
+    SplashError blitTransparent(const SplashBitmap &src, int xSrc, int ySrc, int xDest, int yDest, int w, int h);
+    void blitImage(const SplashBitmap &src, bool srcAlpha, int xDest, int yDest);
+
+    // Copy a rectangular region from the current bitmap to <dest>,
+    // correcting the alpha values for a non-isolated transparency group
+    // nested inside another non-isolated group.
+    SplashError blitCorrectedAlpha(SplashBitmap *dest, int xSrc, int ySrc, int xDest, int yDest, int w, int h);
 
     //----- misc
 
@@ -222,13 +226,13 @@ public:
     // the line width <w>.  All other stroke parameters are taken from
     // the current state.  If <flatten> is true, this function will
     // first flatten the path and handle the linedash.
-    SplashPath *makeStrokePath(SplashPath *path, SplashCoord w, bool flatten = true);
+    std::unique_ptr<SplashPath> makeStrokePath(const SplashPath &path, double w, bool flatten = true);
 
     // Return the associated bitmap.
     SplashBitmap *getBitmap() { return bitmap; }
 
     // Set the minimum line width.
-    void setMinLineWidth(SplashCoord w) { minLineWidth = w; }
+    void setMinLineWidth(double w) { minLineWidth = w; }
 
     // Setter/Getter for thin line mode
     void setThinLineMode(SplashThinLineMode thinLineModeA) { thinLineMode = thinLineModeA; }
@@ -241,22 +245,22 @@ public:
     // Toggle debug mode on or off.
     void setDebugMode(bool debugModeA) { debugMode = debugModeA; }
 
-#if 1 //~tmp: turn off anti-aliasing temporarily
     void setInShading(bool sh) { inShading = sh; }
-    bool getVectorAntialias() { return vectorAntialias; }
+    bool getVectorAntialias() const { return vectorAntialias; }
+    // was this Splash created with vector antialiasing (which needs a buffer)?
+    bool hasAABuf() const { return aaBuf != nullptr; }
     void setVectorAntialias(bool vaa) { vectorAntialias = vaa; }
-#endif
 
     // Do shaded fills with dynamic patterns
     //
     // clipToStrokePath: Whether the current clip region is a stroke path.
     //   In that case, strokeAlpha is used rather than fillAlpha.
-    SplashError shadedFill(SplashPath *path, bool hasBBox, SplashPattern *pattern, bool clipToStrokePath);
+    SplashError shadedFill(const SplashPath &path, bool hasBBox, const SplashPattern &pattern, bool clipToStrokePath);
     // Draw a gouraud triangle shading.
     bool gouraudTriangleShadedFill(SplashGouraudColor *shading);
 
 private:
-    void pipeInit(SplashPipe *pipe, int x, int y, SplashPattern *pattern, SplashColorPtr cSrc, unsigned char aInput, bool usesShape, bool nonIsolatedGroup, bool knockout = false, unsigned char knockoutOpacity = 255);
+    void pipeInit(SplashPipe *pipe, int x, int y, const SplashPattern *pattern, SplashColorPtr cSrc, unsigned char aInput, bool usesShape, bool nonIsolatedGroup, bool knockout = false, unsigned char knockoutOpacity = 255);
     void pipeRun(SplashPipe *pipe);
     void pipeRunSimpleMono1(SplashPipe *pipe);
     void pipeRunSimpleMono8(SplashPipe *pipe);
@@ -279,36 +283,37 @@ private:
     void drawAAPixel(SplashPipe *pipe, int x, int y);
     void drawSpan(SplashPipe *pipe, int x0, int x1, int y, bool noClip);
     void drawAALine(SplashPipe *pipe, int x0, int x1, int y, bool adjustLine = false, unsigned char lineOpacity = 0);
-    void transform(const SplashCoord *matrix, SplashCoord xi, SplashCoord yi, SplashCoord *xo, SplashCoord *yo);
-    void strokeNarrow(SplashPath *path);
-    void strokeWide(SplashPath *path, SplashCoord w);
-    SplashPath *flattenPath(SplashPath *path, SplashCoord *matrix, SplashCoord flatness);
-    void flattenCurve(SplashCoord x0, SplashCoord y0, SplashCoord x1, SplashCoord y1, SplashCoord x2, SplashCoord y2, SplashCoord x3, SplashCoord y3, SplashCoord *matrix, SplashCoord flatness2, SplashPath *fPath);
-    SplashPath *makeDashedPath(SplashPath *xPath);
-    void getBBoxFP(SplashPath *path, SplashCoord *xMinA, SplashCoord *yMinA, SplashCoord *xMaxA, SplashCoord *yMaxA);
-    SplashError fillWithPattern(SplashPath *path, bool eo, SplashPattern *pattern, SplashCoord alpha);
-    bool pathAllOutside(SplashPath *path);
+    static void transform(const std::array<double, 6> &matrix, double xi, double yi, double *xo, double *yo);
+    void strokeNarrow(const SplashPath &path);
+    void strokeWide(const SplashPath &path, double w);
+    static std::unique_ptr<SplashPath> flattenPath(const SplashPath &path, const std::array<double, 6> &matrix, double flatness);
+    static void flattenCurve(double x0, double y0, double x1, double y1, double x2, double y2, double x3, double y3, const std::array<double, 6> &matrix, double flatness2, SplashPath *fPath);
+    std::unique_ptr<SplashPath> makeDashedPath(const SplashPath &xPath);
+    void getBBoxFP(const SplashPath &path, double *xMinA, double *yMinA, double *xMaxA, double *yMaxA);
+    SplashError fillWithPattern(SplashPath *path, bool eo, SplashPattern *pattern, double alpha);
+    bool pathAllOutside(const SplashPath &path);
     void fillGlyph2(int x0, int y0, SplashGlyphBitmap *glyph, bool noclip);
-    void arbitraryTransformMask(SplashImageMaskSource src, void *srcData, int srcWidth, int srcHeight, SplashCoord *mat, bool glyphMode);
-    SplashBitmap *scaleMask(SplashImageMaskSource src, void *srcData, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight);
-    void scaleMaskYdownXdown(SplashImageMaskSource src, void *srcData, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, SplashBitmap *dest);
-    void scaleMaskYdownXup(SplashImageMaskSource src, void *srcData, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, SplashBitmap *dest);
-    void scaleMaskYupXdown(SplashImageMaskSource src, void *srcData, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, SplashBitmap *dest);
-    void scaleMaskYupXup(SplashImageMaskSource src, void *srcData, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, SplashBitmap *dest);
-    void blitMask(SplashBitmap *src, int xDest, int yDest, SplashClipResult clipRes);
-    SplashError arbitraryTransformImage(SplashImageSource src, SplashICCTransform tf, void *srcData, SplashColorMode srcMode, int nComps, bool srcAlpha, int srcWidth, int srcHeight, SplashCoord *mat, bool interpolate,
+    void arbitraryTransformMask(SplashImageMaskSource src, void *srcData, int srcWidth, int srcHeight, const std::array<double, 6> &mat, bool glyphMode);
+    static std::unique_ptr<SplashBitmap> scaleMask(SplashImageMaskSource src, void *srcData, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight);
+    static void scaleMaskYdownXdown(SplashImageMaskSource src, void *srcData, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, SplashBitmap *dest);
+    static void scaleMaskYdownXup(SplashImageMaskSource src, void *srcData, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, SplashBitmap *dest);
+    static void scaleMaskYupXdown(SplashImageMaskSource src, void *srcData, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, SplashBitmap *dest);
+    static void scaleMaskYupXup(SplashImageMaskSource src, void *srcData, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, SplashBitmap *dest);
+    void blitMask(const SplashBitmap &src, int xDest, int yDest, SplashClipResult clipRes);
+    SplashError arbitraryTransformImage(SplashImageSource src, SplashICCTransform tf, void *srcData, SplashColorMode srcMode, int nComps, bool srcAlpha, int srcWidth, int srcHeight, const std::array<double, 6> &mat, bool interpolate,
                                         bool tilingPattern = false);
-    SplashBitmap *scaleImage(SplashImageSource src, void *srcData, SplashColorMode srcMode, int nComps, bool srcAlpha, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, bool interpolate, bool tilingPattern = false);
-    bool scaleImageYdownXdown(SplashImageSource src, void *srcData, SplashColorMode srcMode, int nComps, bool srcAlpha, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, SplashBitmap *dest);
-    bool scaleImageYdownXup(SplashImageSource src, void *srcData, SplashColorMode srcMode, int nComps, bool srcAlpha, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, SplashBitmap *dest);
-    bool scaleImageYupXdown(SplashImageSource src, void *srcData, SplashColorMode srcMode, int nComps, bool srcAlpha, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, SplashBitmap *dest);
-    bool scaleImageYupXup(SplashImageSource src, void *srcData, SplashColorMode srcMode, int nComps, bool srcAlpha, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, SplashBitmap *dest);
-    bool scaleImageYupXupBilinear(SplashImageSource src, void *srcData, SplashColorMode srcMode, int nComps, bool srcAlpha, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, SplashBitmap *dest);
-    void vertFlipImage(SplashBitmap *img, int width, int height, int nComps);
-    void blitImage(SplashBitmap *src, bool srcAlpha, int xDest, int yDest, SplashClipResult clipRes);
-    void blitImageClipped(SplashBitmap *src, bool srcAlpha, int xSrc, int ySrc, int xDest, int yDest, int w, int h);
-    void dumpPath(SplashPath *path);
-    void dumpXPath(SplashXPath *path);
+    std::unique_ptr<SplashBitmap> scaleImage(SplashImageSource src, void *srcData, SplashColorMode srcMode, int nComps, bool srcAlpha, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, bool interpolate,
+                                             bool tilingPattern = false);
+    static bool scaleImageYdownXdown(SplashImageSource src, void *srcData, SplashColorMode srcMode, int nComps, bool srcAlpha, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, SplashBitmap *dest);
+    static bool scaleImageYdownXup(SplashImageSource src, void *srcData, SplashColorMode srcMode, int nComps, bool srcAlpha, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, SplashBitmap *dest);
+    static bool scaleImageYupXdown(SplashImageSource src, void *srcData, SplashColorMode srcMode, int nComps, bool srcAlpha, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, SplashBitmap *dest);
+    static bool scaleImageYupXup(SplashImageSource src, void *srcData, SplashColorMode srcMode, int nComps, bool srcAlpha, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, SplashBitmap *dest);
+    static bool scaleImageYupXupBilinear(SplashImageSource src, void *srcData, SplashColorMode srcMode, int nComps, bool srcAlpha, int srcWidth, int srcHeight, int scaledWidth, int scaledHeight, SplashBitmap *dest);
+    static void vertFlipImage(SplashBitmap *img, int width, int height, int nComps);
+    void blitImage(const SplashBitmap &src, bool srcAlpha, int xDest, int yDest, SplashClipResult clipRes);
+    void blitImageClipped(const SplashBitmap &src, bool srcAlpha, int xSrc, int ySrc, int xDest, int yDest, int w, int h);
+    static void dumpPath(const SplashPath &path);
+    static void dumpXPath(const SplashXPath &path);
 
     static SplashPipeResultColorCtrl pipeResultColorNoAlphaBlend[];
     static SplashPipeResultColorCtrl pipeResultColorAlphaNoBlend[];
@@ -322,10 +327,11 @@ private:
     SplashBitmap *alpha0Bitmap; // for non-isolated groups, this is the
                                 //   bitmap containing the alpha0 values
     int alpha0X, alpha0Y; // offset within alpha0Bitmap
-    SplashCoord aaGamma[splashAASize * splashAASize + 1];
-    SplashCoord minLineWidth;
+    double minLineWidth;
     SplashThinLineMode thinLineMode;
     SplashClipResult opClipRes;
+    SplashBitmap *groupBackBitmap; // backdrop bitmap for knockout/non-isolated groups
+    int groupBackX, groupBackY; // offset within groupBackBitmap
     bool vectorAntialias;
     bool inShading;
     bool debugMode;

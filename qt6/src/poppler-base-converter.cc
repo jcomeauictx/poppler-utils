@@ -1,5 +1,5 @@
 /* poppler-base-converter.cc: qt interface to poppler
- * Copyright (C) 2007, 2009, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2007, 2009, 2025, Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2008, Pino Toscano <pino@kde.org>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -17,23 +17,21 @@
  * Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#include "poppler-qt6.h"
-
 #include "poppler-converter-private.h"
 
 #include <QtCore/QFile>
 
 namespace Poppler {
 
-BaseConverterPrivate::BaseConverterPrivate() : document(nullptr), iodev(nullptr), ownIodev(true) { }
+BaseConverterPrivate::BaseConverterPrivate() = default;
 
-BaseConverterPrivate::~BaseConverterPrivate() { }
+BaseConverterPrivate::~BaseConverterPrivate() = default;
 
 QIODevice *BaseConverterPrivate::openDevice()
 {
     if (!iodev) {
         Q_ASSERT(!outputFileName.isEmpty());
-        QFile *f = new QFile(outputFileName);
+        auto *f = new QFile(outputFileName);
         iodev = f;
         ownIodev = true;
     }

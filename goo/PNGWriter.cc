@@ -6,7 +6,7 @@
 //
 // Copyright (C) 2009 Warren Toomey <wkt@tuhs.org>
 // Copyright (C) 2009 Shen Liang <shenzhuxi@gmail.com>
-// Copyright (C) 2009, 2011-2023 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2009, 2011-2023, 2025, 2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2009 Stefan Thomas <thomas@eload24.com>
 // Copyright (C) 2010, 2011, 2013, 2017 Adrian Johnson <ajohnson@redneon.com>
 // Copyright (C) 2011 Thomas Klausner <wiz@danbala.tuwien.ac.at>
@@ -16,7 +16,7 @@
 
 #include "PNGWriter.h"
 
-#ifdef ENABLE_LIBPNG
+#if ENABLE_LIBPNG
 
 #    include <zlib.h>
 #    include <cstdlib>
@@ -62,7 +62,7 @@ PNGWriter::~PNGWriter()
 
 void PNGWriter::setICCProfile(const char *name, unsigned char *data, int size)
 {
-    priv->icc_data = (unsigned char *)gmalloc(size);
+    priv->icc_data = static_cast<unsigned char *>(gmalloc(size));
     memcpy(priv->icc_data, data, size);
     priv->icc_data_size = size;
     priv->icc_name = strdup(name);
@@ -75,12 +75,7 @@ void PNGWriter::setSRGBProfile()
 
 bool PNGWriter::init(FILE *f, int width, int height, double hDPI, double vDPI)
 {
-    /* libpng changed the png_set_iCCP() prototype in 1.5.0 */
-#    if PNG_LIBPNG_VER < 10500
-    png_charp icc_data_ptr = (png_charp)priv->icc_data;
-#    else
-    png_const_bytep icc_data_ptr = (png_const_bytep)priv->icc_data;
-#    endif
+    const auto *icc_data_ptr = const_cast<png_const_bytep>(priv->icc_data);
 
     if (hDPI < 0 || vDPI < 0) {
         error(errInternal, -1, "PNGWriter::init: hDPI or vDPI values are invalid {0:f} {1:f}", hDPI, vDPI);
@@ -168,7 +163,7 @@ bool PNGWriter::init(FILE *f, int width, int height, double hDPI, double vDPI)
     return true;
 }
 
-bool PNGWriter::writePointers(unsigned char **rowPointers, int rowCount)
+bool PNGWriter::writePointers(unsigned char **rowPointers, int /*rowCount*/)
 {
     png_write_image(priv->png_ptr, rowPointers);
     /* write bytes */

@@ -3,7 +3,9 @@
 // AnnotStampImageHelper.h
 //
 // Copyright (C) 2021 Mahmoud Ahmed Khalil <mahmoudkhalil11@gmail.com>
-// Copyright (C) 2021 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2021, 2026 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2026 Malika Asman <asmanodeny@gmail.com>
+// Copyright (C) 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
 //
 // Licensed under GPLv2 or later
 //
@@ -12,7 +14,10 @@
 #ifndef ANNOTSTAMPIMAGEHELPER_H
 #define ANNOTSTAMPIMAGEHELPER_H
 
-#include "Object.h"
+#include "Ref.h"
+#include "poppler_private_export.h"
+
+#include <vector>
 
 class PDFDoc;
 
@@ -37,9 +42,9 @@ enum ColorSpace
 class POPPLER_PRIVATE_EXPORT AnnotStampImageHelper
 {
 public:
-    AnnotStampImageHelper(PDFDoc *docA, int widthA, int heightA, ColorSpace colorSpace, int bitsPerComponent, char *data, int dataLength);
-    AnnotStampImageHelper(PDFDoc *docA, int widthA, int heightA, ColorSpace colorSpace, int bitsPerComponent, char *data, int dataLength, Ref softMaskRef);
-    ~AnnotStampImageHelper() { }
+    AnnotStampImageHelper(PDFDoc *docA, int widthA, int heightA, ColorSpace colorSpace, int bitsPerComponent, std::vector<char> &&data);
+    AnnotStampImageHelper(PDFDoc *docA, int widthA, int heightA, ColorSpace colorSpace, int bitsPerComponent, std::vector<char> &&data, Ref softMaskRef);
+    ~AnnotStampImageHelper() = default;
 
     // Returns the ref to the created Image XObject
     Ref getRef() const { return ref; }
@@ -53,11 +58,8 @@ public:
     void removeAnnotStampImageObject();
 
 private:
-    void initialize(PDFDoc *docA, int widthA, int heightA, ColorSpace colorSpace, int bitsPerComponent, char *data, int dataLength);
-
     PDFDoc *doc;
 
-    Object imgObj;
     Ref ref;
     Ref sMaskRef;
 

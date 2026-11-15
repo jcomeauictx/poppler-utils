@@ -11,9 +11,9 @@
 // All changes made under the Poppler project to this file are licensed
 // under GPL version 2 or later
 //
-// Copyright (C) 2010, 2021 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2010, 2021, 2025, 2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2013, 2021 Thomas Freitag <Thomas.Freitag@alfa.de>
-// Copyright (C) 2019 Stefan Brüns <stefan.bruens@rwth-aachen.de>
+// Copyright (C) 2019, 2025 Stefan Brüns <stefan.bruens@rwth-aachen.de>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -22,9 +22,9 @@
 
 #include <config.h>
 
-#include <cstdlib>
-#include <cstring>
-#include "goo/gmem.h"
+#include <algorithm>
+#include "goo/GooCheckedOps.h"
+#include "goo/GooLikely.h"
 #include "SplashErrorCodes.h"
 #include "SplashMath.h"
 #include "SplashPath.h"
@@ -34,16 +34,10 @@
 #include "SplashClip.h"
 
 //------------------------------------------------------------------------
-// SplashClip.flags
-//------------------------------------------------------------------------
-
-#define splashClipEO 0x01 // use even-odd rule
-
-//------------------------------------------------------------------------
 // SplashClip
 //------------------------------------------------------------------------
 
-SplashClip::SplashClip(SplashCoord x0, SplashCoord y0, SplashCoord x1, SplashCoord y1, bool antialiasA)
+SplashClip::SplashClip(double x0, double y0, double x1, double y1, bool antialiasA)
 {
     antialias = antialiasA;
     if (x0 < x1) {
@@ -64,14 +58,10 @@ SplashClip::SplashClip(SplashCoord x0, SplashCoord y0, SplashCoord x1, SplashCoo
     yMinI = splashFloor(yMin);
     xMaxI = splashCeil(xMax) - 1;
     yMaxI = splashCeil(yMax) - 1;
-    flags = nullptr;
-    length = size = 0;
 }
 
-SplashClip::SplashClip(const SplashClip *clip)
+SplashClip::SplashClip(const SplashClip *clip, PrivateTag /*unused*/)
 {
-    int i;
-
     antialias = clip->antialias;
     xMin = clip->xMin;
     yMin = clip->yMin;
@@ -81,39 +71,12 @@ SplashClip::SplashClip(const SplashClip *clip)
     yMinI = clip->yMinI;
     xMaxI = clip->xMaxI;
     yMaxI = clip->yMaxI;
-    length = clip->length;
-    size = clip->size;
-    flags = (unsigned char *)gmallocn(size, sizeof(unsigned char));
     scanners = clip->scanners;
-    for (i = 0; i < length; ++i) {
-        flags[i] = clip->flags[i];
-    }
 }
 
-SplashClip::~SplashClip()
+void SplashClip::resetToRect(double x0, double y0, double x1, double y1)
 {
-    gfree(flags);
-}
-
-void SplashClip::grow(int nPaths)
-{
-    if (length + nPaths > size) {
-        if (size == 0) {
-            size = 32;
-        }
-        while (size < length + nPaths) {
-            size *= 2;
-        }
-        flags = (unsigned char *)greallocn(flags, size, sizeof(unsigned char));
-    }
-}
-
-void SplashClip::resetToRect(SplashCoord x0, SplashCoord y0, SplashCoord x1, SplashCoord y1)
-{
-    gfree(flags);
-    flags = nullptr;
     scanners = {};
-    length = size = 0;
 
     if (x0 < x1) {
         xMin = x0;
@@ -135,7 +98,7 @@ void SplashClip::resetToRect(SplashCoord x0, SplashCoord y0, SplashCoord x1, Spl
     yMaxI = splashCeil(yMax) - 1;
 }
 
-SplashError SplashClip::clipToRect(SplashCoord x0, SplashCoord y0, SplashCoord x1, SplashCoord y1)
+SplashError SplashClip::clipToRect(double x0, double y0, double x1, double y1)
 {
     if (x0 < x1) {
         if (x0 > xMin) {
@@ -175,10 +138,60 @@ SplashError SplashClip::clipToRect(SplashCoord x0, SplashCoord y0, SplashCoord x
             yMaxI = splashCeil(yMax) - 1;
         }
     }
-    return splashOk;
+    return SplashError::NoError;
 }
 
-SplashError SplashClip::clipToPath(SplashPath *path, SplashCoord *matrix, SplashCoord flatness, bool eo)
+namespace {
+// returns true if the 4 consecutive segments form a axis aligned rectangle
+// first and third segment must be the vertical segments
+constexpr bool isRect(const SplashXPathSeg &a, const SplashXPathSeg &b, const SplashXPathSeg &c, const SplashXPathSeg &d)
+{
+    // Check if segment a and c are vertical, and b and d are horizontal
+    if ((a.x0 != a.x1) || (b.y0 != b.y1) || (c.x0 != c.x1) || (d.y0 != d.y1)) {
+        return false;
+    }
+    // Check if x coordinates match
+    if ((a.x1 != b.x0) || (b.x1 != c.x0) || (c.x1 != d.x0) || (d.x1 != a.x0)) {
+        return false;
+    }
+    if ((a.y0 != c.y0) || (a.y1 != c.y1)) {
+        return false;
+    }
+    if ((a.y0 == b.y0) && (a.y1 == d.y0)) {
+        return true;
+    }
+    if ((a.y0 == d.y0) && (a.y1 == b.y0)) {
+        return true;
+    }
+    return false;
+}
+// 4 valid cases - two orientations, start on left or right
+static_assert(isRect({ .x0 = 0.0, .y0 = 0.0, .x1 = 0.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 }, { .x0 = 0.0, .y0 = 1.0, .x1 = 2.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 }, { .x0 = 2.0, .y0 = 0.0, .x1 = 2.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 },
+                     { .x0 = 2.0, .y0 = 0.0, .x1 = 0.0, .y1 = 0.0, .dxdy = 0.0, .flags = 0 }));
+static_assert(isRect({ .x0 = 0.0, .y0 = 0.0, .x1 = 0.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 }, { .x0 = 0.0, .y0 = 0.0, .x1 = 2.0, .y1 = 0.0, .dxdy = 0.0, .flags = 0 }, { .x0 = 2.0, .y0 = 0.0, .x1 = 2.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 },
+                     { .x0 = 2.0, .y0 = 1.0, .x1 = 0.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 }));
+static_assert(isRect({ .x0 = 2.0, .y0 = 0.0, .x1 = 2.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 }, { .x0 = 2.0, .y0 = 0.0, .x1 = 0.0, .y1 = 0.0, .dxdy = 0.0, .flags = 0 }, { .x0 = 0.0, .y0 = 0.0, .x1 = 0.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 },
+                     { .x0 = 0.0, .y0 = 1.0, .x1 = 2.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 }));
+static_assert(isRect({ .x0 = 2.0, .y0 = 0.0, .x1 = 2.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 }, { .x0 = 2.0, .y0 = 1.0, .x1 = 0.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 }, { .x0 = 0.0, .y0 = 0.0, .x1 = 0.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 },
+                     { .x0 = 0.0, .y0 = 0.0, .x1 = 2.0, .y1 = 0.0, .dxdy = 0.0, .flags = 0 }));
+// 4 invalid cases, one segment point not closing
+static_assert(!isRect({ .x0 = 2.0, .y0 = 0.0, .x1 = 2.0, .y1 = 3.0, .dxdy = 0.0, .flags = 0 }, { .x0 = 2.0, .y0 = 1.0, .x1 = 0.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 }, { .x0 = 0.0, .y0 = 0.0, .x1 = 0.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 },
+                      { .x0 = 0.0, .y0 = 0.0, .x1 = 2.0, .y1 = 0.0, .dxdy = 0.0, .flags = 0 }));
+static_assert(!isRect({ .x0 = 2.0, .y0 = 0.0, .x1 = 2.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 }, { .x0 = 3.0, .y0 = 1.0, .x1 = 0.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 }, { .x0 = 0.0, .y0 = 0.0, .x1 = 0.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 },
+                      { .x0 = 0.0, .y0 = 0.0, .x1 = 2.0, .y1 = 0.0, .dxdy = 0.0, .flags = 0 }));
+static_assert(!isRect({ .x0 = 2.0, .y0 = 0.0, .x1 = 2.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 }, { .x0 = 2.0, .y0 = 1.0, .x1 = 0.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 }, { .x0 = 0.0, .y0 = 0.0, .x1 = 0.0, .y1 = 3.0, .dxdy = 0.0, .flags = 0 },
+                      { .x0 = 0.0, .y0 = 0.0, .x1 = 2.0, .y1 = 0.0, .dxdy = 0.0, .flags = 0 }));
+static_assert(!isRect({ .x0 = 2.0, .y0 = 0.0, .x1 = 2.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 }, { .x0 = 2.0, .y0 = 1.0, .x1 = 0.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 }, { .x0 = 0.0, .y0 = 0.0, .x1 = 0.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 },
+                      { .x0 = 0.0, .y0 = 0.0, .x1 = 3.0, .y1 = 0.0, .dxdy = 0.0, .flags = 0 }));
+// invalid case, closed, but left segment not vertical
+static_assert(!isRect({ .x0 = 2.0, .y0 = 0.0, .x1 = 2.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 }, { .x0 = 2.0, .y0 = 1.0, .x1 = 0.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 }, { .x0 = 1.0, .y0 = 0.0, .x1 = 0.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 },
+                      { .x0 = 1.0, .y0 = 0.0, .x1 = 2.0, .y1 = 0.0, .dxdy = 0.0, .flags = 0 }));
+// invalid case, all horizontal/vertical, but horizontal segments coincident
+static_assert(!isRect({ .x0 = 0.0, .y0 = 0.0, .x1 = 0.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 }, { .x0 = 0.0, .y0 = 0.0, .x1 = 2.0, .y1 = 0.0, .dxdy = 0.0, .flags = 0 }, { .x0 = 2.0, .y0 = 0.0, .x1 = 2.0, .y1 = 1.0, .dxdy = 0.0, .flags = 0 },
+                      { .x0 = 2.0, .y0 = 0.0, .x1 = 0.0, .y1 = 0.0, .dxdy = 0.0, .flags = 0 }));
+}
+
+SplashError SplashClip::clipToPath(const SplashPath &path, const std::array<double, 6> &matrix, double flatness, bool eo)
 {
     int yMinAA, yMaxAA;
 
@@ -191,38 +204,30 @@ SplashError SplashClip::clipToPath(SplashPath *path, SplashCoord *matrix, Splash
         xMaxI = splashCeil(xMax) - 1;
         yMaxI = splashCeil(yMax) - 1;
 
-        // check for a rectangle
-    } else if (xPath.length == 4
-               && ((xPath.segs[0].x0 == xPath.segs[0].x1 && xPath.segs[0].x0 == xPath.segs[1].x0 && xPath.segs[0].x0 == xPath.segs[3].x1 && xPath.segs[2].x0 == xPath.segs[2].x1 && xPath.segs[2].x0 == xPath.segs[1].x1
-                    && xPath.segs[2].x0 == xPath.segs[3].x0 && xPath.segs[1].y0 == xPath.segs[1].y1 && xPath.segs[1].y0 == xPath.segs[0].y1 && xPath.segs[1].y0 == xPath.segs[2].y0 && xPath.segs[3].y0 == xPath.segs[3].y1
-                    && xPath.segs[3].y0 == xPath.segs[0].y0 && xPath.segs[3].y0 == xPath.segs[2].y1)
-                   || (xPath.segs[0].y0 == xPath.segs[0].y1 && xPath.segs[0].y0 == xPath.segs[1].y0 && xPath.segs[0].y0 == xPath.segs[3].y1 && xPath.segs[2].y0 == xPath.segs[2].y1 && xPath.segs[2].y0 == xPath.segs[1].y1
-                       && xPath.segs[2].y0 == xPath.segs[3].y0 && xPath.segs[1].x0 == xPath.segs[1].x1 && xPath.segs[1].x0 == xPath.segs[0].x1 && xPath.segs[1].x0 == xPath.segs[2].x0 && xPath.segs[3].x0 == xPath.segs[3].x1
-                       && xPath.segs[3].x0 == xPath.segs[0].x0 && xPath.segs[3].x0 == xPath.segs[2].x1))) {
-        clipToRect(xPath.segs[0].x0, xPath.segs[0].y0, xPath.segs[2].x0, xPath.segs[2].y0);
+        // check for an axis aligned rectangle
+    } else if (xPath.length == 4 && isRect(xPath.segs[0], xPath.segs[1], xPath.segs[2], xPath.segs[3])) {
+        clipToRect(xPath.segs[0].x0, xPath.segs[0].y0, xPath.segs[2].x0, xPath.segs[2].y1);
+    } else if (xPath.length == 4 && isRect(xPath.segs[1], xPath.segs[2], xPath.segs[3], xPath.segs[0])) {
+        clipToRect(xPath.segs[1].x0, xPath.segs[1].y0, xPath.segs[3].x0, xPath.segs[3].y1);
 
     } else {
-        grow(1);
         if (antialias) {
             xPath.aaScale();
-        }
-        xPath.sort();
-        flags[length] = eo ? splashClipEO : 0;
-        if (antialias) {
-            yMinAA = yMinI * splashAASize;
+            if (unlikely(checkedMultiply(yMinI, splashAASize, &yMinAA))) {
+                return SplashError::Generic;
+            }
             yMaxAA = (yMaxI + 1) * splashAASize - 1;
         } else {
             yMinAA = yMinI;
             yMaxAA = yMaxI;
         }
         scanners.emplace_back(std::make_shared<SplashXPathScanner>(xPath, eo, yMinAA, yMaxAA));
-        ++length;
     }
 
-    return splashOk;
+    return SplashError::NoError;
 }
 
-SplashClipResult SplashClip::testRect(int rectXMin, int rectYMin, int rectXMax, int rectYMax)
+SplashClipResult SplashClip::testRect(int rectXMin, int rectYMin, int rectXMax, int rectYMax) const
 {
     // This tests the rectangle:
     //     x = [rectXMin, rectXMax + 1)    (note: rect coords are ints)
@@ -230,10 +235,10 @@ SplashClipResult SplashClip::testRect(int rectXMin, int rectYMin, int rectXMax, 
     // against the clipping region:
     //     x = [xMin, xMax)                (note: clipping coords are fp)
     //     y = [yMin, yMax)
-    if ((SplashCoord)(rectXMax + 1) <= xMin || (SplashCoord)rectXMin >= xMax || (SplashCoord)(rectYMax + 1) <= yMin || (SplashCoord)rectYMin >= yMax) {
+    if (static_cast<double>(rectXMax + 1) <= xMin || static_cast<double>(rectXMin) >= xMax || static_cast<double>(rectYMax + 1) <= yMin || static_cast<double>(rectYMin) >= yMax) {
         return splashClipAllOutside;
     }
-    if ((SplashCoord)rectXMin >= xMin && (SplashCoord)(rectXMax + 1) <= xMax && (SplashCoord)rectYMin >= yMin && (SplashCoord)(rectYMax + 1) <= yMax && length == 0) {
+    if (static_cast<double>(rectXMin) >= xMin && static_cast<double>(rectXMax + 1) <= xMax && static_cast<double>(rectYMin) >= yMin && static_cast<double>(rectYMax + 1) <= yMax && scanners.empty()) {
         return splashClipAllInside;
     }
     return splashClipPartial;
@@ -241,29 +246,27 @@ SplashClipResult SplashClip::testRect(int rectXMin, int rectYMin, int rectXMax, 
 
 SplashClipResult SplashClip::testSpan(int spanXMin, int spanXMax, int spanY)
 {
-    int i;
-
     // This tests the rectangle:
     //     x = [spanXMin, spanXMax + 1)    (note: span coords are ints)
     //     y = [spanY, spanY + 1)
     // against the clipping region:
     //     x = [xMin, xMax)                (note: clipping coords are fp)
     //     y = [yMin, yMax)
-    if ((SplashCoord)(spanXMax + 1) <= xMin || (SplashCoord)spanXMin >= xMax || (SplashCoord)(spanY + 1) <= yMin || (SplashCoord)spanY >= yMax) {
+    if (static_cast<double>(spanXMax + 1) <= xMin || static_cast<double>(spanXMin) >= xMax || static_cast<double>(spanY + 1) <= yMin || static_cast<double>(spanY) >= yMax) {
         return splashClipAllOutside;
     }
-    if (!((SplashCoord)spanXMin >= xMin && (SplashCoord)(spanXMax + 1) <= xMax && (SplashCoord)spanY >= yMin && (SplashCoord)(spanY + 1) <= yMax)) {
+    if (static_cast<double>(spanXMin) < xMin || static_cast<double>(spanXMax + 1) > xMax || static_cast<double>(spanY) < yMin || static_cast<double>(spanY + 1) > yMax) {
         return splashClipPartial;
     }
     if (antialias) {
-        for (i = 0; i < length; ++i) {
-            if (!scanners[i]->testSpan(spanXMin * splashAASize, spanXMax * splashAASize + (splashAASize - 1), spanY * splashAASize)) {
+        for (const auto &scanner : scanners) {
+            if (!scanner->testSpan(spanXMin * splashAASize, spanXMax * splashAASize + (splashAASize - 1), spanY * splashAASize)) {
                 return splashClipPartial;
             }
         }
     } else {
-        for (i = 0; i < length; ++i) {
-            if (!scanners[i]->testSpan(spanXMin, spanXMax, spanY)) {
+        for (const auto &scanner : scanners) {
+            if (!scanner->testSpan(spanXMin, spanXMax, spanY)) {
                 return splashClipPartial;
             }
         }
@@ -273,7 +276,7 @@ SplashClipResult SplashClip::testSpan(int spanXMin, int spanXMax, int spanY)
 
 void SplashClip::clipAALine(SplashBitmap *aaBuf, int *x0, int *x1, int y, bool adjustVertLine)
 {
-    int xx0, xx1, xx, yy, i;
+    int xx0, xx1, xx, yy;
     SplashColorPtr p;
 
     // zero out pixels with x < xMin
@@ -319,8 +322,8 @@ void SplashClip::clipAALine(SplashBitmap *aaBuf, int *x0, int *x1, int y, bool a
     }
 
     // check the paths
-    for (i = 0; i < length; ++i) {
-        scanners[i]->clipAALine(aaBuf, x0, x1, y);
+    for (const auto &scanner : scanners) {
+        scanner->clipAALine(aaBuf, x0, x1, y);
     }
     if (*x0 > *x1) {
         *x0 = *x1;
@@ -347,18 +350,16 @@ void SplashClip::clipAALine(SplashBitmap *aaBuf, int *x0, int *x1, int y, bool a
     }
 }
 
-bool SplashClip::testClipPaths(int x, int y)
+bool SplashClip::testClipPaths(int x, int y) const
 {
     if (antialias) {
         x *= splashAASize;
         y *= splashAASize;
     }
 
-    for (int i = 0; i < length; ++i) {
-        if (!scanners[i]->test(x, y)) {
-            return false;
-        }
-    }
+    auto testXY = [x, y](const auto &scanner) -> bool { //
+        return scanner->test(x, y);
+    };
 
-    return true;
+    return std::ranges::all_of(scanners, testXY);
 }

@@ -7,13 +7,13 @@
 // Copyright 2015 André Guerreiro <aguerreiro1985@gmail.com>
 // Copyright 2015 André Esser <bepandre@hotmail.com>
 // Copyright 2017 Hans-Ulrich Jüttner <huj@froreich-bioscientia.de>
-// Copyright 2017-2020 Albert Astals Cid <aacid@kde.org>
+// Copyright 2017-2020, 2025 Albert Astals Cid <aacid@kde.org>
 // Copyright 2018 Chinmoy Ranjan Pradhan <chinmoyrp65@protonmail.com>
 // Copyright 2018 Oliver Sander <oliver.sander@tu-dresden.de>
 // Copyright 2021 Georgiy Sgibnev <georgiy@sgibnev.com>. Work sponsored by lab50.net.
 // Copyright 2021 André Guerreiro <aguerreiro1985@gmail.com>
 // Copyright 2021 Marek Kasik <mkasik@redhat.com>
-// Copyright 2023, 2024 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright 2023-2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
 //
 //========================================================================
 
@@ -21,9 +21,6 @@
 
 #include "SignatureInfo.h"
 #include "CertificateInfo.h"
-#include "goo/gmem.h"
-#include <cstdlib>
-#include <cstring>
 
 /* Constructor & Destructor */
 
@@ -37,22 +34,22 @@ SignatureValidationStatus SignatureInfo::getSignatureValStatus() const
     return sig_status;
 }
 
-std::string SignatureInfo::getSignerName() const
+const std::string &SignatureInfo::getSignerName() const
 {
     return signer_name;
 }
 
-std::string SignatureInfo::getSubjectDN() const
+const std::string &SignatureInfo::getSubjectDN() const
 {
     return subject_dn;
 }
 
-const GooString &SignatureInfo::getLocation() const
+const std::string &SignatureInfo::getLocation() const
 {
     return location;
 }
 
-const GooString &SignatureInfo::getReason() const
+const std::string &SignatureInfo::getReason() const
 {
     return reason;
 }
@@ -89,14 +86,14 @@ void SignatureInfo::setSubjectDN(const std::string &subjectDN)
     subject_dn = subjectDN;
 }
 
-void SignatureInfo::setLocation(const GooString *loc)
+void SignatureInfo::setLocation(const std::string &loc)
 {
-    location = GooString(loc);
+    location = loc;
 }
 
-void SignatureInfo::setReason(const GooString *signingReason)
+void SignatureInfo::setReason(const std::string &signingReason)
 {
-    reason = GooString(signingReason);
+    reason = signingReason;
 }
 
 void SignatureInfo::setHashAlgorithm(HashAlgorithm type)

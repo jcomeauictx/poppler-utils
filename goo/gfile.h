@@ -16,7 +16,7 @@
 // under GPL version 2 or later
 //
 // Copyright (C) 2006 Kristian Høgsberg <krh@redhat.com>
-// Copyright (C) 2009, 2011, 2012, 2017, 2018, 2021, 2022 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2009, 2011, 2012, 2017, 2018, 2021, 2022, 2025, 2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2009 Kovid Goyal <kovid@kovidgoyal.net>
 // Copyright (C) 2013 Adam Reichold <adamreichold@myopera.com>
 // Copyright (C) 2013, 2017 Adrian Johnson <ajohnson@redneon.com>
@@ -26,6 +26,7 @@
 // Copyright (C) 2017 Thomas Freitag <Thomas.Freitag@alfa.de>
 // Copyright (C) 2018 Mojca Miklavec <mojca@macports.org>
 // Copyright (C) 2019, 2021 Christian Persch <chpe@src.gnome.org>
+// Copyright (C) 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -35,15 +36,12 @@
 #ifndef GFILE_H
 #define GFILE_H
 
-#include "poppler-config.h"
 #include "poppler_private_export.h"
 #include <cstdio>
-#include <cstdlib>
-#include <cstddef>
 #include <ctime>
 #include <string>
 extern "C" {
-#if defined(_WIN32)
+#ifdef _WIN32
 #    include <sys/stat.h>
 #    ifdef FPTEX
 #        include <win32lib.h>
@@ -56,44 +54,15 @@ extern "C" {
 #else
 #    include <unistd.h>
 #    include <sys/types.h>
-#    if defined(HAVE_DIRENT_H)
-#        include <dirent.h>
-#        define NAMLEN(d) strlen((d)->d_name)
-#    else
-#        define dirent direct
-#        define NAMLEN(d) (d)->d_namlen
-#        ifdef HAVE_SYS_NDIR_H
-#            include <sys/ndir.h>
-#        endif
-#        ifdef HAVE_SYS_DIR_H
-#            include <sys/dir.h>
-#        endif
-#        ifdef HAVE_NDIR_H
-#            include <ndir.h>
-#        endif
-#    endif
 #endif
 }
 
 #include <memory>
 
-class GooString;
-
 /* Integer type for all file offsets and file sizes */
-typedef long long Goffset;
+using Goffset = long long;
 
 //------------------------------------------------------------------------
-
-// Append a file name to a path string.  <path> may be an empty
-// string, denoting the current directory).  Returns <path>.
-extern GooString POPPLER_PRIVATE_EXPORT *appendToPath(GooString *path, const char *fileName);
-
-#ifndef _WIN32
-// Open a file descriptor
-// Could be implemented on WIN32 too, but the only external caller of
-// this function is not used on WIN32
-extern int POPPLER_PRIVATE_EXPORT openFileDescriptor(const char *path, int flags);
-#endif
 
 // Open a file.  On Windows, this converts the path from UTF-8 to
 // UCS-2 and calls _wfopen (if available).  On other OSes, this simply

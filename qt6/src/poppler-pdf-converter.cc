@@ -1,6 +1,6 @@
 /* poppler-pdf-converter.cc: qt interface to poppler
  * Copyright (C) 2008, Pino Toscano <pino@kde.org>
- * Copyright (C) 2008, 2009, 2020-2022, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2008, 2009, 2020-2022, 2024, 2025, Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2020, Thorsten Behrens <Thorsten.Behrens@CIB.de>
  * Copyright (C) 2020, Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>. Work sponsored by Technische Universität Dresden
  * Copyright (C) 2021, Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>.
@@ -8,7 +8,8 @@
  * Copyright (C) 2021, Georgiy Sgibnev <georgiy@sgibnev.com>. Work sponsored by lab50.net.
  * Copyright (C) 2022, Martin <martinbts@gmx.net>
  * Copyright (C) 2022, Felix Jung <fxjung@posteo.de>
- * Copyright (C) 2024, g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+ * Copyright (C) 2024, 2026, g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+ * Copyright (C) 2026 Sune Stolborg Vuorela <sune@vuorela.dk>, work sponsored by the Direction Interministérielle du Numérique
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,6 +26,8 @@
  * Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
+#include "CryptoSignBackend.h"
+#include "poppler-converter.h"
 #include "poppler-qt6.h"
 
 #include "poppler-annotation-helper.h"
@@ -36,7 +39,6 @@
 #include <QFile>
 #include <QUuid>
 
-#include "Array.h"
 #include "Form.h"
 #include <ErrorCodes.h>
 
@@ -51,7 +53,7 @@ public:
     PDFConverter::PDFOptions opts;
 };
 
-PDFConverterPrivate::PDFConverterPrivate() : BaseConverterPrivate() { }
+PDFConverterPrivate::PDFConverterPrivate() = default;
 
 PDFConverterPrivate::~PDFConverterPrivate() = default;
 
@@ -61,7 +63,7 @@ PDFConverter::PDFConverter(DocumentData *document) : BaseConverter(*new PDFConve
     d->document = document;
 }
 
-PDFConverter::~PDFConverter() { }
+PDFConverter::~PDFConverter() = default;
 
 void PDFConverter::setPDFOptions(PDFConverter::PDFOptions options)
 {
@@ -92,7 +94,7 @@ bool PDFConverter::convert()
     }
 
     bool deleteFile = false;
-    if (QFile *file = qobject_cast<QFile *>(dev)) {
+    if (auto *file = qobject_cast<QFile *>(dev)) {
         deleteFile = !file->exists();
     }
 
@@ -133,7 +135,7 @@ bool PDFConverter::sign(const NewSignatureData &data)
         return false;
     }
 
-    ::PDFDoc *doc = d->document->doc;
+    ::PDFDoc *doc = d->document->doc.get();
     ::Page *destPage = doc->getPage(data.page() + 1);
     std::unique_ptr<GooString> gSignatureText = std::unique_ptr<GooString>(QStringToUnicodeGooString(data.signatureText()));
     std::unique_ptr<GooString> gSignatureLeftText = std::unique_ptr<GooString>(QStringToUnicodeGooString(data.signatureLeftText()));
@@ -141,10 +143,57 @@ bool PDFConverter::sign(const NewSignatureData &data)
     const auto location = std::unique_ptr<GooString>(data.location().isEmpty() ? nullptr : QStringToUnicodeGooString(data.location()));
     const auto ownerPwd = std::optional<GooString>(data.documentOwnerPassword().constData());
     const auto userPwd = std::optional<GooString>(data.documentUserPassword().constData());
-    return !doc->sign(d->outputFileName.toUtf8().constData(), data.certNickname().toUtf8().constData(), data.password().toUtf8().constData(), QStringToGooString(data.fieldPartialName()), data.page() + 1,
-                      boundaryToPdfRectangle(destPage, data.boundingRectangle(), Annotation::FixedRotation), *gSignatureText, *gSignatureLeftText, data.fontSize(), data.leftFontSize(), convertQColor(data.fontColor()), data.borderWidth(),
-                      convertQColor(data.borderColor()), convertQColor(data.backgroundColor()), reason.get(), location.get(), data.imagePath().toStdString(), ownerPwd, userPwd)
-                    .has_value();
+    CryptoSign::SigningOperationData signingData;
+    signingData.possiblePassword = data.password().toStdString();
+    signingData.nickName = data.certNickname().toStdString();
+    signingData.type = toPopplerCore(data.requestedSignatureType());
+    auto failure = doc->sign(d->outputFileName.toUtf8().constData(), signingData, QStringToGooString(data.fieldPartialName()), data.page() + 1, boundaryToPdfRectangle(destPage, data.boundingRectangle(), Annotation::FixedRotation),
+                             *gSignatureText, *gSignatureLeftText, data.fontSize(), data.leftFontSize(), convertQColor(data.fontColor()), data.borderWidth(), convertQColor(data.borderColor()), convertQColor(data.backgroundColor()),
+                             reason.get(), location.get(), data.imagePath().toStdString(), ownerPwd, userPwd);
+    if (failure) {
+        d->lastSigningErrorDetails = fromPopplerCore(failure.value().message);
+        d->lastSigningResult = GenericSigningError; // catch all
+        switch (failure.value().type) {
+        case CryptoSign::SigningError::GenericError:
+            d->lastSigningResult = GenericSigningError;
+            break;
+        case CryptoSign::SigningError::InternalError:
+            d->lastSigningResult = InternalError;
+            break;
+        case CryptoSign::SigningError::KeyMissing:
+            d->lastSigningResult = KeyMissing;
+            break;
+        case CryptoSign::SigningError::UserCancelled:
+            d->lastSigningResult = UserCancelled;
+
+            break;
+        case CryptoSign::SigningError::WriteFailed:
+            d->lastSigningResult = WriteFailed;
+            break;
+        case CryptoSign::SigningError::BadPassphrase:
+            d->lastSigningResult = BadPassphrase;
+            break;
+        case CryptoSign::SigningError::UnsupportedSignatureType:
+            d->lastSigningResult = UnsupportedSignatureType;
+            break;
+        }
+        return false;
+    }
+    d->lastSigningErrorDetails = {};
+    d->lastSigningResult = SigningSuccess;
+    return true;
+}
+
+PDFConverter::SigningResult PDFConverter::lastSigningResult() const
+{
+    Q_D(const PDFConverter);
+    return d->lastSigningResult;
+}
+
+Poppler::ErrorString PDFConverter::lastSigningErrorDetails() const
+{
+    Q_D(const PDFConverter);
+    return d->lastSigningErrorDetails;
 }
 
 struct PDFConverter::NewSignatureData::NewSignatureDataPrivate
@@ -172,6 +221,7 @@ struct PDFConverter::NewSignatureData::NewSignatureDataPrivate
     QByteArray documentUserPassword;
 
     QString imagePath;
+    SMimeSignatureType requestedType = SMimeSignatureType::none;
 };
 
 PDFConverter::NewSignatureData::NewSignatureData() : d(new NewSignatureDataPrivate()) { }
@@ -359,5 +409,15 @@ QString PDFConverter::NewSignatureData::imagePath() const
 void PDFConverter::NewSignatureData::setImagePath(const QString &path)
 {
     d->imagePath = path;
+}
+
+void PDFConverter::NewSignatureData::setRequestedSignatureType(SMimeSignatureType requestedType)
+{
+    d->requestedType = requestedType;
+}
+
+SMimeSignatureType PDFConverter::NewSignatureData::requestedSignatureType() const
+{
+    return d->requestedType;
 }
 }

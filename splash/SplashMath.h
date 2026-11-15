@@ -11,7 +11,7 @@
 // All changes made under the Poppler project to this file are licensed
 // under GPL version 2 or later
 //
-// Copyright (C) 2009-2011 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2009-2011, 2025, 2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2017 Adrian Johnson <ajohnson@redneon.com>
 // Copyright (C) 2020 Jean Ghali <jghali@libertysurf.fr>
 //
@@ -28,20 +28,14 @@
 #include <cmath>
 #include "SplashTypes.h"
 
-static inline SplashCoord splashAbs(SplashCoord x)
+static inline double splashAbs(double x)
 {
-#if defined(USE_FLOAT)
-    return fabsf(x);
-#else
     return fabs(x);
-#endif
 }
 
-static inline int splashFloor(SplashCoord x)
+static inline int splashFloor(double x)
 {
-#if defined(USE_FLOAT)
-    return (int)floorf(x);
-#elif defined(__GNUC__) && defined(__i386__)
+#if defined(__GNUC__) && defined(__i386__)
     // floor() and (int)() are implemented separately, which results
     // in changing the FPCW multiple times - so we optimize it with
     // some inline assembly
@@ -79,18 +73,16 @@ static inline int splashFloor(SplashCoord x)
     return result;
 #else
     if (x > 0) {
-        return (int)x;
-    } else {
-        return (int)floor(x);
+        return static_cast<int>(x);
     }
+    return static_cast<int>(floor(x));
+
 #endif
 }
 
-static inline int splashCeil(SplashCoord x)
+static inline int splashCeil(double x)
 {
-#if defined(USE_FLOAT)
-    return (int)ceilf(x);
-#elif defined(__GNUC__) && defined(__i386__)
+#if defined(__GNUC__) && defined(__i386__)
     // ceil() and (int)() are implemented separately, which results
     // in changing the FPCW multiple times - so we optimize it with
     // some inline assembly
@@ -127,11 +119,11 @@ static inline int splashCeil(SplashCoord x)
     __asm fldcw WORD PTR oldCW;
     return result;
 #else
-    return (int)ceil(x);
+    return static_cast<int>(ceil(x));
 #endif
 }
 
-static inline int splashRound(SplashCoord x)
+static inline int splashRound(double x)
 {
 #if defined(__GNUC__) && defined(__i386__)
     // this could use round-to-nearest mode and avoid the "+0.5",
@@ -172,42 +164,34 @@ static inline int splashRound(SplashCoord x)
     __asm fldcw WORD PTR oldCW;
     return result;
 #else
-    return (int)splashFloor(x + 0.5);
+    return splashFloor(x + 0.5);
 #endif
 }
 
-static inline SplashCoord splashAvg(SplashCoord x, SplashCoord y)
+static inline double splashAvg(double x, double y)
 {
     return 0.5 * (x + y);
 }
 
-static inline SplashCoord splashSqrt(SplashCoord x)
+static inline double splashSqrt(double x)
 {
-#if defined(USE_FLOAT)
-    return sqrtf(x);
-#else
     return sqrt(x);
-#endif
 }
 
-static inline SplashCoord splashPow(SplashCoord x, SplashCoord y)
+static inline double splashPow(double x, double y)
 {
-#if defined(USE_FLOAT)
-    return powf(x, y);
-#else
     return pow(x, y);
-#endif
 }
 
-static inline SplashCoord splashDist(SplashCoord x0, SplashCoord y0, SplashCoord x1, SplashCoord y1)
+static inline double splashDist(double x0, double y0, double x1, double y1)
 {
-    SplashCoord dx, dy;
+    double dx, dy;
     dx = x1 - x0;
     dy = y1 - y0;
     return splashSqrt(dx * dx + dy * dy);
 }
 
-static inline bool splashCheckDet(SplashCoord m11, SplashCoord m12, SplashCoord m21, SplashCoord m22, SplashCoord epsilon)
+static inline bool splashCheckDet(double m11, double m12, double m21, double m22, double epsilon)
 {
     return fabs(m11 * m22 - m12 * m21) >= epsilon;
 }

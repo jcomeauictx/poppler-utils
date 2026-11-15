@@ -16,6 +16,7 @@
 #include <mutex>
 #include <queue>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "goo/GooString.h"
@@ -45,7 +46,7 @@ enum OutputType
 class Document
 {
 public:
-    explicit Document(const std::string &filenameA) : filename(filenameA) { std::call_once(ftLibOnceFlag, FT_Init_FreeType, &ftLib); }
+    explicit Document(std::string filenameA) : filename(std::move(filenameA)) { std::call_once(ftLibOnceFlag, FT_Init_FreeType, &ftLib); }
 
     std::shared_ptr<PDFDoc> getDoc()
     {
@@ -81,7 +82,7 @@ std::once_flag Document::ftLibOnceFlag;
 
 struct Job
 {
-    Job(OutputType typeA, const std::shared_ptr<Document> &documentA, int pageNumA, const std::string &outputFileA) : type(typeA), document(documentA), pageNum(pageNumA), outputFile(outputFileA) { }
+    Job(OutputType typeA, const std::shared_ptr<Document> &documentA, int pageNumA, std::string outputFileA) : type(typeA), document(documentA), pageNum(pageNumA), outputFile(std::move(outputFileA)) { }
     OutputType type;
     std::shared_ptr<Document> document;
     int pageNum;
@@ -91,7 +92,7 @@ struct Job
 class JobQueue
 {
 public:
-    JobQueue() : shutdownFlag(false) { }
+    JobQueue() = default;
 
     void pushJob(std::unique_ptr<Job> &job)
     {
@@ -133,18 +134,17 @@ private:
     std::deque<std::unique_ptr<Job>> queue;
     std::mutex mutex;
     std::condition_variable condition;
-    bool shutdownFlag;
+    bool shutdownFlag = false;
 };
 
 static cairo_status_t writeStream(void *closure, const unsigned char *data, unsigned int length)
 {
-    FILE *file = (FILE *)closure;
+    FILE *file = static_cast<FILE *>(closure);
 
     if (fwrite(data, length, 1, file) == 1) {
         return CAIRO_STATUS_SUCCESS;
-    } else {
-        return CAIRO_STATUS_WRITE_ERROR;
     }
+    return CAIRO_STATUS_WRITE_ERROR;
 }
 
 // PDF/PS/SVG output
@@ -301,7 +301,7 @@ static void runThread(const std::shared_ptr<JobQueue> &jobQueue)
 
 static void printUsage()
 {
-    int default_threads = std::max(1, (int)std::thread::hardware_concurrency());
+    int default_threads = std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
     printf("cairo-thread-test [-j jobs] [-p priority] [<output option> <files>...]...\n");
     printf(" -j num       number of concurrent threads (default %d)\n", default_threads);
     printf(" -p <priority>  priority is one of:\n");
@@ -315,7 +315,7 @@ static void printUsage()
 // Parse -j and -p options. These must appear before any other arguments
 static bool getThreadsAndPriority(int &argc, char **&argv, int &numThreads, bool &documentPriority)
 {
-    numThreads = std::max(1, (int)std::thread::hardware_concurrency());
+    numThreads = std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
     documentPriority = false;
 
     while (argc > 0) {

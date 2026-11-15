@@ -1,9 +1,10 @@
 /* Copyright Krzysztof Kowalczyk 2006-2007
    Copyright Hib Eris <hib@hiberis.nl> 2008, 2013
-   Copyright 2018, 2020, 2022 Albert Astals Cid <aacid@kde.org> 2018
+   Copyright 2018, 2020, 2022, 2025, 2026 Albert Astals Cid <aacid@kde.org> 2018
    Copyright 2019 Oliver Sander <oliver.sander@tu-dresden.de>
    Copyright 2020 Adam Reichold <adam.reichold@t-online.de>
    Copyright 2024 Vincent Lefevre <vincent@vinc17.net>
+   Copyright 2024, 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
    License: GPLv2 */
 /*
   A tool to stress-test poppler rendering and measure rendering times for
@@ -26,12 +27,6 @@
 
 #include <config.h>
 
-#ifdef _WIN32
-#    include <windows.h>
-#else
-#    include <strings.h>
-#endif
-
 // Define COPY_FILE if you want the file to be copied to a local disk first
 // before it's tested. This is desired if a file is on a slow drive.
 // Currently copying only works on Windows.
@@ -47,10 +42,6 @@
 #include <cerrno>
 #include <ctime>
 
-#ifdef HAVE_DIRENT_H
-#    include <dirent.h>
-#endif
-
 #include "Error.h"
 #include "ErrorCodes.h"
 #include "goo/GooString.h"
@@ -63,22 +54,9 @@
 #include "PDFDoc.h"
 #include "Link.h"
 
-#ifdef _MSC_VER
-#    define strdup _strdup
-#    define strcasecmp _stricmp
-#endif
-
 #define dimof(X) (sizeof(X) / sizeof((X)[0]))
 
-#define INVALID_PAGE_NO -1
-
-/* Those must be implemented in order to provide preview during execution.
-   They can be no-ops. An implementation for windows is in
-   perf-test-preview-win.cc
-*/
-extern void PreviewBitmapInit();
-extern void PreviewBitmapDestroy();
-extern void PreviewBitmapSplash(SplashBitmap *bmpSplash);
+constexpr int INVALID_PAGE_NO = -1;
 
 class PdfEnginePoppler
 {
@@ -94,7 +72,7 @@ public:
     void setFileName(const char *fileName)
     {
         assert(!_fileName);
-        _fileName = (char *)strdup(fileName);
+        _fileName = strdup(fileName);
     }
 
     int pageCount() const { return _pageCount; }
@@ -105,18 +83,18 @@ public:
     SplashOutputDev *outputDevice();
 
 private:
-    char *_fileName;
-    int _pageCount;
+    char *_fileName = nullptr;
+    int _pageCount = INVALID_PAGE_NO;
 
-    PDFDoc *_pdfDoc;
-    SplashOutputDev *_outputDev;
+    PDFDoc *_pdfDoc = nullptr;
+    SplashOutputDev *_outputDev = nullptr;
 };
 
-typedef struct StrList
+struct StrList
 {
     struct StrList *next;
     char *str;
-} StrList;
+};
 
 /* List of all command-line arguments that are not switches.
    We assume those are:
@@ -127,23 +105,16 @@ typedef struct StrList
 static StrList *gArgsListRoot = nullptr;
 
 /* Names of all command-line switches we recognize */
-#define TIMINGS_ARG "-timings"
-#define RESOLUTION_ARG "-resolution"
-#define RECURSIVE_ARG "-recursive"
-#define OUT_ARG "-out"
-#define PREVIEW_ARG "-preview"
-#define SLOW_PREVIEW_ARG "-slowpreview"
-#define LOAD_ONLY_ARG "-loadonly"
-#define PAGE_ARG "-page"
-#define TEXT_ARG "-text"
+constexpr const char *TIMINGS_ARG = "-timings";
+constexpr const char *RESOLUTION_ARG = "-resolution";
+constexpr const char *OUT_ARG = "-out";
+constexpr const char *LOAD_ONLY_ARG = "-loadonly";
+constexpr const char *PAGE_ARG = "-page";
+constexpr const char *TEXT_ARG = "-text";
 
 /* Should we record timings? True if -timings command-line argument was given. */
 static bool gfTimings = false;
 
-/* If true, we use render each page at resolution 'gResolutionX'/'gResolutionY'.
-   If false, we render each page at its native resolution.
-   True if -resolution NxM command-line argument was given. */
-static bool gfForceResolution = false;
 static int gResolutionX = 0;
 static int gResolutionY = 0;
 /* If NULL, we output the log info to stdout. If not NULL, should be a name
@@ -153,31 +124,11 @@ static char *gOutFileName = nullptr;
 /* FILE * corresponding to gOutFileName or stdout if gOutFileName is NULL or
    was invalid name */
 static FILE *gOutFile = nullptr;
-/* FILE * corresponding to gOutFileName or stderr if gOutFileName is NULL or
-   was invalid name */
-static FILE *gErrFile = nullptr;
-
-/* If True and a directory is given as a command-line argument, we'll process
-   pdf files in sub-directories as well.
-   Controlled by -recursive command-line argument */
-static bool gfRecursive = false;
-
-/* If true, preview rendered image. To make sure that they're being rendered correctly. */
-static bool gfPreview = false;
-
-/* 1 second (1000 milliseconds) */
-#define SLOW_PREVIEW_TIME 1000
-
-/* If true, preview rendered image in a slow mode i.e. delay displaying for
-   SLOW_PREVIEW_TIME. This is so that a human has enough time to see if the
-   PDF renders ok. In release mode on fast processor pages take only ~100-200 ms
-   to render and they go away too quickly to be inspected by a human. */
-static bool gfSlowPreview = false;
 
 /* If true, we only dump the text, not render */
 static bool gfTextOnly = false;
 
-#define PAGE_NO_NOT_GIVEN -1
+constexpr int PAGE_NO_NOT_GIVEN = -1;
 
 /* If equals PAGE_NO_NOT_GIVEN, we're in default mode where we render all pages.
    If different, will only render this page */
@@ -186,17 +137,7 @@ static int gPageNo = PAGE_NO_NOT_GIVEN;
    profiling load time */
 static bool gfLoadOnly = false;
 
-#define PDF_FILE_DPI 72
-
-#define MAX_FILENAME_SIZE 1024
-
-/* DOS is 0xd 0xa */
-#define DOS_NEWLINE "\x0d\x0a"
-/* Mac is single 0xd */
-#define MAC_NEWLINE "\x0d"
-/* Unix is single 0xa (10) */
-#define UNIX_NEWLINE "\x0a"
-#define UNIX_NEWLINE_C 0xa
+constexpr int PDF_FILE_DPI = 72;
 
 static void memzero(void *data, size_t len)
 {
@@ -236,7 +177,7 @@ static char *str_cat4(const char *str1, const char *str2, const char *str3, cons
         str4_len = strlen(str4);
     }
 
-    str = (char *)zmalloc(str1_len + str2_len + str3_len + str4_len + 1);
+    str = static_cast<char *>(zmalloc(str1_len + str2_len + str3_len + str4_len + 1));
     if (!str) {
         return nullptr;
     }
@@ -313,36 +254,6 @@ static bool str_endswith(const char *txt, const char *end)
     return false;
 }
 
-/* TODO: probably should move to some other file and change name to
-   sleep_milliseconds */
-static void sleep_milliseconds(int milliseconds)
-{
-#ifdef _WIN32
-    Sleep((DWORD)milliseconds);
-#else
-    struct timespec tv;
-    int secs, nanosecs;
-    secs = milliseconds / 1000;
-    nanosecs = (milliseconds - (secs * 1000)) * 1000;
-    tv.tv_sec = (time_t)secs;
-    tv.tv_nsec = (long)nanosecs;
-    while (true) {
-        int rval = nanosleep(&tv, &tv);
-        if (rval == 0) {
-            /* Completed the entire sleep time; all done. */
-            return;
-        } else if (errno == EINTR) {
-            /* Interrupted by a signal. Try again. */
-            continue;
-        } else {
-            /* Some other error; bail out. */
-            return;
-        }
-    }
-    return;
-#endif
-}
-
 static SplashColorMode gSplashColorMode = splashModeBGR8;
 
 static SplashColor splashColRed;
@@ -351,15 +262,15 @@ static SplashColor splashColBlue;
 static SplashColor splashColWhite;
 static SplashColor splashColBlack;
 
-#define SPLASH_COL_RED_PTR (SplashColorPtr) & (splashColRed[0])
-#define SPLASH_COL_GREEN_PTR (SplashColorPtr) & (splashColGreen[0])
-#define SPLASH_COL_BLUE_PTR (SplashColorPtr) & (splashColBlue[0])
-#define SPLASH_COL_WHITE_PTR (SplashColorPtr) & (splashColWhite[0])
-#define SPLASH_COL_BLACK_PTR (SplashColorPtr) & (splashColBlack[0])
+#define SPLASH_COL_RED_PTR ((SplashColorPtr) & (splashColRed[0]))
+#define SPLASH_COL_GREEN_PTR ((SplashColorPtr) & (splashColGreen[0]))
+#define SPLASH_COL_BLUE_PTR ((SplashColorPtr) & (splashColBlue[0]))
+#define SPLASH_COL_WHITE_PTR ((SplashColorPtr) & (splashColWhite[0]))
+#define SPLASH_COL_BLACK_PTR ((SplashColorPtr) & (splashColBlack[0]))
 
 static SplashColorPtr gBgColor = SPLASH_COL_WHITE_PTR;
 
-static void splashColorSet(SplashColorPtr col, unsigned char red, unsigned char green, unsigned char blue, unsigned char alpha)
+static void splashColorSet(SplashColorPtr col, unsigned char red, unsigned char green, unsigned char blue)
 {
     switch (gSplashColorMode) {
     case splashModeBGR8:
@@ -380,14 +291,14 @@ static void splashColorSet(SplashColorPtr col, unsigned char red, unsigned char 
 
 static void SplashColorsInit()
 {
-    splashColorSet(SPLASH_COL_RED_PTR, 0xff, 0, 0, 0);
-    splashColorSet(SPLASH_COL_GREEN_PTR, 0, 0xff, 0, 0);
-    splashColorSet(SPLASH_COL_BLUE_PTR, 0, 0, 0xff, 0);
-    splashColorSet(SPLASH_COL_BLACK_PTR, 0, 0, 0, 0);
-    splashColorSet(SPLASH_COL_WHITE_PTR, 0xff, 0xff, 0xff, 0);
+    splashColorSet(SPLASH_COL_RED_PTR, 0xff, 0, 0);
+    splashColorSet(SPLASH_COL_GREEN_PTR, 0, 0xff, 0);
+    splashColorSet(SPLASH_COL_BLUE_PTR, 0, 0, 0xff);
+    splashColorSet(SPLASH_COL_BLACK_PTR, 0, 0, 0);
+    splashColorSet(SPLASH_COL_WHITE_PTR, 0xff, 0xff, 0xff);
 }
 
-PdfEnginePoppler::PdfEnginePoppler() : _fileName(nullptr), _pageCount(INVALID_PAGE_NO), _pdfDoc(nullptr), _outputDev(nullptr) { }
+PdfEnginePoppler::PdfEnginePoppler() = default;
 
 PdfEnginePoppler::~PdfEnginePoppler()
 {
@@ -412,7 +323,7 @@ SplashOutputDev *PdfEnginePoppler::outputDevice()
 {
     if (!_outputDev) {
         bool bitmapTopDown = true;
-        _outputDev = new SplashOutputDev(gSplashColorMode, 4, false, gBgColor, bitmapTopDown);
+        _outputDev = new SplashOutputDev(gSplashColorMode, 4, gBgColor, bitmapTopDown);
         if (_outputDev) {
             _outputDev->startDoc(_pdfDoc);
         }
@@ -427,8 +338,8 @@ SplashBitmap *PdfEnginePoppler::renderBitmap(int pageNo, double zoomReal, int ro
         return nullptr;
     }
 
-    double hDPI = (double)PDF_FILE_DPI * zoomReal * 0.01;
-    double vDPI = (double)PDF_FILE_DPI * zoomReal * 0.01;
+    double hDPI = static_cast<double>(PDF_FILE_DPI) * zoomReal * 0.01;
+    double vDPI = static_cast<double>(PDF_FILE_DPI) * zoomReal * 0.01;
     bool useMediaBox = false;
     bool crop = true;
     bool doLinks = true;
@@ -462,7 +373,7 @@ static int StrList_InsertAndOwn(StrList **root, char *txt)
         return false;
     }
 
-    el = (StrList *)malloc(sizeof(StrList));
+    el = static_cast<StrList *>(malloc(sizeof(StrList)));
     if (!el) {
         return false;
     }
@@ -486,7 +397,7 @@ static int StrList_Insert(StrList **root, char *txt)
     }
 
     if (!StrList_InsertAndOwn(root, txtDup)) {
-        free((void *)txtDup);
+        free(reinterpret_cast<void *>(txtDup));
         return false;
     }
     return true;
@@ -497,8 +408,8 @@ static void StrList_FreeElement(StrList *el)
     if (!el) {
         return;
     }
-    free((void *)el->str);
-    free((void *)el);
+    free(reinterpret_cast<void *>(el->str));
+    free(reinterpret_cast<void *>(el));
 }
 
 static void StrList_Destroy(StrList **root)
@@ -518,60 +429,7 @@ static void StrList_Destroy(StrList **root)
     *root = nullptr;
 }
 
-static void my_error(ErrorCategory, Goffset pos, const char *msg)
-{
-#if 0
-    char        buf[4096], *p = buf;
-
-    // NB: this can be called before the globalParams object is created
-    if (globalParams && globalParams->getErrQuiet()) {
-        return;
-    }
-
-    if (pos >= 0) {
-      p += _snprintf(p, sizeof(buf)-1, "Error (%lld): ", (long long)pos);
-        *p   = '\0';
-        OutputDebugString(p);
-    } else {
-        OutputDebugString("Error: ");
-    }
-
-    p = buf;
-    p += vsnprintf(p, sizeof(buf) - 1, msg, args);
-    while ( p > buf  &&  isspace(p[-1]) )
-            *--p = '\0';
-    *p++ = '\r';
-    *p++ = '\n';
-    *p   = '\0';
-    OutputDebugString(buf);
-
-    if (pos >= 0) {
-        p += _snprintf(p, sizeof(buf)-1, "Error (%lld): ", (long long)pos);
-        *p   = '\0';
-        OutputDebugString(buf);
-        if (gErrFile)
-            fprintf(gErrFile, buf);
-    } else {
-        OutputDebugString("Error: ");
-        if (gErrFile)
-            fprintf(gErrFile, "Error: ");
-    }
-#endif
-#if 0
-    p = buf;
-    va_start(args, msg);
-    p += vsnprintf(p, sizeof(buf) - 3, msg, args);
-    while ( p > buf  &&  isspace(p[-1]) )
-            *--p = '\0';
-    *p++ = '\r';
-    *p++ = '\n';
-    *p   = '\0';
-    OutputDebugString(buf);
-    if (gErrFile)
-        fprintf(gErrFile, buf);
-    va_end(args);
-#endif
-}
+static void my_error(ErrorCategory /*category*/, Goffset /*pos*/, const char * /*msg*/) { }
 
 static void LogInfo(const char *fmt, ...) GCC_PRINTF_FORMAT(1, 2);
 
@@ -598,18 +456,9 @@ static void PrintUsageAndExit(int argc, char **argv)
     exit(0);
 }
 
-static bool ShowPreview()
-{
-    if (gfPreview || gfSlowPreview) {
-        return true;
-    }
-    return false;
-}
-
 static void RenderPdfAsText(const char *fileName)
 {
     PDFDoc *pdfDoc = nullptr;
-    GooString *txt = nullptr;
     int pageCount;
     double timeInMs;
 
@@ -620,7 +469,7 @@ static void RenderPdfAsText(const char *fileName)
 
     LogInfo("started: %s\n", fileName);
 
-    TextOutputDev *textOut = new TextOutputDev(nullptr, true, 0, false, false);
+    auto *textOut = new TextOutputDev(nullptr, true, 0, false, false);
     if (!textOut->isOk()) {
         delete textOut;
         return;
@@ -651,15 +500,13 @@ static void RenderPdfAsText(const char *fileName)
         bool crop = true;
         bool doLinks = false;
         pdfDoc->displayPage(textOut, curPage, 72, 72, rotate, useMediaBox, crop, doLinks);
-        txt = textOut->getText(0.0, 0.0, 10000.0, 10000.0);
+        GooString txt = textOut->getText(PDFRectangle { 0.0, 0.0, 10000.0, 10000.0 });
         msTimer.stop();
         timeInMs = msTimer.getElapsed();
         if (gfTimings) {
             LogInfo("page %d: %.2f ms\n", curPage, timeInMs);
         }
-        printf("%s\n", txt->c_str());
-        delete txt;
-        txt = nullptr;
+        printf("%s\n", txt.c_str());
     }
 
 Exit:
@@ -726,12 +573,6 @@ static void RenderPdf(const char *fileName)
             }
         }
 
-        if (ShowPreview()) {
-            PreviewBitmapSplash(bmpSplash);
-            if (gfSlowPreview) {
-                sleep_milliseconds(SLOW_PREVIEW_TIME);
-            }
-        }
         delete bmpSplash;
     }
 Error:
@@ -840,9 +681,6 @@ static void ParseCommandLine(int argc, char **argv)
                 if (!ParseResolutionString(argv[i], &gResolutionX, &gResolutionY)) {
                     PrintUsageAndExit(argc, argv);
                 }
-                gfForceResolution = true;
-            } else if (str_ieq(arg, RECURSIVE_ARG)) {
-                gfRecursive = true;
             } else if (str_ieq(arg, OUT_ARG)) {
                 /* expect a file name after that */
                 ++i;
@@ -850,12 +688,8 @@ static void ParseCommandLine(int argc, char **argv)
                     PrintUsageAndExit(argc, argv);
                 }
                 gOutFileName = str_dup(argv[i]);
-            } else if (str_ieq(arg, PREVIEW_ARG)) {
-                gfPreview = true;
             } else if (str_ieq(arg, TEXT_ARG)) {
                 gfTextOnly = true;
-            } else if (str_ieq(arg, SLOW_PREVIEW_ARG)) {
-                gfSlowPreview = true;
             } else if (str_ieq(arg, LOAD_ONLY_ARG)) {
                 gfLoadOnly = true;
             } else if (str_ieq(arg, PAGE_ARG)) {
@@ -882,10 +716,7 @@ static void ParseCommandLine(int argc, char **argv)
 
 static bool IsPdfFileName(char *path)
 {
-    if (str_endswith(path, ".pdf")) {
-        return true;
-    }
-    return false;
+    return str_endswith(path, ".pdf");
 }
 
 /* Render 'cmdLineArg', which can be:
@@ -932,14 +763,6 @@ int main(int argc, char **argv)
         gOutFile = stdout;
     }
 
-    if (gOutFileName) {
-        gErrFile = outFile;
-    } else {
-        gErrFile = stderr;
-    }
-
-    PreviewBitmapInit();
-
     StrList *curr = gArgsListRoot;
     while (curr) {
         RenderCmdLineArg(curr->str);
@@ -948,7 +771,6 @@ int main(int argc, char **argv)
     if (outFile) {
         fclose(outFile);
     }
-    PreviewBitmapDestroy();
     StrList_Destroy(&gArgsListRoot);
     free(gOutFileName);
     return 0;

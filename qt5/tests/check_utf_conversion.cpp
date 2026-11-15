@@ -15,32 +15,17 @@ class TestUTFConversion : public QObject
     Q_OBJECT
 public:
     explicit TestUTFConversion(QObject *parent = nullptr) : QObject(parent) { }
-private slots:
-    void testUTF_data();
-    void testUTF();
-    void testUnicodeToAscii7();
-    void testUnicodeLittleEndian();
+private Q_SLOTS:
+    static void testUTF_data();
+    static void testUTF();
+    static void testUnicodeToAscii7();
+    static void testUnicodeLittleEndian();
 };
-
-static bool compare(const char *a, const char *b)
-{
-    return strcmp(a, b) == 0;
-}
-
-static bool compare(const uint16_t *a, const uint16_t *b)
-{
-    while (*a && *b) {
-        if (*a++ != *b++) {
-            return false;
-        }
-    }
-    return *a == *b;
-}
 
 static bool compare(const Unicode *a, const char *b, int len)
 {
     for (int i = 0; i < len; i++) {
-        if (a[i] != (Unicode)b[i]) {
+        if (a[i] != static_cast<Unicode>(b[i])) {
             return false;
         }
     }
@@ -79,49 +64,36 @@ void TestUTFConversion::testUTF_data()
 
 void TestUTFConversion::testUTF()
 {
-    char utf8Buf[1000];
-    char *utf8String;
-    uint16_t utf16Buf[1000];
-    uint16_t *utf16String;
+    std::string utf8String;
     int len;
 
     QFETCH(QString, s);
-    char *str = strdup(s.toUtf8().constData());
+    const std::string str = s.toStdString();
 
     // UTF-8 to UTF-16
 
     len = utf8CountUtf16CodeUnits(str);
     QCOMPARE(len, s.size()); // QString size() returns number of code units, not code points
-    Q_ASSERT(len < (int)sizeof(utf16Buf)); // if this fails, make utf16Buf larger
 
-    len = utf8ToUtf16(str, INT_MAX, utf16Buf, sizeof(utf16Buf));
-    QVERIFY(compare(utf16Buf, s.utf16()));
+    std::u16string utf16String = utf8ToUtf16(str);
+    QCOMPARE(utf16String, s.toStdU16String());
     QCOMPARE(len, s.size());
 
-    utf16String = utf8ToUtf16(str);
-    QVERIFY(compare(utf16String, s.utf16()));
-    free(utf16String);
-
-    std::string sUtf8(str);
-    std::string gsUtf16_a(utf8ToUtf16WithBom(sUtf8));
+    std::string gsUtf16_a(utf8ToUtf16WithBom(str));
     std::unique_ptr<GooString> gsUtf16_b(Poppler::QStringToUnicodeGooString(s));
-    QCOMPARE(gsUtf16_b->cmp(gsUtf16_a), 0);
+    QCOMPARE(gsUtf16_b->compare(gsUtf16_a), 0);
 
     // UTF-16 to UTF-8
 
     len = utf16CountUtf8Bytes(s.utf16());
-    QCOMPARE(len, (int)strlen(str));
-    Q_ASSERT(len < (int)sizeof(utf8Buf)); // if this fails, make utf8Buf larger
+    QCOMPARE(len, str.size());
 
-    len = utf16ToUtf8(s.utf16(), INT_MAX, utf8Buf, sizeof(utf8Buf));
-    QVERIFY(compare(utf8Buf, str));
-    QCOMPARE(len, (int)strlen(str));
+    utf8String = utf16ToUtf8(s.utf16(), INT_MAX);
+    QCOMPARE(utf8String, str);
+    QCOMPARE(len, str.size());
 
     utf8String = utf16ToUtf8(s.utf16());
-    QVERIFY(compare(utf8String, str));
-    free(utf8String);
-
-    free(str);
+    QCOMPARE(utf8String, str);
 }
 
 void TestUTFConversion::testUnicodeToAscii7()
@@ -131,11 +103,9 @@ void TestUTFConversion::testUnicodeToAscii7()
     // Test string is one 'Registered' and twenty 'Copyright' chars
     // so it's long enough to reproduce the bug given that glibc
     // malloc() always returns 8-byte aligned memory addresses.
-    GooString *goo = Poppler::QStringToUnicodeGooString(QString::fromUtf8("®©©©©©©©©©©©©©©©©©©©©")); // clazy:exclude=qstring-allocations
+    std::unique_ptr<GooString> goo = Poppler::QStringToUnicodeGooString(QString::fromUtf8("®©©©©©©©©©©©©©©©©©©©©")); // clazy:exclude=qstring-allocations
 
     const std::vector<Unicode> in = TextStringToUCS4(goo->toStr());
-
-    delete goo;
 
     int in_norm_len;
     int *in_norm_idx;
@@ -151,7 +121,7 @@ void TestUTFConversion::testUnicodeToAscii7()
     free(in_norm_idx);
 
     // ascii7 conversion: ® -> (R)   © -> (c)
-    const char *expected_ascii = (char *)"(R)(c)(c)(c)(c)(c)(c)(c)(c)(c)(c)(c)(c)(c)(c)(c)(c)(c)(c)(c)(c)";
+    const char *expected_ascii = "(R)(c)(c)(c)(c)(c)(c)(c)(c)(c)(c)(c)(c)(c)(c)(c)(c)(c)(c)(c)(c)";
 
     QCOMPARE(out_len, (int)strlen(expected_ascii));
     QVERIFY(compare(out, expected_ascii, out_len));

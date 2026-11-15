@@ -1,12 +1,13 @@
 /*
  * Copyright (C) 2009-2010, Pino Toscano <pino@kde.org>
- * Copyright (C) 2017-2020, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2017-2020, 2025, 2026, Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2017, Jason Alan Palmer <jalanpalmer@gmail.com>
  * Copyright (C) 2018, 2020, Suzuki Toshiya <mpsuzuki@hiroshima-u.ac.jp>
  * Copyright (C) 2018, 2020, Adam Reichold <adam.reichold@t-online.de>
  * Copyright (C) 2018, Zsombor Hollay-Horvath <hollay.horvath@gmail.com>
  * Copyright (C) 2018, Aleksey Nikolaev <nae202@gmail.com>
  * Copyright (C) 2020, Jiri Jakes <freedesktop@jirijakes.eu>
+ * Copyright (C) 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,13 +38,12 @@
 
 #include "TextOutputDev.h"
 
-#include <algorithm>
 #include <memory>
 #include <utility>
 
 using namespace poppler;
 
-page_private::page_private(document_private *_doc, int _index) : doc(_doc), page(doc->doc->getCatalog()->getPage(_index + 1)), index(_index), transition(nullptr), font_info_cache_initialized(false) { }
+page_private::page_private(document_private *_doc, int _index) : doc(_doc), page(doc->doc->getCatalog()->getPage(_index + 1)), index(_index) { }
 
 page_private::~page_private()
 {
@@ -63,7 +63,6 @@ void page_private::init_font_info_cache()
     }
 
     font_info_cache_initialized = true;
-    return;
 }
 
 /**
@@ -143,7 +142,7 @@ double page::duration() const
  */
 rectf page::page_rect(page_box_enum box) const
 {
-    const PDFRectangle *r = nullptr;
+    std::optional<PDFRectangle> r;
     switch (box) {
     case media_box:
         r = d->page->getMediaBox();
@@ -172,12 +171,12 @@ rectf page::page_rect(page_box_enum box) const
  */
 ustring page::label() const
 {
-    GooString goo;
-    if (!d->doc->doc->getCatalog()->indexToLabel(d->index, &goo)) {
+    std::string label;
+    if (!d->doc->doc->getCatalog()->indexToLabel(d->index, &label)) {
         return ustring();
     }
 
-    return detail::unicode_GooString_to_ustring(&goo);
+    return detail::unicode_string_to_ustring(label);
 }
 
 /**
@@ -223,7 +222,7 @@ bool page::search(const ustring &text, rectf &r, search_direction_enum direction
     }
 
     const bool sCase = case_sensitivity == case_sensitive;
-    const int rotation_value = (int)rotation * 90;
+    const int rotation_value = static_cast<int>(rotation) * 90;
 
     bool found = false;
     double rect_left = r.left();
@@ -233,21 +232,20 @@ bool page::search(const ustring &text, rectf &r, search_direction_enum direction
 
     TextOutputDev td(nullptr, true, 0, false, false);
     d->doc->doc->displayPage(&td, d->index + 1, 72, 72, rotation_value, false, true, false);
-    TextPage *text_page = td.takeText();
+    std::unique_ptr<TextPage> text_page = td.takeText();
 
     switch (direction) {
     case search_from_top:
-        found = text_page->findText(&u[0], len, true, true, false, false, sCase, false, false, &rect_left, &rect_top, &rect_right, &rect_bottom);
+        found = text_page->findText(u.data(), len, true, true, false, false, sCase, false, false, &rect_left, &rect_top, &rect_right, &rect_bottom);
         break;
     case search_next_result:
-        found = text_page->findText(&u[0], len, false, true, true, false, sCase, false, false, &rect_left, &rect_top, &rect_right, &rect_bottom);
+        found = text_page->findText(u.data(), len, false, true, true, false, sCase, false, false, &rect_left, &rect_top, &rect_right, &rect_bottom);
         break;
     case search_previous_result:
-        found = text_page->findText(&u[0], len, false, true, true, false, sCase, true, false, &rect_left, &rect_top, &rect_right, &rect_bottom);
+        found = text_page->findText(u.data(), len, false, true, true, false, sCase, true, false, &rect_left, &rect_top, &rect_right, &rect_bottom);
         break;
     }
 
-    text_page->decRefCnt();
     r.set_left(rect_left);
     r.set_top(rect_top);
     r.set_right(rect_right);
@@ -271,7 +269,7 @@ ustring page::text(const rectf &r) const
 
 static void appendToGooString(void *stream, const char *text, int len)
 {
-    ((GooString *)stream)->append(text, len);
+    (static_cast<GooString *>(stream))->append(text, len);
 }
 
 /**
@@ -279,7 +277,8 @@ static void appendToGooString(void *stream, const char *text, int len)
 
  \param rect if not empty, it will be extracted the text in it; otherwise, the
              text of the whole page
- \param layout_mode the layout of the text
+ \param layout_mode the layout of the text. non_raw_non_physical_layout is not
+                    supported together with a non empty rect
 
  \returns the text of the page in the specified rect or in the whole page
 
@@ -287,16 +286,20 @@ static void appendToGooString(void *stream, const char *text, int len)
  */
 ustring page::text(const rectf &r, text_layout_enum layout_mode) const
 {
-    std::unique_ptr<GooString> out(new GooString());
+    GooString out;
     const bool use_raw_order = (layout_mode == raw_order_layout);
     const bool use_physical_layout = (layout_mode == physical_layout);
-    TextOutputDev td(&appendToGooString, out.get(), use_physical_layout, 0, use_raw_order, false);
+    TextOutputDev td(&appendToGooString, &out, use_physical_layout, 0, use_raw_order, false);
     if (r.is_empty()) {
         d->doc->doc->displayPage(&td, d->index + 1, 72, 72, 0, false, true, false);
     } else {
+        if (layout_mode == non_raw_non_physical_layout) {
+            detail::user_debug_function("non_raw_non_physical_layout is not supported together with a non empty rect", detail::debug_closure);
+            return {};
+        }
         d->doc->doc->displayPageSlice(&td, d->index + 1, 72, 72, 0, false, true, false, r.left(), r.top(), r.width(), r.height());
     }
-    return ustring::from_utf8(out->c_str());
+    return ustring::from_utf8(out.c_str());
 }
 
 /*
@@ -353,18 +356,16 @@ text_box::writing_mode_enum text_box::get_wmode(int i) const
 {
     if (this->has_font_info()) {
         return m_data->text_box_font->wmodes[i];
-    } else {
-        return text_box::invalid_wmode;
     }
+    return text_box::invalid_wmode;
 }
 
 double text_box::get_font_size() const
 {
     if (this->has_font_info()) {
         return m_data->text_box_font->font_size;
-    } else {
-        return -1;
     }
+    return -1;
 }
 
 std::string text_box::get_font_name(int i) const
@@ -405,70 +406,63 @@ std::vector<text_box> page::text_list(int opt_flag) const
                                   nullptr, nullptr, /* annotDisplayDecideCbk(), annotDisplayDecideCbkData */
                                   true); /* copyXRef */
 
-    if (std::unique_ptr<TextWordList> word_list { output_dev->makeWordList() }) {
+    const std::unique_ptr<TextWordList> word_list = output_dev->makeWordList();
 
-        output_list.reserve(word_list->getLength());
-        for (int i = 0; i < word_list->getLength(); i++) {
-            TextWord *word = word_list->get(i);
+    const std::vector<TextWord *> &words = word_list->getWords();
+    output_list.reserve(words.size());
+    for (const TextWord *word : words) {
+        const std::unique_ptr<std::string> wordText = word->getText();
+        const ustring ustr = ustring::from_utf8(wordText->c_str());
 
-            std::unique_ptr<GooString> gooWord { word->getText() };
-            ustring ustr = ustring::from_utf8(gooWord->c_str());
+        double xMin, yMin, xMax, yMax;
+        word->getBBox(&xMin, &yMin, &xMax, &yMax);
 
-            double xMin, yMin, xMax, yMax;
-            word->getBBox(&xMin, &yMin, &xMax, &yMax);
+        text_box tb { new text_box_data { .text = ustr, .bbox = { xMin, yMin, xMax - xMin, yMax - yMin }, .rotation = word->getRotation(), .char_bboxes = {}, .has_space_after = word->hasSpaceAfter(), .text_box_font = nullptr } };
 
-            text_box tb { new text_box_data { ustr, { xMin, yMin, xMax - xMin, yMax - yMin }, word->getRotation(), {}, word->hasSpaceAfter() == true, nullptr } };
+        std::unique_ptr<text_box_font_info_data> tb_font_info;
+        if (opt_flag & page::text_list_include_font) {
+            d->init_font_info_cache();
 
-            std::unique_ptr<text_box_font_info_data> tb_font_info = nullptr;
-            if (opt_flag & page::text_list_include_font) {
-                d->init_font_info_cache();
+            tb_font_info = std::make_unique<text_box_font_info_data>(text_box_font_info_data {
+                    .font_size = word->getFontSize(), // double font_size
+                    .wmodes = {}, // std::vector<text_box::writing_mode> wmodes;
+                    .font_info_cache = d->font_info_cache, // std::vector<font_info> font_info_cache;
+                    .glyph_to_cache_index = {} // std::vector<int> glyph_to_cache_index;
+            });
+        };
 
-                std::unique_ptr<text_box_font_info_data> tb_font { new text_box_font_info_data {
-                        word->getFontSize(), // double font_size
-                        {}, // std::vector<text_box::writing_mode> wmodes;
-                        d->font_info_cache, // std::vector<font_info> font_info_cache;
-                        {} // std::vector<int> glyph_to_cache_index;
-                } };
+        tb.m_data->char_bboxes.reserve(word->getLength());
+        for (int j = 0; j < word->getLength(); j++) {
+            word->getCharBBox(j, &xMin, &yMin, &xMax, &yMax);
+            tb.m_data->char_bboxes.emplace_back(xMin, yMin, xMax - xMin, yMax - yMin);
+        }
 
-                tb_font_info = std::move(tb_font);
-            };
-
-            tb.m_data->char_bboxes.reserve(word->getLength());
+        if (tb_font_info && d->font_info_cache_initialized) {
+            tb_font_info->glyph_to_cache_index.reserve(word->getLength());
             for (int j = 0; j < word->getLength(); j++) {
-                word->getCharBBox(j, &xMin, &yMin, &xMax, &yMax);
-                tb.m_data->char_bboxes.emplace_back(xMin, yMin, xMax - xMin, yMax - yMin);
-            }
+                const TextFontInfo *cur_text_font_info = word->getFontInfo(j);
 
-            if (tb_font_info && d->font_info_cache_initialized) {
-                tb_font_info->glyph_to_cache_index.reserve(word->getLength());
-                for (int j = 0; j < word->getLength(); j++) {
-                    const TextFontInfo *cur_text_font_info = word->getFontInfo(j);
+                switch (cur_text_font_info->getWMode()) {
+                case GfxFont::WritingMode::Horizontal:
+                    tb_font_info->wmodes.push_back(text_box::horizontal_wmode);
+                    break;
+                case GfxFont::WritingMode::Vertical:
+                    tb_font_info->wmodes.push_back(text_box::vertical_wmode);
+                    break;
+                };
 
-                    // filter-out the invalid WMode value here.
-                    switch (cur_text_font_info->getWMode()) {
-                    case 0:
-                        tb_font_info->wmodes.push_back(text_box::horizontal_wmode);
+                tb_font_info->glyph_to_cache_index.push_back(-1);
+                for (size_t k = 0; k < tb_font_info->font_info_cache.size(); k++) {
+                    if (cur_text_font_info->matches(&(tb_font_info->font_info_cache[k].d->ref))) {
+                        tb_font_info->glyph_to_cache_index[j] = k;
                         break;
-                    case 1:
-                        tb_font_info->wmodes.push_back(text_box::vertical_wmode);
-                        break;
-                    default:
-                        tb_font_info->wmodes.push_back(text_box::invalid_wmode);
-                    };
-
-                    tb_font_info->glyph_to_cache_index.push_back(-1);
-                    for (size_t k = 0; k < tb_font_info->font_info_cache.size(); k++) {
-                        if (cur_text_font_info->matches(&(tb_font_info->font_info_cache[k].d->ref))) {
-                            tb_font_info->glyph_to_cache_index[j] = k;
-                            break;
-                        }
                     }
                 }
-                tb.m_data->text_box_font = std::move(tb_font_info);
             }
-
-            output_list.push_back(std::move(tb));
+            tb.m_data->text_box_font = std::move(tb_font_info);
         }
+
+        output_list.push_back(std::move(tb));
     }
 
     return output_list;

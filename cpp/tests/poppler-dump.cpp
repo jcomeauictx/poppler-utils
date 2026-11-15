@@ -1,10 +1,12 @@
 /*
  * Copyright (C) 2009-2010, Pino Toscano <pino@kde.org>
- * Copyright (C) 2017-2019, 2022, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2017-2019, 2022, 2026, Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2017, Jason Alan Palmer <jalanpalmer@gmail.com>
  * Copyright (C) 2018, 2020, Suzuki Toshiya <mpsuzuki@hiroshima-u.ac.jp>
  * Copyright (C) 2019, Masamichi Hosoda <trueroad@trueroad.jp>
  * Copyright (C) 2020, Jiri Jakes <freedesktop@jirijakes.eu>
+ * Copyright (C) 2025, Zsombor Hollay-Horvath <hollay.horvath@gmail.com>
+ * Copyright (C) 2026, Adam Sampson <ats@offog.org>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -63,22 +65,22 @@ bool show_text_list = false;
 bool show_text_list_with_font = false;
 poppler::page::text_layout_enum show_text_layout = poppler::page::physical_layout;
 
-static const ArgDesc the_args[] = { { "--show-all", argFlag, &show_all, 0, "show all the available information" },
-                                    { "--show-info", argFlag, &show_info, 0, "show general document information" },
-                                    { "--show-perm", argFlag, &show_perm, 0, "show document permissions" },
-                                    { "--show-metadata", argFlag, &show_metadata, 0, "show document metadata" },
-                                    { "--show-toc", argFlag, &show_toc, 0, "show the TOC" },
-                                    { "--show-fonts", argFlag, &show_fonts, 0, "show the document fonts" },
-                                    { "--show-embedded-files", argFlag, &show_embedded_files, 0, "show the document-level embedded files" },
-                                    { "--show-pages", argFlag, &show_pages, 0, "show pages information" },
-                                    { "--show-destinations", argFlag, &show_destinations, 0, "show named destinations" },
-                                    { "--show-text", argString, &show_text, sizeof(show_text), "show text (physical|raw|none) extracted from all pages" },
-                                    { "--show-text-list", argFlag, &show_text_list, 0, "show text list (experimental)" },
-                                    { "--show-text-list-with-font", argFlag, &show_text_list_with_font, 0, "show text list with font info (experimental)" },
-                                    { "-h", argFlag, &show_help, 0, "print usage information" },
-                                    { "--help", argFlag, &show_help, 0, "print usage information" },
-                                    { "--version", argFlag, &show_version, 0, "print poppler version" },
-                                    { nullptr, argFlag, nullptr, 0, nullptr } };
+static const ArgDesc the_args[] = { { .arg = "--show-all", .kind = argFlag, .val = &show_all, .size = 0, .usage = "show all the available information" },
+                                    { .arg = "--show-info", .kind = argFlag, .val = &show_info, .size = 0, .usage = "show general document information" },
+                                    { .arg = "--show-perm", .kind = argFlag, .val = &show_perm, .size = 0, .usage = "show document permissions" },
+                                    { .arg = "--show-metadata", .kind = argFlag, .val = &show_metadata, .size = 0, .usage = "show document metadata" },
+                                    { .arg = "--show-toc", .kind = argFlag, .val = &show_toc, .size = 0, .usage = "show the TOC" },
+                                    { .arg = "--show-fonts", .kind = argFlag, .val = &show_fonts, .size = 0, .usage = "show the document fonts" },
+                                    { .arg = "--show-embedded-files", .kind = argFlag, .val = &show_embedded_files, .size = 0, .usage = "show the document-level embedded files" },
+                                    { .arg = "--show-pages", .kind = argFlag, .val = &show_pages, .size = 0, .usage = "show pages information" },
+                                    { .arg = "--show-destinations", .kind = argFlag, .val = &show_destinations, .size = 0, .usage = "show named destinations" },
+                                    { .arg = "--show-text", .kind = argString, .val = &show_text, .size = sizeof(show_text), .usage = "show text (physical|raw|none) extracted from all pages" },
+                                    { .arg = "--show-text-list", .kind = argFlag, .val = &show_text_list, .size = 0, .usage = "show text list (experimental)" },
+                                    { .arg = "--show-text-list-with-font", .kind = argFlag, .val = &show_text_list_with_font, .size = 0, .usage = "show text list with font info (experimental)" },
+                                    { .arg = "-h", .kind = argFlag, .val = &show_help, .size = 0, .usage = "print usage information" },
+                                    { .arg = "--help", .kind = argFlag, .val = &show_help, .size = 0, .usage = "print usage information" },
+                                    { .arg = "--version", .kind = argFlag, .val = &show_version, .size = 0, .usage = "print poppler version" },
+                                    { .arg = nullptr, .kind = argFlag, .val = nullptr, .size = 0, .usage = nullptr } };
 
 static void error(const std::string &msg)
 {
@@ -98,7 +100,7 @@ static std::ostream &operator<<(std::ostream &stream, const poppler::ustring &st
 
 static std::string out_date(std::time_t date)
 {
-    if (date != std::time_t(-1)) {
+    if (date != static_cast<std::time_t>(-1)) {
         struct tm time;
         gmtime_r(&date, &time);
         struct tm *t = &time;
@@ -127,7 +129,7 @@ static char charToHex(int x)
 static std::string out_hex_string(const poppler::byte_array &str)
 {
     std::string ret(str.size() * 2, '\0');
-    const char *str_p = &str[0];
+    const char *str_p = str.data();
     for (unsigned int i = 0; i < str.size(); ++i, ++str_p) {
         ret[i * 2] = charToHex((*str_p & 0xf0) >> 4);
         ret[i * 2 + 1] = charToHex(*str_p & 0xf);
@@ -135,7 +137,7 @@ static std::string out_hex_string(const poppler::byte_array &str)
     return ret;
 }
 
-static std::string out_page_orientation(poppler::page::orientation_enum o)
+static std::string_view out_page_orientation(poppler::page::orientation_enum o)
 {
     switch (o) {
     case poppler::page::landscape:
@@ -150,7 +152,7 @@ static std::string out_page_orientation(poppler::page::orientation_enum o)
     return "<unknown orientation>";
 }
 
-static std::string out_font_info_type(poppler::font_info::type_enum t)
+static std::string_view out_font_info_type(poppler::font_info::type_enum t)
 {
 #define OUT_FONT_TYPE(thetype)                                                                                                                                                                                                                 \
     case poppler::font_info::thetype:                                                                                                                                                                                                          \
@@ -188,10 +190,8 @@ static void print_info(poppler::document *doc)
         std::cout << std::setw(out_width) << "PDF IDs"
                   << ": <none>" << std::endl;
     }
-    const std::vector<std::string> keys = doc->info_keys();
-    std::vector<std::string>::const_iterator key_it = keys.begin(), key_end = keys.end();
-    for (; key_it != key_end; ++key_it) {
-        std::cout << std::setw(out_width) << *key_it << ": " << doc->info_key(*key_it) << std::endl;
+    for (const auto &key : doc->info_keys()) {
+        std::cout << std::setw(out_width) << key << ": " << doc->info_key(key) << std::endl;
     }
     std::cout << std::setw(out_width) << "Date (creation)"
               << ": " << out_date(doc->info_date_t("CreationDate")) << std::endl;
@@ -234,9 +234,8 @@ static void print_toc_item(poppler::toc_item *item, int indent)
 {
     std::cout << std::setw(indent * 2) << " "
               << "+ " << item->title() << " (" << item->is_open() << ")" << std::endl;
-    poppler::toc_item::iterator it = item->children_begin(), it_end = item->children_end();
-    for (; it != it_end; ++it) {
-        print_toc_item(*it, indent + 1);
+    for (const auto &child : item->children()) {
+        print_toc_item(child, indent + 1);
     }
 }
 
@@ -256,12 +255,11 @@ static void print_fonts(poppler::document *doc)
     std::cout << "Document fonts:" << std::endl;
     std::vector<poppler::font_info> fl = doc->fonts();
     if (!fl.empty()) {
-        std::vector<poppler::font_info>::const_iterator it = fl.begin(), it_end = fl.end();
         const std::ios_base::fmtflags f = std::cout.flags();
         std::left(std::cout);
-        for (; it != it_end; ++it) {
-            std::cout << " " << std::setw(out_width + 10) << it->name() << " " << std::setw(15) << out_font_info_type(it->type()) << " " << std::setw(5) << it->is_embedded() << " " << std::setw(5) << it->is_subset() << " " << it->file()
-                      << std::endl;
+        for (const auto &font : fl) {
+            std::cout << " " << std::setw(out_width + 10) << font.name() << " " << std::setw(15) << out_font_info_type(font.type()) << " " << std::setw(5) << font.is_embedded() << " " << std::setw(5) << font.is_subset() << " "
+                      << font.file() << std::endl;
         }
         std::cout.flags(f);
     } else {
@@ -275,13 +273,11 @@ static void print_embedded_files(poppler::document *doc)
     std::cout << "Document embedded files:" << std::endl;
     std::vector<poppler::embedded_file *> ef = doc->embedded_files();
     if (!ef.empty()) {
-        std::vector<poppler::embedded_file *>::const_iterator it = ef.begin(), it_end = ef.end();
         const std::ios_base::fmtflags flags = std::cout.flags();
         std::left(std::cout);
-        for (; it != it_end; ++it) {
-            poppler::embedded_file *f = *it;
-            std::cout << " " << std::setw(out_width + 10) << f->name() << " " << std::setw(10) << out_size(f->size()) << " " << std::setw(20) << out_date(f->creation_date_t()) << " " << std::setw(20) << out_date(f->modification_date_t())
-                      << std::endl
+        for (const auto *f : ef) {
+            std::cout << " " << std::setw(out_width + 10) << f->unicodeName() << " " << std::setw(10) << out_size(f->size()) << " " << std::setw(20) << out_date(f->creation_date_t()) << " " << std::setw(20)
+                      << out_date(f->modification_date_t()) << std::endl
                       << "     ";
             if (f->description().empty()) {
                 std::cout << "<no description>";
@@ -452,7 +448,7 @@ int main(int argc, char *argv[])
     std::string file_name(argv[1]);
 
     std::unique_ptr<poppler::document> doc(poppler::document::load_from_file(file_name));
-    if (!doc.get()) {
+    if (!doc) {
         error("loading error");
     }
     if (doc->is_locked()) {

@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2009-2010, Pino Toscano <pino@kde.org>
+ * Copyright (C) 2025, Albert Astals Cid <aacid@kde.org>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +20,9 @@
 #ifndef POPPLER_RECTANGLE_H
 #define POPPLER_RECTANGLE_H
 
-#include "poppler-global.h"
+#include "poppler_cpp_export.h"
+
+#include <ostream>
 
 namespace poppler {
 
@@ -29,7 +32,7 @@ class rectangle
 public:
     rectangle() : x1(), y1(), x2(), y2() { }
     rectangle(T _x, T _y, T w, T h) : x1(_x), y1(_y), x2(x1 + w), y2(y1 + h) { }
-    ~rectangle() { }
+    ~rectangle() = default;
 
     bool is_empty() const { return (x1 == x2) && (y1 == y2); }
 
@@ -55,10 +58,10 @@ private:
     T x1, y1, x2, y2;
 };
 
-typedef rectangle<int> rect;
-typedef rectangle<double> rectf;
+using rect = rectangle<int>;
+using rectf = rectangle<double>;
 
-POPPLER_CPP_EXPORT std::ostream &operator<<(std::ostream &stream, const rect &r);
+POPPLER_CPP_EXPORT std::ostream &operator<<(std::ostream &stream, rect r);
 POPPLER_CPP_EXPORT std::ostream &operator<<(std::ostream &stream, const rectf &r);
 
 }

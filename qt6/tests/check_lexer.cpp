@@ -8,15 +8,15 @@ class TestLexer : public QObject
     Q_OBJECT
 public:
     explicit TestLexer(QObject *parent = nullptr) : QObject(parent) { }
-private slots:
-    void testNumbers();
+private Q_SLOTS:
+    static void testNumbers();
 };
 
 void TestLexer::testNumbers()
 {
     char data[] = "0 1 -1 2147483647 -2147483647 2147483648 -2147483648 4294967297 -2147483649 0.1 1.1 -1.1 2147483647.1 -2147483647.1 2147483648.1 -2147483648.1 4294967297.1 -2147483649.1 9223372036854775807 18446744073709551615";
-    MemStream *stream = new MemStream(data, 0, strlen(data), Object(objNull));
-    Lexer *lexer = new Lexer(nullptr, stream);
+    auto stream = std::make_unique<MemStream>(data, 0, strlen(data), Object::null());
+    auto *lexer = new Lexer(nullptr, std::move(stream));
     QVERIFY(lexer);
 
     Object obj;
@@ -43,7 +43,7 @@ void TestLexer::testNumbers()
 
     obj = lexer->getObj();
     QCOMPARE(obj.getType(), objInt64);
-    QCOMPARE(obj.getInt64(), 2147483648ll);
+    QCOMPARE(obj.getInt64(), 2147483648LL);
 
     obj = lexer->getObj();
     QCOMPARE(obj.getType(), objInt);
@@ -51,11 +51,11 @@ void TestLexer::testNumbers()
 
     obj = lexer->getObj();
     QCOMPARE(obj.getType(), objInt64);
-    QCOMPARE(obj.getInt64(), 4294967297ll);
+    QCOMPARE(obj.getInt64(), 4294967297LL);
 
     obj = lexer->getObj();
     QCOMPARE(obj.getType(), objInt64);
-    QCOMPARE(obj.getInt64(), -2147483649ll);
+    QCOMPARE(obj.getInt64(), -2147483649LL);
 
     obj = lexer->getObj();
     QCOMPARE(obj.getType(), objReal);
@@ -95,7 +95,7 @@ void TestLexer::testNumbers()
 
     obj = lexer->getObj();
     QCOMPARE(obj.getType(), objInt64);
-    QCOMPARE(obj.getInt64(), 9223372036854775807ll);
+    QCOMPARE(obj.getInt64(), 9223372036854775807LL);
 
     obj = lexer->getObj();
     QCOMPARE(obj.getType(), objReal);

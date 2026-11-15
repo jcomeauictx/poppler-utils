@@ -3,6 +3,7 @@
  * Copyright (C) 2016 Jakub Alba <jakubalba@gmail.com>
  * Copyright (C) 2019, Masamichi Hosoda <trueroad@trueroad.jp>
  * Copyright (C) 2019, 2021, 2022, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2025 Nathanael d. Noblet <nathanael@noblet.ca>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -59,6 +60,13 @@ public:
         two_page_right
     };
 
+    enum class form_type
+    {
+        none,
+        acro,
+        xfa
+    };
+
     ~document();
 
     bool is_locked() const;
@@ -72,8 +80,6 @@ public:
     ustring info_key(const std::string &key) const;
     bool set_info_key(const std::string &key, const ustring &val);
 
-    [[deprecated]] time_type info_date(const std::string &key) const;
-    [[deprecated]] bool set_info_date(const std::string &key, time_type val);
     time_t info_date_t(const std::string &key) const;
     bool set_info_date_t(const std::string &key, time_t val);
 
@@ -89,12 +95,8 @@ public:
     bool set_creator(const ustring &creator);
     ustring get_producer() const;
     bool set_producer(const ustring &producer);
-    [[deprecated]] time_type get_creation_date() const;
-    [[deprecated]] bool set_creation_date(time_type creation_date);
     time_t get_creation_date_t() const;
     bool set_creation_date_t(time_t creation_date);
-    [[deprecated]] time_type get_modification_date() const;
-    [[deprecated]] bool set_modification_date(time_type mod_date);
     time_t get_modification_date_t() const;
     bool set_modification_date_t(time_t mod_date);
 
@@ -102,6 +104,9 @@ public:
 
     bool is_encrypted() const;
     bool is_linearized() const;
+    form_type form_type() const;
+    bool has_javascript() const;
+
     bool has_permission(permission_enum which) const;
     ustring metadata() const;
     bool get_pdf_id(std::string *permanent_id, std::string *update_id) const;

@@ -1,4 +1,5 @@
 #include <QtTest/QTest>
+#include <QtCore/QTimeZone>
 
 Q_DECLARE_METATYPE(QDate)
 Q_DECLARE_METATYPE(QTime)
@@ -11,12 +12,12 @@ class TestDateConv : public QObject
 public:
     explicit TestDateConv(QObject *parent = nullptr) : QObject(parent) { }
 
-private slots:
-    void initTestCase();
-    void checkDates_data();
-    void checkDates();
-    void checkInvalidDates_data();
-    void checkInvalidDates();
+private Q_SLOTS:
+    static void initTestCase();
+    static void checkDates_data();
+    static void checkDates();
+    static void checkInvalidDates_data();
+    static void checkInvalidDates();
 };
 
 void TestDateConv::initTestCase()
@@ -69,7 +70,7 @@ void TestDateConv::checkDates()
     QFETCH(QDate, day);
     QFETCH(QTime, time);
 
-    QCOMPARE(Poppler::convertDate(input.constData()), QDateTime(day, time, Qt::UTC));
+    QCOMPARE(Poppler::convertDate(input.constData()), QDateTime(day, time, QTimeZone::utc()));
 }
 
 void TestDateConv::checkInvalidDates_data()

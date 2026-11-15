@@ -20,7 +20,7 @@
 // Copyright (C) 2011 Andreas Hartmetz <ahartmetz@gmail.com>
 // Copyright (C) 2011 Andrea Canciani <ranma42@gmail.com>
 // Copyright (C) 2011, 2017 Adrian Johnson <ajohnson@redneon.com>
-// Copyright (C) 2012, 2015, 2018-2021 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2012, 2015, 2018-2021, 2025, 2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2015, 2016 William Bader <williambader@hotmail.com>
 // Copyright (C) 2018 Stefan Brüns <stefan.bruens@rwth-aachen.de>
 //
@@ -61,19 +61,19 @@ class SplashFunctionPattern : public SplashPattern
 public:
     SplashFunctionPattern(SplashColorMode colorMode, GfxState *state, GfxFunctionShading *shading);
 
-    SplashPattern *copy() const override { return new SplashFunctionPattern(colorMode, state, (GfxFunctionShading *)shading); }
+    SplashPattern *copy() const override { return new SplashFunctionPattern(colorMode, state, shading); }
 
     ~SplashFunctionPattern() override;
 
-    bool testPosition(int x, int y) override { return true; }
+    bool testPosition(int /*x*/, int /*y*/) const override { return true; }
 
-    bool isStatic() override { return false; }
+    bool isStatic() const override { return false; }
 
-    bool getColor(int x, int y, SplashColorPtr c) override;
+    bool getColor(int x, int y, SplashColorPtr c) const override;
 
-    virtual GfxFunctionShading *getShading() { return shading; }
+    GfxFunctionShading *getShading() { return shading; }
 
-    bool isCMYK() override { return gfxMode == csDeviceCMYK; }
+    bool isCMYK() const override { return gfxMode == csDeviceCMYK; }
 
 protected:
     Matrix ictm;
@@ -91,17 +91,17 @@ public:
 
     ~SplashUnivariatePattern() override;
 
-    bool getColor(int x, int y, SplashColorPtr c) override;
+    bool getColor(int x, int y, SplashColorPtr c) const override;
 
-    bool testPosition(int x, int y) override;
+    bool testPosition(int x, int y) const override;
 
-    bool isStatic() override { return false; }
+    bool isStatic() const override { return false; }
 
-    virtual bool getParameter(double xs, double ys, double *t) = 0;
+    virtual bool getParameter(double xs, double ys, double *t) const = 0;
 
-    virtual GfxUnivariateShading *getShading() { return shading; }
+    GfxUnivariateShading *getShading() { return shading; }
 
-    bool isCMYK() override { return gfxMode == csDeviceCMYK; }
+    bool isCMYK() const override { return gfxMode == csDeviceCMYK; }
 
 protected:
     Matrix ictm;
@@ -117,11 +117,11 @@ class SplashAxialPattern : public SplashUnivariatePattern
 public:
     SplashAxialPattern(SplashColorMode colorMode, GfxState *state, GfxAxialShading *shading);
 
-    SplashPattern *copy() const override { return new SplashAxialPattern(colorMode, state, (GfxAxialShading *)shading); }
+    SplashPattern *copy() const override { return new SplashAxialPattern(colorMode, state, static_cast<GfxAxialShading *>(shading)); }
 
     ~SplashAxialPattern() override;
 
-    bool getParameter(double xc, double yc, double *t) override;
+    bool getParameter(double xc, double yc, double *t) const override;
 
 private:
     double x0, y0, x1, y1;
@@ -132,19 +132,19 @@ private:
 class SplashGouraudPattern : public SplashGouraudColor
 {
 public:
-    SplashGouraudPattern(bool bDirectColorTranslation, GfxState *state, GfxGouraudTriangleShading *shading);
+    SplashGouraudPattern(bool bDirectColorTranslation, GfxGouraudTriangleShading *shading);
 
-    SplashPattern *copy() const override { return new SplashGouraudPattern(bDirectColorTranslation, state, shading); }
+    SplashPattern *copy() const override { return new SplashGouraudPattern(bDirectColorTranslation, shading); }
 
     ~SplashGouraudPattern() override;
 
-    bool getColor(int x, int y, SplashColorPtr c) override { return false; }
+    bool getColor(int /*x*/, int /*y*/, SplashColorPtr /*c*/) const override { return false; }
 
-    bool testPosition(int x, int y) override { return false; }
+    bool testPosition(int /*x*/, int /*y*/) const override { return false; }
 
-    bool isStatic() override { return false; }
+    bool isStatic() const override { return false; }
 
-    bool isCMYK() override { return gfxMode == csDeviceCMYK; }
+    bool isCMYK() const override { return gfxMode == csDeviceCMYK; }
 
     bool isParameterized() override { return shading->isParameterized(); }
     int getNTriangles() override { return shading->getNTriangles(); }
@@ -159,7 +159,6 @@ public:
 
 private:
     GfxGouraudTriangleShading *shading;
-    GfxState *state;
     bool bDirectColorTranslation;
     GfxColorSpaceMode gfxMode;
 };
@@ -170,11 +169,11 @@ class SplashRadialPattern : public SplashUnivariatePattern
 public:
     SplashRadialPattern(SplashColorMode colorMode, GfxState *state, GfxRadialShading *shading);
 
-    SplashPattern *copy() const override { return new SplashRadialPattern(colorMode, state, (GfxRadialShading *)shading); }
+    SplashPattern *copy() const override { return new SplashRadialPattern(colorMode, state, static_cast<GfxRadialShading *>(shading)); }
 
     ~SplashRadialPattern() override;
 
-    bool getParameter(double xs, double ys, double *t) override;
+    bool getParameter(double xs, double ys, double *t) const override;
 
 private:
     double x0, y0, r0, dx, dy, dr;
@@ -194,7 +193,7 @@ class POPPLER_PRIVATE_EXPORT SplashOutputDev : public OutputDev
 {
 public:
     // Constructor.
-    SplashOutputDev(SplashColorMode colorModeA, int bitmapRowPadA, bool reverseVideoA, SplashColorPtr paperColorA, bool bitmapTopDownA = true, SplashThinLineMode thinLineMode = splashThinLineDefault, bool overprintPreviewA = false);
+    SplashOutputDev(SplashColorMode colorModeA, int bitmapRowPadA, SplashColorPtr paperColorA, bool bitmapTopDownA = true, SplashThinLineMode thinLineMode = splashThinLineDefault, bool overprintPreviewA = false);
 
     // Destructor.
     ~SplashOutputDev() override;
@@ -209,7 +208,7 @@ public:
     // Does this device use functionShadedFill(), axialShadedFill(), and
     // radialShadedFill()?  If this returns false, these shaded fills
     // will be reduced to a series of other drawing operations.
-    bool useShadedFills(int type) override { return (type >= 1 && type <= 5) ? true : false; }
+    bool useShadedFills(int type) override { return type >= 1 && type <= 5; }
 
     // Does this device use upside-down coordinates?
     // (Upside-down means (0,0) is the top left corner of the page.)
@@ -265,7 +264,7 @@ public:
     void stroke(GfxState *state) override;
     void fill(GfxState *state) override;
     void eoFill(GfxState *state) override;
-    bool tilingPatternFill(GfxState *state, Gfx *gfx, Catalog *catalog, GfxTilingPattern *tPat, const double *mat, int x0, int y0, int x1, int y1, double xStep, double yStep) override;
+    bool tilingPatternFill(GfxState *state, Gfx *gfx, Catalog *catalog, GfxTilingPattern *tPat, const std::array<double, 6> &mat, int x0, int y0, int x1, int y1, double xStep, double yStep) override;
     bool functionShadedFill(GfxState *state, GfxFunctionShading *shading) override;
     bool axialShadedFill(GfxState *state, GfxAxialShading *shading, double tMin, double tMax) override;
     bool radialShadedFill(GfxState *state, GfxRadialShading *shading, double tMin, double tMax) override;
@@ -285,8 +284,8 @@ public:
 
     //----- image drawing
     void drawImageMask(GfxState *state, Object *ref, Stream *str, int width, int height, bool invert, bool interpolate, bool inlineImg) override;
-    void setSoftMaskFromImageMask(GfxState *state, Object *ref, Stream *str, int width, int height, bool invert, bool inlineImg, double *baseMatrix) override;
-    void unsetSoftMaskFromImageMask(GfxState *state, double *baseMatrix) override;
+    bool setSoftMaskFromImageMask(GfxState *state, Object *ref, Stream *str, int width, int height, bool invert, bool inlineImg, std::array<double, 6> &baseMatrix) override;
+    void unsetSoftMaskFromImageMask(GfxState *state, std::array<double, 6> &baseMatrix) override;
     void drawImage(GfxState *state, Object *ref, Stream *str, int width, int height, GfxImageColorMap *colorMap, bool interpolate, const int *maskColors, bool inlineImg) override;
     void drawMaskedImage(GfxState *state, Object *ref, Stream *str, int width, int height, GfxImageColorMap *colorMap, bool interpolate, Stream *maskStr, int maskWidth, int maskHeight, bool maskInvert, bool maskInterpolate) override;
     void drawSoftMaskedImage(GfxState *state, Object *ref, Stream *str, int width, int height, GfxImageColorMap *colorMap, bool interpolate, Stream *maskStr, int maskWidth, int maskHeight, GfxImageColorMap *maskColorMap,
@@ -298,10 +297,10 @@ public:
 
     //----- transparency groups and soft masks
     bool checkTransparencyGroup(GfxState *state, bool knockout) override;
-    void beginTransparencyGroup(GfxState *state, const double *bbox, GfxColorSpace *blendingColorSpace, bool isolated, bool knockout, bool forSoftMask) override;
+    void beginTransparencyGroup(GfxState *state, const std::array<double, 4> &bbox, GfxColorSpace *blendingColorSpace, bool isolated, bool knockout, bool forSoftMask) override;
     void endTransparencyGroup(GfxState *state) override;
-    void paintTransparencyGroup(GfxState *state, const double *bbox) override;
-    void setSoftMask(GfxState *state, const double *bbox, bool alpha, Function *transferFunc, GfxColor *backdropColor) override;
+    void paintTransparencyGroup(GfxState *state, const std::array<double, 4> &bbox) override;
+    void setSoftMask(GfxState *state, const std::array<double, 4> &bbox, bool alpha, Function *transferFunc, const GfxColor &backdropColor) override;
     void clearSoftMask(GfxState *state) override;
 
     //----- special access
@@ -310,9 +309,6 @@ public:
     void startDoc(PDFDoc *docA);
 
     void setPaperColor(SplashColorPtr paperColorA);
-
-    bool isReverseVideo() { return reverseVideo; }
-    void setReverseVideo(bool reverseVideoA) { reverseVideo = reverseVideoA; }
 
     // Get the bitmap and its size.
     SplashBitmap *getBitmap() { return bitmap; }
@@ -336,12 +332,10 @@ public:
         skipRotatedText = skipRotatedTextA;
     }
 
-#if 1 //~tmp: turn off anti-aliasing temporarily
     bool getVectorAntialias() override;
     void setVectorAntialias(bool vaa) override;
-#endif
 
-    bool getFontAntialias() { return fontAntialias; }
+    bool getFontAntialias() const { return fontAntialias; }
     void setFontAntialias(bool anti) { fontAntialias = anti; }
 
     void setFreeTypeHinting(bool enable, bool enableSlightHinting);
@@ -351,19 +345,19 @@ protected:
     void doUpdateFont(GfxState *state);
 
 private:
-    bool univariateShadedFill(GfxState *state, SplashUnivariatePattern *pattern, double tMin, double tMax);
+    bool univariateShadedFill(GfxState *state, SplashUnivariatePattern *pattern);
 
     void setupScreenParams(double hDPI, double vDPI);
-    SplashPattern *getColor(GfxGray gray);
+    static SplashPattern *getColor(GfxGray gray);
     SplashPattern *getColor(GfxRGB *rgb);
-    SplashPattern *getColor(GfxCMYK *cmyk);
-    SplashPattern *getColor(GfxColor *deviceN);
-    static void getMatteColor(SplashColorMode colorMode, GfxImageColorMap *colorMap, const GfxColor *matteColor, SplashColor splashMatteColor);
+    static SplashPattern *getColor(GfxCMYK *cmyk);
+    static SplashPattern *getColor(GfxColor *deviceN);
+    static void getMatteColor(SplashColorMode colorMode, GfxImageColorMap *colorMap, const GfxColor &matteColor, SplashColor splashMatteColor);
     void setOverprintMask(GfxColorSpace *colorSpace, bool overprintFlag, int overprintMode, const GfxColor *singleColor, bool grayIndexed = false);
-    SplashPath convertPath(GfxState *state, const GfxPath *path, bool dropEmptySubpaths);
+    static SplashPath convertPath(const GfxPath *path, bool dropEmptySubpaths);
     void drawType3Glyph(GfxState *state, T3FontCache *t3Font, T3FontCacheTag *tag, unsigned char *data);
-#ifdef USE_CMS
-    bool useIccImageSrc(void *data);
+#if USE_CMS
+    static bool useIccImageSrc(void *data);
     static void iccTransform(void *data, SplashBitmap *bitmap);
     static bool iccImageSrc(void *data, SplashColorPtr colorLine, unsigned char *alphaLine);
 #endif
@@ -384,7 +378,6 @@ private:
     bool enableFreeType;
     bool enableFreeTypeHinting;
     bool enableSlightHinting;
-    bool reverseVideo; // reverse video mode
     SplashColor paperColor; // paper color
     SplashScreenParams screenParams;
     bool skipHorizText;

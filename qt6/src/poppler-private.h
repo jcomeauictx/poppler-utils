@@ -1,7 +1,7 @@
 /* poppler-private.h: qt interface to poppler
  * Copyright (C) 2005, Net Integration Technologies, Inc.
  * Copyright (C) 2005, 2008, Brad Hards <bradh@frogmouth.net>
- * Copyright (C) 2006-2009, 2011, 2012, 2017-2022 by Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2006-2009, 2011, 2012, 2017-2022, 2024-2026 by Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2007-2009, 2011, 2014 by Pino Toscano <pino@kde.org>
  * Copyright (C) 2011 Andreas Hartmetz <ahartmetz@gmail.com>
  * Copyright (C) 2011 Hib Eris <hib@hiberis.nl>
@@ -21,7 +21,8 @@
  * Copyright (C) 2021 Mahmoud Khalil <mahmoudkhalil11@gmail.com>
  * Copyright (C) 2021 Hubert Figuiere <hub@figuiere.net>
  * Copyright (C) 2021 Georgiy Sgibnev <georgiy@sgibnev.com>. Work sponsored by lab50.net.
- * Copyright (C) 2024 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+ * Copyright (C) 2024-2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+ * Copyright (C) 2026 Sune Stolborg Vuorela <sune@vuorela.dk>, work sponsored by the Direction Interministérielle du Numérique
  * Inspired on code by
  * Copyright (C) 2004 by Albert Astals Cid <tsdgeos@terra.es>
  * Copyright (C) 2004 by Enrico Ros <eros.kde@email.it>
@@ -52,16 +53,18 @@
 #include <functional>
 #include <config.h>
 #include <poppler-config.h>
+#include <Annot.h>
 #include <GfxState.h>
 #include <GlobalParams.h>
 #include <FileSpec.h>
-#include <Form.h>
 #include <PDFDoc.h>
 #include <FontInfo.h>
 #include <OutputDev.h>
 #include <Error.h>
 #include <SplashOutputDev.h>
 
+#include "CertificateInfo.h"
+#include "poppler-converter.h"
 #include "poppler-qt6.h"
 #include "poppler-embeddedfile-private.h"
 #include "poppler-qiodeviceinstream-private.h"
@@ -79,13 +82,13 @@ POPPLER_QT6_EXPORT QString UnicodeParsedString(const GooString *s1);
 
 POPPLER_QT6_EXPORT QString UnicodeParsedString(const std::string &s1);
 
-POPPLER_QT6_EXPORT GooString *QStringToUnicodeGooString(const QString &s);
+POPPLER_QT6_EXPORT std::unique_ptr<GooString> QStringToUnicodeGooString(const QString &s);
 
 // Returns a big endian UTF-16 string with BOM or an empty string without BOM.
 // The caller owns the returned pointer.
-POPPLER_QT6_EXPORT GooString *QStringToGooString(const QString &s);
+POPPLER_QT6_EXPORT std::unique_ptr<GooString> QStringToGooString(const QString &s);
 
-GooString *QDateTimeToUnicodeGooString(const QDateTime &dt);
+std::unique_ptr<GooString> QDateTimeToUnicodeGooString(const QDateTime &dt);
 
 void qt6ErrorFunction(ErrorCategory /*category*/, Goffset pos, const char *msg);
 
@@ -112,27 +115,27 @@ public:
         m_filePath = filePath;
 
 #ifdef _WIN32
-        doc = new PDFDoc((wchar_t *)filePath.utf16(), filePath.length(), ownerPassword, userPassword, nullptr, std::bind(&DocumentData::noitfyXRefReconstructed, this));
+        doc = std::make_unique<PDFDoc>((wchar_t *)filePath.utf16(), filePath.length(), ownerPassword, userPassword, [this] { notifyXRefReconstructed(); });
 #else
-        doc = new PDFDoc(std::make_unique<GooString>(QFile::encodeName(filePath).constData()), ownerPassword, userPassword, nullptr, std::bind(&DocumentData::noitfyXRefReconstructed, this));
+        doc = std::make_unique<PDFDoc>(std::make_unique<GooString>(QFile::encodeName(filePath).constData()), ownerPassword, userPassword, [this] { notifyXRefReconstructed(); });
 #endif
     }
 
     DocumentData(QIODevice *device, const std::optional<GooString> &ownerPassword, const std::optional<GooString> &userPassword) : GlobalParamsIniter(qt6ErrorFunction)
     {
         m_device = device;
-        QIODeviceInStream *str = new QIODeviceInStream(device, 0, false, device->size(), Object(objNull));
+        auto str = std::make_unique<QIODeviceInStream>(device, 0, false, device->size(), Object::null());
         init();
-        doc = new PDFDoc(str, ownerPassword, userPassword, nullptr, std::bind(&DocumentData::noitfyXRefReconstructed, this));
+        doc = std::make_unique<PDFDoc>(std::move(str), ownerPassword, userPassword, [this] { notifyXRefReconstructed(); });
     }
 
     DocumentData(const QByteArray &data, const std::optional<GooString> &ownerPassword, const std::optional<GooString> &userPassword) : GlobalParamsIniter(qt6ErrorFunction)
     {
         m_device = nullptr;
         fileContents = data;
-        MemStream *str = new MemStream((char *)fileContents.data(), 0, fileContents.length(), Object(objNull));
+        auto str = std::make_unique<MemStream>(fileContents.data(), 0, fileContents.length(), Object::null());
         init();
-        doc = new PDFDoc(str, ownerPassword, userPassword, nullptr, std::bind(&DocumentData::noitfyXRefReconstructed, this));
+        doc = std::make_unique<PDFDoc>(std::move(str), ownerPassword, userPassword, [this] { notifyXRefReconstructed(); });
     }
 
     void init();
@@ -161,11 +164,11 @@ public:
      * where we'll set xrefReconstructed flag and notify users of the
      * reconstruction event
      */
-    void noitfyXRefReconstructed();
+    void notifyXRefReconstructed();
 
     static std::unique_ptr<Document> checkDocument(DocumentData *doc);
 
-    PDFDoc *doc;
+    std::unique_ptr<PDFDoc> doc;
     QString m_filePath;
     QIODevice *m_device;
     QByteArray fileContents;
@@ -175,7 +178,7 @@ public:
     QPointer<OptContentModel> m_optContentModel;
     QColor paperColor;
     int m_hints;
-#ifdef USE_CMS
+#if USE_CMS
     GfxLCMSProfilePtr m_sRGBProfile;
     GfxLCMSProfilePtr m_displayProfile;
 #endif
@@ -196,18 +199,21 @@ public:
 
     explicit FontInfoData(::FontInfo *fi)
     {
-        if (fi->getName()) {
-            fontName = fi->getName()->c_str();
+        const std::optional<std::string> &fiName = fi->getName();
+        if (fiName) {
+            fontName = QString::fromStdString(fiName.value());
         }
-        if (fi->getFile()) {
-            fontFile = fi->getFile()->c_str();
+        const std::optional<std::string> &fiFile = fi->getFile();
+        if (fiFile) {
+            fontFile = QString::fromStdString(fiFile.value());
         }
-        if (fi->getSubstituteName()) {
-            fontSubstituteName = fi->getSubstituteName()->c_str();
+        const std::optional<std::string> &fiSubstituteName = fi->getSubstituteName();
+        if (fiSubstituteName) {
+            fontSubstituteName = QString::fromStdString(fiSubstituteName.value());
         }
         isEmbedded = fi->getEmbedded();
         isSubset = fi->getSubset();
-        type = (Poppler::FontInfo::Type)fi->getType();
+        type = static_cast<Poppler::FontInfo::Type>(fi->getType());
         embRef = fi->getEmbRef();
     }
 
@@ -226,9 +232,9 @@ public:
 class FontIteratorData
 {
 public:
-    FontIteratorData(int startPage, DocumentData *dd) : fontInfoScanner(dd->doc, startPage), totalPages(dd->doc->getNumPages()), currentPage(qMax(startPage, 0) - 1) { }
+    FontIteratorData(int startPage, DocumentData *dd) : fontInfoScanner(dd->doc.get(), startPage), totalPages(dd->doc->getNumPages()), currentPage(qMax(startPage, 0) - 1) { }
 
-    ~FontIteratorData() { }
+    ~FontIteratorData() = default;
 
     FontInfoScanner fontInfoScanner;
     int totalPages;
@@ -238,14 +244,72 @@ public:
 class TextBoxData
 {
 public:
-    TextBoxData() : nextWord(nullptr), hasSpaceAfter(false) { }
+    TextBoxData() = default;
 
     QString text;
     QRectF bBox;
-    TextBox *nextWord;
+    TextBox *nextWord = nullptr;
     QVector<QRectF> charBBoxes; // the boundingRect of each character
-    bool hasSpaceAfter;
+    bool hasSpaceAfter = false;
 };
+
+inline Poppler::ErrorStringType fromPopplerCore(::ErrorStringType type)
+{
+    switch (type) {
+    case ::ErrorStringType::ErrorCodeString:
+        return Poppler::ErrorStringType::ErrorCodeString;
+    case ::ErrorStringType::UserString:
+        return Poppler::ErrorStringType::UserString;
+    }
+    return Poppler::ErrorStringType::ErrorCodeString;
+}
+
+inline Poppler::ErrorString fromPopplerCore(const ::ErrorString &str)
+{
+    Poppler::ErrorString res;
+    res.type = fromPopplerCore(str.type);
+    res.data = QString::fromStdString(str.text);
+    return res;
+}
+
+inline Poppler::SMimeSignatureType fromPopplerCore(CryptoSign::SMimeSignatureType type)
+{
+    switch (type) {
+    case CryptoSign::SMimeSignatureType::none:
+        return SMimeSignatureType::none;
+    case CryptoSign::SMimeSignatureType::adbe_pkcs7_detached:
+        return SMimeSignatureType::adbe_pkcs7_detached;
+    case CryptoSign::SMimeSignatureType::ETSI_CAdES_B:
+        return SMimeSignatureType::ETSI_CAdES_B;
+    case CryptoSign::SMimeSignatureType::ETSI_CAdES_T:
+        return SMimeSignatureType::ETSI_CAdES_T;
+    case CryptoSign::SMimeSignatureType::ETSI_CAdES_LT:
+        return SMimeSignatureType::ETSI_CAdES_LT;
+    case CryptoSign::SMimeSignatureType::ETSI_CAdES_LTA:
+        return SMimeSignatureType::ETSI_CAdES_LTA;
+    }
+    return SMimeSignatureType::none;
+}
+
+inline CryptoSign::SMimeSignatureType toPopplerCore(Poppler::SMimeSignatureType type)
+{
+    switch (type) {
+    case Poppler::SMimeSignatureType::none:
+        return CryptoSign::SMimeSignatureType::none;
+    case Poppler::SMimeSignatureType::adbe_pkcs7_detached:
+        return CryptoSign::SMimeSignatureType::adbe_pkcs7_detached;
+    case Poppler::SMimeSignatureType::ETSI_CAdES_B:
+        return CryptoSign::SMimeSignatureType::ETSI_CAdES_B;
+    case Poppler::SMimeSignatureType::ETSI_CAdES_T:
+        return CryptoSign::SMimeSignatureType::ETSI_CAdES_T;
+    case Poppler::SMimeSignatureType::ETSI_CAdES_LT:
+        return CryptoSign::SMimeSignatureType::ETSI_CAdES_LT;
+
+    case Poppler::SMimeSignatureType::ETSI_CAdES_LTA:
+        return CryptoSign::SMimeSignatureType::ETSI_CAdES_LTA;
+    }
+    return CryptoSign::SMimeSignatureType::none;
+}
 
 class FormFieldData
 {
@@ -257,6 +321,7 @@ public:
     ::FormWidget *fm;
     QRectF box;
     static POPPLER_QT6_EXPORT ::FormWidget *getFormWidget(const FormField *f);
+    Poppler::ErrorString lastSigningErrorDetails;
 };
 
 class FormFieldIcon;

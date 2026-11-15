@@ -11,7 +11,7 @@
 // This file is licensed under the GPLv2 or later
 //
 // Copyright (C) 2018, 2019 Greg Knight <lyngvi@gmail.com>
-// Copyright (C) 2022 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2022, 2025 Albert Astals Cid <aacid@kde.org>
 //
 //========================================================================
 
@@ -19,7 +19,6 @@
 #define IN_MEMORY_FILE_H
 
 #include <cstdio>
-#include <string>
 #include <vector>
 
 #if defined(__USE_GNU) && !defined(__ANDROID_API__)
@@ -45,7 +44,6 @@ private:
 public:
     InMemoryFile();
 
-public:
     /* Returns a file handle for this file. This is scoped to this object
      * and must be fclosed() by the caller before destruction. */
     FILE *open(const char *mode);

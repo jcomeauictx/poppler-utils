@@ -3,7 +3,7 @@
 // FontInfo.cc
 //
 // Copyright (C) 2005, 2006 Kristian Høgsberg <krh@redhat.com>
-// Copyright (C) 2005-2008, 2010, 2017-2020, 2023, 2024 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2005-2008, 2010, 2017-2020, 2023-2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2005 Brad Hards <bradh@frogmouth.net>
 // Copyright (C) 2006 Kouhei Sutou <kou@cozmixng.org>
 // Copyright (C) 2009 Pino Toscano <pino@kde.org>
@@ -16,6 +16,7 @@
 // Copyright (C) 2018, 2019 Adam Reichold <adam.reichold@t-online.de>
 // Copyright (C) 2019, 2021, 2022 Oliver Sander <oliver.sander@tu-dresden.de>
 // Copyright (C) 2023 Suzuki Toshiya <mpsuzuki@hiroshima-u.ac.jp>
+// Copyright (C) 2025, 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -30,20 +31,15 @@
 //
 //========================================================================
 
+#include "FontInfo.h"
+
 #include "config.h"
-#include <cstdio>
-#include <cstdlib>
-#include <cstddef>
-#include <cstring>
-#include <cmath>
 #include "GlobalParams.h"
-#include "Error.h"
 #include "Object.h"
 #include "Dict.h"
 #include "GfxFont.h"
 #include "Annot.h"
 #include "PDFDoc.h"
-#include "FontInfo.h"
 
 FontInfoScanner::FontInfoScanner(PDFDoc *docA, int firstPage)
 {
@@ -51,12 +47,11 @@ FontInfoScanner::FontInfoScanner(PDFDoc *docA, int firstPage)
     currentPage = firstPage + 1;
 }
 
-FontInfoScanner::~FontInfoScanner() { }
+FontInfoScanner::~FontInfoScanner() = default;
 
 std::vector<FontInfo *> FontInfoScanner::scan(int nPages)
 {
     Page *page;
-    Dict *resDict;
     Annots *annots;
     int lastPage;
 
@@ -71,19 +66,21 @@ std::vector<FontInfo *> FontInfoScanner::scan(int nPages)
         lastPage = doc->getNumPages() + 1;
     }
 
-    std::unique_ptr<XRef> xrefA(doc->getXRef()->copy());
+    std::unique_ptr<XRef> xrefA;
     for (int pg = currentPage; pg < lastPage; ++pg) {
         page = doc->getPage(pg);
         if (!page) {
             continue;
         }
+        if (!xrefA) {
+            xrefA = doc->getXRef()->copy();
+        }
 
-        if ((resDict = page->getResourceDictCopy(xrefA.get()))) {
-            scanFonts(xrefA.get(), resDict, &result);
-            delete resDict;
+        if (std::unique_ptr<Dict> resDict = page->getResourceDictCopy(xrefA.get())) {
+            scanFonts(xrefA.get(), resDict.get(), &result);
         }
         annots = page->getAnnots();
-        for (Annot *annot : annots->getAnnots()) {
+        for (const std::shared_ptr<Annot> &annot : annots->getAnnots()) {
             Object obj1 = annot->getAppearanceResDict();
             if (obj1.isDict()) {
                 scanFonts(xrefA.get(), obj1.getDict(), &result);
@@ -102,7 +99,7 @@ void FontInfoScanner::scanFonts(XRef *xrefA, Dict *resDict, std::vector<FontInfo
     Ref fontDictRef;
     const Object &fontObj = resDict->lookup("Font", &fontDictRef);
     if (fontObj.isDict()) {
-        GfxFontDict gfxFontDict(xrefA, fontDictRef, fontObj.getDict());
+        GfxFontDict gfxFontDict(xrefA, fontDictRef, *fontObj.getDict());
         for (int i = 0; i < gfxFontDict.getNumFonts(); ++i) {
             if (const std::shared_ptr<GfxFont> &font = gfxFontDict.getFont(i)) {
                 Ref fontRef = *font->getID();
@@ -135,7 +132,7 @@ void FontInfoScanner::scanFonts(XRef *xrefA, Dict *resDict, std::vector<FontInfo
 
                 if (obj2.isStream()) {
                     Ref resourcesRef;
-                    const Object resObj = obj2.streamGetDict()->lookup("Resources", &resourcesRef);
+                    const Object resObj = obj2.getStream()->getDict()->lookup("Resources", &resourcesRef);
                     if (!visitedObjects.insert(resourcesRef)) {
                         continue;
                     }
@@ -156,11 +153,11 @@ FontInfo::FontInfo(GfxFont *font, XRef *xref)
     // font name
     const std::optional<std::string> &origName = font->getName();
     if (origName) {
-        name = *font->getName();
+        name = *origName;
     }
 
     // font type
-    type = (FontInfo::Type)font->getType();
+    type = static_cast<FontInfo::Type>(font->getType());
 
     // check for an embedded font
     if (font->getType() == fontType3) {
@@ -176,7 +173,7 @@ FontInfo::FontInfo(GfxFont *font, XRef *xref)
         if (fontLoc && fontLoc->locType == gfxFontLocExternal) {
             file = fontLoc->path;
         }
-        if (substituteNameAux.getLength() > 0) {
+        if (!substituteNameAux.empty()) {
             substituteName = substituteNameAux.toStr();
         }
     }

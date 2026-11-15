@@ -2,15 +2,14 @@
 //
 // DateInfo.cc
 //
-// Copyright (C) 2008, 2018, 2019, 2021, 2022 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2008, 2018, 2019, 2021, 2022, 2024, 2025 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2009 Carlos Garcia Campos <carlosgc@gnome.org>
 // Copyright (C) 2015 André Guerreiro <aguerreiro1985@gmail.com>
 // Copyright (C) 2015 André Esser <bepandre@hotmail.com>
 // Copyright (C) 2016, 2018, 2021 Adrian Johnson <ajohnson@redneon.com>
 // Copyright (C) 2020 Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>. Work sponsored by Technische Universität Dresden
-// Copyright (C) 2021 Albert Astals Cid <aacid@kde.org>
-// Copyright (C) 2024 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
-// Copyright (C) 2024 Erich E. Hoover <erich.e.hoover@gmail.com>
+// Copyright (C) 2024-2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2024, 2025 Erich E. Hoover <erich.e.hoover@gmail.com>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -28,7 +27,6 @@
 #include <config.h>
 
 #include "goo/glibc.h"
-#include "goo/gmem.h"
 #include "DateInfo.h"
 #include "UTF.h"
 
@@ -36,14 +34,14 @@
 #include <cstring>
 
 /* See PDF Reference 1.3, Section 3.8.2 for PDF Date representation */
-bool parseDateString(const GooString *date, int *year, int *month, int *day, int *hour, int *minute, int *second, char *tz, int *tzHour, int *tzMinute)
+bool parseDateString(const std::string &date, int *year, int *month, int *day, int *hour, int *minute, int *second, char *tz, int *tzHour, int *tzMinute)
 {
-    std::vector<Unicode> u = TextStringToUCS4(date->toStr());
-    GooString s;
+    std::vector<Unicode> u = TextStringToUCS4(date);
+    std::string s;
     for (auto &c : u) {
         // Ignore any non ASCII characters
         if (c < 128) {
-            s.append(c);
+            s.push_back(c);
         }
     }
     const char *dateString = s.c_str();
@@ -115,24 +113,25 @@ std::string timeToStringWithFormat(const time_t *timeA, const char *format)
         fmt.replace(timeOffsetPosition, sizeof(timeOffsetPattern) - 1, timeOffset);
     }
 
-    if (fmt.length() == 0) {
+    if (fmt.empty()) {
         return "";
     }
     size_t bufLen = 50;
     std::string buf(bufLen, ' ');
-    while (strftime(&buf[0], buf.size(), fmt.c_str(), &localtime_tm) == 0) {
+    while (strftime(buf.data(), buf.size(), fmt.c_str(), &localtime_tm) == 0) {
         buf.resize(bufLen *= 2);
     }
+    buf.resize(buf.find('\0'));
     return buf;
 }
 
-GooString *timeToDateString(const time_t *timeA)
+std::unique_ptr<GooString> timeToDateString(const time_t *timeA)
 {
-    return new GooString(timeToStringWithFormat(timeA, "D:%Y%m%d%H%M%S%z"));
+    return std::make_unique<GooString>(timeToStringWithFormat(timeA, "D:%Y%m%d%H%M%S%z"));
 }
 
 // Convert PDF date string to time. Returns -1 if conversion fails.
-time_t dateStringToTime(const GooString *dateString)
+time_t dateStringToTime(const std::string &dateString)
 {
     int year, mon, day, hour, min, sec, tz_hour, tz_minute;
     char tz;
@@ -155,7 +154,7 @@ time_t dateStringToTime(const GooString *dateString)
 
     /* compute tm_wday and tm_yday and check date */
     time = timegm(&tm);
-    if (time == (time_t)-1) {
+    if (time == static_cast<time_t>(-1)) {
         return time;
     }
 

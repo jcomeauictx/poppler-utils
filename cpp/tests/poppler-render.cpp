@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2010, Pino Toscano <pino@kde.org>
- * Copyright (C) 2017, 2019, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2017, 2019, 2026, Albert Astals Cid <aacid@kde.org>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,6 +24,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <fstream>
 #include <memory>
 
 #include "parseargs.h"
@@ -32,13 +33,15 @@ bool show_help = false;
 bool show_formats = false;
 char out_filename[4096];
 int doc_page = 0;
+bool read_to_memory = false;
 
-static const ArgDesc the_args[] = { { "-f", argFlag, &show_formats, 0, "show supported output image formats" },
-                                    { "--page", argInt, &doc_page, 0, "select page to render" },
-                                    { "-o", argString, &out_filename, sizeof(out_filename), "output filename for the resulting PNG image" },
-                                    { "-h", argFlag, &show_help, 0, "print usage information" },
-                                    { "--help", argFlag, &show_help, 0, "print usage information" },
-                                    { nullptr, argFlag, nullptr, 0, nullptr } };
+static const ArgDesc the_args[] = { { .arg = "-f", .kind = argFlag, .val = &show_formats, .size = 0, .usage = "show supported output image formats" },
+                                    { .arg = "--page", .kind = argInt, .val = &doc_page, .size = 0, .usage = "select page to render" },
+                                    { .arg = "-o", .kind = argString, .val = &out_filename, .size = sizeof(out_filename), .usage = "output filename for the resulting PNG image" },
+                                    { .arg = "-m", .kind = argFlag, .val = &read_to_memory, .size = 0, .usage = "reds file into memory first" },
+                                    { .arg = "-h", .kind = argFlag, .val = &show_help, .size = 0, .usage = "print usage information" },
+                                    { .arg = "--help", .kind = argFlag, .val = &show_help, .size = 0, .usage = "print usage information" },
+                                    { .arg = nullptr, .kind = argFlag, .val = nullptr, .size = 0, .usage = nullptr } };
 
 static void error(const std::string &msg)
 {
@@ -73,8 +76,19 @@ int main(int argc, char *argv[])
 
     const std::string file_name(argv[1]);
 
-    std::unique_ptr<poppler::document> doc(poppler::document::load_from_file(file_name));
-    if (!doc.get()) {
+    std::unique_ptr<poppler::document> doc;
+    if (read_to_memory) {
+        std::ifstream file(file_name, std::ios::binary | std::ios::ate);
+        std::streamsize size = file.tellg();
+        file.seekg(0, std::ios::beg);
+
+        std::vector<char> buffer(size);
+        file.read(buffer.data(), size);
+        doc = std::unique_ptr<poppler::document>(poppler::document::load_from_data(&buffer));
+    } else {
+        doc = std::unique_ptr<poppler::document>(poppler::document::load_from_file(file_name));
+    }
+    if (!doc) {
         error("loading error");
     }
     if (doc->is_locked()) {
@@ -85,7 +99,7 @@ int main(int argc, char *argv[])
         error("specified page number out of page count");
     }
     std::unique_ptr<poppler::page> p(doc->create_page(doc_page));
-    if (!p.get()) {
+    if (!p) {
         error("NULL page");
     }
 

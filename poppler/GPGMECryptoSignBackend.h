@@ -4,8 +4,14 @@
 //
 // This file is licensed under the GPLv2 or later
 //
-// Copyright 2023, 2024 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright 2023-2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright 2026 Juraj Šarinay <juraj@sarinay.com>
+// Copyright 2026 Sune Stolborg Vuorela <sune@vuorela.dk>, work sponsored by the Direction Interministérielle du Numérique
+//
 //========================================================================
+
+#ifndef GPGME_CRYPTO_SIGN_BACKEND_H
+#define GPGME_CRYPTO_SIGN_BACKEND_H
 
 #include "CryptoSignBackend.h"
 
@@ -21,7 +27,7 @@ class GpgSignatureBackend : public CryptoSign::Backend
 public:
     GpgSignatureBackend();
     std::unique_ptr<CryptoSign::VerificationInterface> createVerificationHandler(std::vector<unsigned char> &&pkcs7, CryptoSign::SignatureType type) final;
-    std::unique_ptr<CryptoSign::SigningInterface> createSigningHandler(const std::string &certID, HashAlgorithm digestAlgTag) final;
+    std::unique_ptr<CryptoSign::SigningInterface> createSigningHandler(const std::string &certID, HashAlgorithm digestAlgTag, CryptoSign::SMimeSignatureType type) final;
     std::vector<std::unique_ptr<X509CertificateInfo>> getAvailableSigningCertificates() final;
     static bool hasSufficientVersion();
 };
@@ -29,30 +35,34 @@ public:
 class GpgSignatureCreation : public CryptoSign::SigningInterface
 {
 public:
-    GpgSignatureCreation(const std::string &certId);
+    explicit GpgSignatureCreation(const std::string &certId, CryptoSign::SMimeSignatureType type);
     void addData(unsigned char *dataBlock, int dataLen) final;
     std::unique_ptr<X509CertificateInfo> getCertificateInfo() const final;
-    std::variant<GooString, CryptoSign::SigningError> signDetached(const std::string &password) final;
+    std::variant<std::vector<unsigned char>, CryptoSign::SigningErrorMessage> signDetached(const std::string &password) final;
     CryptoSign::SignatureType signatureType() const final;
+    unsigned int estimateSize() const final;
+    std::optional<CryptoSign::SigningErrorMessage> checkOk() const final;
 
 private:
     std::unique_ptr<GpgME::Context> gpgContext;
     GpgME::Data gpgData;
     std::optional<GpgME::Key> key;
+    GpgME::Protocol protocol = GpgME::UnknownProtocol;
+    CryptoSign::SMimeSignatureType m_requestedType = CryptoSign::SMimeSignatureType::none;
 };
 
 class GpgSignatureVerification : public CryptoSign::VerificationInterface
 {
 public:
-    explicit GpgSignatureVerification(const std::vector<unsigned char> &pkcs7data);
+    explicit GpgSignatureVerification(const std::vector<unsigned char> &p7data, GpgME::Protocol protocol);
     SignatureValidationStatus validateSignature() final;
     void addData(unsigned char *dataBlock, int dataLen) final;
-    std::chrono::system_clock::time_point getSigningTime() const final;
+    Certificate::timePointSeconds getSigningTime() const final;
     std::string getSignerName() const final;
     std::string getSignerSubjectDN() const final;
     HashAlgorithm getHashAlgorithm() const final;
     CertificateValidationStatus validateCertificateResult() final;
-    void validateCertificateAsync(std::chrono::system_clock::time_point validation_time, bool ocspRevocationCheck, bool useAIACertFetch, const std::function<void()> &doneCallback) final;
+    void validateCertificateAsync(std::chrono::system_clock::time_point validation_time, bool ocspRevocationCheck, bool useAIACertFetch, const std::function<void()> &doneFunction) final;
     std::unique_ptr<X509CertificateInfo> getCertificateInfo() const final;
 
 private:
@@ -62,7 +72,10 @@ private:
     std::optional<GpgME::VerificationResult> gpgResult;
     std::future<CertificateValidationStatus> validationStatus;
     std::optional<CertificateValidationStatus> cachedValidationStatus;
+    GpgME::Protocol protocol;
 #if DUMP_SIGNATURE_DATA
     std::unique_ptr<std::ofstream> debugSignedData;
 #endif
 };
+
+#endif // GPGME_CRYPTO_SIGN_BACKEND_H

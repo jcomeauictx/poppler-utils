@@ -1,6 +1,9 @@
 /* poppler-media.cc: glib interface to MediaRendition
  *
  * Copyright (C) 2010 Carlos Garcia Campos <carlosgc@gnome.org>
+ * Copyright (C) 2025, 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+ * Copyright (C) 2025 Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2025 Arnav V <arnav0872@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,8 +35,6 @@
  * @title: PopplerMedia
  */
 
-typedef struct _PopplerMediaClass PopplerMediaClass;
-
 struct _PopplerMedia
 {
     GObject parent_instance;
@@ -51,6 +52,7 @@ struct _PopplerMediaClass
 {
     GObjectClass parent_class;
 };
+using PopplerMediaClass = _PopplerMediaClass;
 
 G_DEFINE_TYPE(PopplerMedia, poppler_media, G_TYPE_OBJECT)
 
@@ -80,7 +82,7 @@ static void poppler_media_class_init(PopplerMediaClass *klass)
     gobject_class->finalize = poppler_media_finalize;
 }
 
-static void poppler_media_init(PopplerMedia *media) { }
+static void poppler_media_init(PopplerMedia * /*media*/) { }
 
 PopplerMedia *_poppler_media_new(const MediaRendition *poppler_media)
 {
@@ -102,12 +104,12 @@ PopplerMedia *_poppler_media_new(const MediaRendition *poppler_media)
         media->filename = g_strdup(poppler_media->getFileName()->c_str());
     }
 
-    const MediaParameters *mp = poppler_media->getBEParameters();
+    std::optional<MediaParameters> mp = poppler_media->getBEParameters();
     mp = mp ? mp : poppler_media->getMHParameters();
 
     media->auto_play = mp ? mp->autoPlay : false;
     media->show_controls = mp ? mp->showControls : false;
-    media->repeat_count = mp ? mp->repeatCount : 1.f;
+    media->repeat_count = mp ? mp->repeatCount : 1.F;
 
     return media;
 }
@@ -221,7 +223,7 @@ const gchar *poppler_media_get_mime_type(PopplerMedia *poppler_media)
 
 static gboolean save_helper(const gchar *buf, gsize count, gpointer data, GError **error)
 {
-    FILE *f = (FILE *)data;
+    FILE *f = static_cast<FILE *>(data);
     gsize n;
 
     n = fwrite(buf, 1, count, f);
@@ -326,7 +328,7 @@ gboolean poppler_media_save_to_fd(PopplerMedia *poppler_media, int fd, GError **
 
 #endif /* !G_OS_WIN32 */
 
-#define BUF_SIZE 1024
+constexpr int BUF_SIZE = 1024;
 
 /**
  * poppler_media_save_to_callback:
@@ -356,7 +358,9 @@ gboolean poppler_media_save_to_callback(PopplerMedia *poppler_media, PopplerMedi
     g_return_val_if_fail(poppler_media->stream.isStream(), FALSE);
 
     stream = poppler_media->stream.getStream();
-    stream->reset();
+    if (!stream->rewind()) {
+        return FALSE;
+    }
 
     do {
         int data;
@@ -371,7 +375,7 @@ gboolean poppler_media_save_to_callback(PopplerMedia *poppler_media, PopplerMedi
         }
 
         if (i > 0) {
-            if (!(save_func)(buf, i, user_data, error)) {
+            if (!save_func(buf, i, user_data, error)) {
                 stream->close();
                 return FALSE;
             }

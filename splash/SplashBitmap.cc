@@ -11,7 +11,7 @@
 // All changes made under the Poppler project to this file are licensed
 // under GPL version 2 or later
 //
-// Copyright (C) 2006, 2009, 2010, 2012, 2015, 2018, 2019, 2021, 2022, 2024 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2006, 2009, 2010, 2012, 2015, 2018, 2019, 2021, 2022, 2024-2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2007 Ilmari Heikkinen <ilmari.heikkinen@gmail.com>
 // Copyright (C) 2009 Shen Liang <shenzhuxi@gmail.com>
 // Copyright (C) 2009 Stefan Thomas <thomas@eload24.com>
@@ -26,6 +26,7 @@
 // Copyright (C) 2018 Martin Packman <gzlist@googlemail.com>
 // Copyright (C) 2019 Christian Persch <chpe@src.gnome.org>
 // Copyright (C) 2019 Oliver Sander <oliver.sander@tu-dresden.de>
+// Copyright (C) 2025 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -59,6 +60,7 @@ SplashBitmap::SplashBitmap(int widthA, int heightA, int rowPadA, SplashColorMode
     height = heightA;
     mode = modeA;
     rowPad = rowPadA;
+    rowSize = -1; // some compilers can't see it will be initialized
     switch (mode) {
     case splashModeMono1:
         if (width > 0) {
@@ -97,7 +99,7 @@ SplashBitmap::SplashBitmap(int widthA, int heightA, int rowPadA, SplashColorMode
         }
         break;
     case splashModeDeviceN8:
-        if (width > 0 && width <= static_cast<int>(INT_MAX / splashMaxColorComps)) {
+        if (width > 0 && width <= INT_MAX / static_cast<int>(splashMaxColorComps)) {
             rowSize = width * splashMaxColorComps;
         } else {
             rowSize = -1;
@@ -108,14 +110,14 @@ SplashBitmap::SplashBitmap(int widthA, int heightA, int rowPadA, SplashColorMode
         rowSize += rowPad - 1;
         rowSize -= rowSize % rowPad;
     }
-    data = (SplashColorPtr)gmallocn_checkoverflow(rowSize, height);
+    data = static_cast<SplashColorPtr>(gmallocn_checkoverflow(rowSize, height));
     if (data != nullptr) {
         if (!topDown) {
             data += (height - 1) * rowSize;
             rowSize = -rowSize;
         }
         if (alphaA) {
-            alpha = (unsigned char *)gmallocn_checkoverflow(width, height);
+            alpha = static_cast<unsigned char *>(gmallocn_checkoverflow(width, height));
         } else {
             alpha = nullptr;
         }
@@ -132,7 +134,7 @@ SplashBitmap::SplashBitmap(int widthA, int heightA, int rowPadA, SplashColorMode
 
 SplashBitmap *SplashBitmap::copy(const SplashBitmap *src)
 {
-    SplashBitmap *result = new SplashBitmap(src->getWidth(), src->getHeight(), src->getRowPad(), src->getMode(), src->getAlphaPtr() != nullptr, src->getRowSize() >= 0, src->getSeparationList());
+    auto *result = new SplashBitmap(src->getWidth(), src->getHeight(), src->getRowPad(), src->getMode(), src->getAlphaPtr() != nullptr, src->getRowSize() >= 0, src->getSeparationList());
     SplashColorConstPtr dataSource = src->getDataPtr();
     unsigned char *dataDest = result->getDataPtr();
     int amount = src->getRowSize();
@@ -166,13 +168,12 @@ SplashBitmap::~SplashBitmap()
 SplashError SplashBitmap::writePNMFile(char *fileName)
 {
     FILE *f;
-    SplashError e;
 
     if (!(f = openFile(fileName, "wb"))) {
-        return splashErrOpenFile;
+        return SplashError::OpenFile;
     }
 
-    e = this->writePNMFile(f);
+    const SplashError e = this->writePNMFile(f);
 
     fclose(f);
     return e;
@@ -250,10 +251,10 @@ SplashError SplashBitmap::writePNMFile(FILE *f)
     case splashModeDeviceN8:
         // PNM doesn't support CMYK
         error(errInternal, -1, "unsupported SplashBitmap mode");
-        return splashErrGeneric;
+        return SplashError::Generic;
         break;
     }
-    return splashOk;
+    return SplashError::NoError;
 }
 
 SplashError SplashBitmap::writeAlphaPGMFile(char *fileName)
@@ -261,18 +262,18 @@ SplashError SplashBitmap::writeAlphaPGMFile(char *fileName)
     FILE *f;
 
     if (!alpha) {
-        return splashErrModeMismatch;
+        return SplashError::ModeMismatch;
     }
     if (!(f = openFile(fileName, "wb"))) {
-        return splashErrOpenFile;
+        return SplashError::OpenFile;
     }
     fprintf(f, "P5\n%d %d\n255\n", width, height);
     fwrite(alpha, 1, width * height, f);
     fclose(f);
-    return splashOk;
+    return SplashError::NoError;
 }
 
-void SplashBitmap::getPixel(int x, int y, SplashColorPtr pixel)
+void SplashBitmap::getPixel(int x, int y, SplashColorPtr pixel) const
 {
     SplashColorPtr p;
 
@@ -340,13 +341,12 @@ SplashColorPtr SplashBitmap::takeData()
 SplashError SplashBitmap::writeImgFile(SplashImageFileFormat format, const char *fileName, double hDPI, double vDPI, WriteImgParams *params)
 {
     FILE *f;
-    SplashError e;
 
     if (!(f = openFile(fileName, "wb"))) {
-        return splashErrOpenFile;
+        return SplashError::OpenFile;
     }
 
-    e = writeImgFile(format, f, hDPI, vDPI, params);
+    const SplashError e = writeImgFile(format, f, hDPI, vDPI, params);
 
     fclose(f);
     return e;
@@ -354,7 +354,7 @@ SplashError SplashBitmap::writeImgFile(SplashImageFileFormat format, const char 
 
 void SplashBitmap::setJpegParams(ImgWriter *writer, WriteImgParams *params)
 {
-#ifdef ENABLE_LIBJPEG
+#if ENABLE_LIBJPEG
     if (params) {
         static_cast<JpegWriter *>(writer)->setProgressive(params->jpegProgressive);
         static_cast<JpegWriter *>(writer)->setOptimize(params->jpegOptimize);
@@ -362,24 +362,26 @@ void SplashBitmap::setJpegParams(ImgWriter *writer, WriteImgParams *params)
             static_cast<JpegWriter *>(writer)->setQuality(params->jpegQuality);
         }
     }
+#else
+    (void)writer;
+    (void)params;
 #endif
 }
 
 SplashError SplashBitmap::writeImgFile(SplashImageFileFormat format, FILE *f, double hDPI, double vDPI, WriteImgParams *params)
 {
     ImgWriter *writer;
-    SplashError e;
 
     SplashColorMode imageWriterFormat = splashModeRGB8;
 
     switch (format) {
-#ifdef ENABLE_LIBPNG
+#if ENABLE_LIBPNG
     case splashFormatPng:
         writer = new PNGWriter();
         break;
 #endif
 
-#ifdef ENABLE_LIBJPEG
+#if ENABLE_LIBJPEG
     case splashFormatJpegCMYK:
         writer = new JpegWriter(JpegWriter::CMYK);
         setJpegParams(writer, params);
@@ -388,9 +390,11 @@ SplashError SplashBitmap::writeImgFile(SplashImageFileFormat format, FILE *f, do
         writer = new JpegWriter();
         setJpegParams(writer, params);
         break;
+#else
+        (void)params;
 #endif
 
-#ifdef ENABLE_LIBTIFF
+#if ENABLE_LIBTIFF
     case splashFormatTiff:
         switch (mode) {
         case splashModeMono1:
@@ -414,19 +418,21 @@ SplashError SplashBitmap::writeImgFile(SplashImageFileFormat format, FILE *f, do
             writer = new TiffWriter();
         }
         if (writer && params) {
-            ((TiffWriter *)writer)->setCompressionString(params->tiffCompression.c_str());
+            (static_cast<TiffWriter *>(writer))->setCompressionString(params->tiffCompression.c_str());
         }
         break;
+#else
+        (void)params;
 #endif
 
     default:
         // Not the greatest error message, but users of this function should
         // have already checked whether their desired format is compiled in.
         error(errInternal, -1, "Support for this image type not compiled in");
-        return splashErrGeneric;
+        return SplashError::Generic;
     }
 
-    e = writeImgFile(writer, f, hDPI, vDPI, imageWriterFormat);
+    const SplashError e = writeImgFile(writer, f, hDPI, vDPI, imageWriterFormat);
     delete writer;
     return e;
 }
@@ -444,14 +450,14 @@ void SplashBitmap::getRGBLine(int yl, SplashColorPtr line)
         m = byteToDbl(col[1]);
         y = byteToDbl(col[2]);
         k = byteToDbl(col[3]);
-        if (separationList->size() > 0) {
+        if (!separationList->empty()) {
             for (std::size_t i = 0; i < separationList->size(); i++) {
                 if (col[i + 4] > 0) {
                     GfxCMYK cmyk;
                     GfxColor input;
                     input.c[0] = byteToCol(col[i + 4]);
                     const std::unique_ptr<GfxSeparationColorSpace> &sepCS = (*separationList)[i];
-                    sepCS->getCMYK(&input, &cmyk);
+                    sepCS->getCMYK(input, &cmyk);
                     col[0] = colToByte(cmyk.c);
                     col[1] = colToByte(cmyk.m);
                     col[2] = colToByte(cmyk.y);
@@ -497,14 +503,14 @@ void SplashBitmap::getXBGRLine(int yl, SplashColorPtr line, ConversionMode conve
         m = byteToDbl(col[1]);
         y = byteToDbl(col[2]);
         k = byteToDbl(col[3]);
-        if (separationList->size() > 0) {
+        if (!separationList->empty()) {
             for (std::size_t i = 0; i < separationList->size(); i++) {
                 if (col[i + 4] > 0) {
                     GfxCMYK cmyk;
                     GfxColor input;
                     input.c[0] = byteToCol(col[i + 4]);
                     const std::unique_ptr<GfxSeparationColorSpace> &sepCS = (*separationList)[i];
-                    sepCS->getCMYK(&input, &cmyk);
+                    sepCS->getCMYK(input, &cmyk);
                     col[0] = colToByte(cmyk.c);
                     col[1] = colToByte(cmyk.m);
                     col[2] = colToByte(cmyk.y);
@@ -556,7 +562,7 @@ void SplashBitmap::getXBGRLine(int yl, SplashColorPtr line, ConversionMode conve
 
 static inline unsigned char div255(int x)
 {
-    return (unsigned char)((x + (x >> 8) + 0x80) >> 8);
+    return static_cast<unsigned char>((x + (x >> 8) + 0x80) >> 8);
 }
 
 bool SplashBitmap::convertToXBGR(ConversionMode conversionMode)
@@ -591,7 +597,7 @@ bool SplashBitmap::convertToXBGR(ConversionMode conversionMode)
     }
 
     int newrowSize = width * 4;
-    SplashColorPtr newdata = (SplashColorPtr)gmallocn_checkoverflow(newrowSize, height);
+    auto *newdata = static_cast<SplashColorPtr>(gmallocn_checkoverflow(newrowSize, height));
     if (newdata != nullptr) {
         for (int y = 0; y < height; y++) {
             unsigned char *row = newdata + y * newrowSize;
@@ -615,7 +621,7 @@ void SplashBitmap::getCMYKLine(int yl, SplashColorPtr line)
 
     for (int x = 0; x < width; x++) {
         getPixel(x, yl, col);
-        if (separationList->size() > 0) {
+        if (!separationList->empty()) {
             double c, m, y, k;
             c = byteToDbl(col[0]);
             m = byteToDbl(col[1]);
@@ -627,7 +633,7 @@ void SplashBitmap::getCMYKLine(int yl, SplashColorPtr line)
                     GfxColor input;
                     input.c[0] = byteToCol(col[i + 4]);
                     const std::unique_ptr<GfxSeparationColorSpace> &sepCS = (*separationList)[i];
-                    sepCS->getCMYK(&input, &cmyk);
+                    sepCS->getCMYK(input, &cmyk);
                     col[0] = colToByte(cmyk.c);
                     col[1] = colToByte(cmyk.m);
                     col[2] = colToByte(cmyk.y);
@@ -654,18 +660,18 @@ SplashError SplashBitmap::writeImgFile(ImgWriter *writer, FILE *f, double hDPI, 
 {
     if (mode != splashModeRGB8 && mode != splashModeMono8 && mode != splashModeMono1 && mode != splashModeXBGR8 && mode != splashModeBGR8 && mode != splashModeCMYK8 && mode != splashModeDeviceN8) {
         error(errInternal, -1, "unsupported SplashBitmap mode");
-        return splashErrGeneric;
+        return SplashError::Generic;
     }
 
     if (!writer->init(f, width, height, hDPI, vDPI)) {
-        return splashErrGeneric;
+        return SplashError::Generic;
     }
 
     switch (mode) {
     case splashModeCMYK8:
         if (writer->supportCMYK()) {
             SplashColorPtr row;
-            unsigned char **row_pointers = new unsigned char *[height];
+            auto **row_pointers = new unsigned char *[height];
             row = data;
 
             for (int y = 0; y < height; ++y) {
@@ -674,16 +680,16 @@ SplashError SplashBitmap::writeImgFile(ImgWriter *writer, FILE *f, double hDPI, 
             }
             if (!writer->writePointers(row_pointers, height)) {
                 delete[] row_pointers;
-                return splashErrGeneric;
+                return SplashError::Generic;
             }
             delete[] row_pointers;
         } else {
-            unsigned char *row = new unsigned char[3 * width];
+            auto *row = new unsigned char[3 * width];
             for (int y = 0; y < height; y++) {
                 getRGBLine(y, row);
                 if (!writer->writeRow(&row)) {
                     delete[] row;
-                    return splashErrGeneric;
+                    return SplashError::Generic;
                 }
             }
             delete[] row;
@@ -691,22 +697,22 @@ SplashError SplashBitmap::writeImgFile(ImgWriter *writer, FILE *f, double hDPI, 
         break;
     case splashModeDeviceN8:
         if (writer->supportCMYK()) {
-            unsigned char *row = new unsigned char[4 * width];
+            auto *row = new unsigned char[4 * width];
             for (int y = 0; y < height; y++) {
                 getCMYKLine(y, row);
                 if (!writer->writeRow(&row)) {
                     delete[] row;
-                    return splashErrGeneric;
+                    return SplashError::Generic;
                 }
             }
             delete[] row;
         } else {
-            unsigned char *row = new unsigned char[3 * width];
+            auto *row = new unsigned char[3 * width];
             for (int y = 0; y < height; y++) {
                 getRGBLine(y, row);
                 if (!writer->writeRow(&row)) {
                     delete[] row;
-                    return splashErrGeneric;
+                    return SplashError::Generic;
                 }
             }
             delete[] row;
@@ -714,7 +720,7 @@ SplashError SplashBitmap::writeImgFile(ImgWriter *writer, FILE *f, double hDPI, 
         break;
     case splashModeRGB8: {
         SplashColorPtr row;
-        unsigned char **row_pointers = new unsigned char *[height];
+        auto **row_pointers = new unsigned char *[height];
         row = data;
 
         for (int y = 0; y < height; ++y) {
@@ -723,13 +729,13 @@ SplashError SplashBitmap::writeImgFile(ImgWriter *writer, FILE *f, double hDPI, 
         }
         if (!writer->writePointers(row_pointers, height)) {
             delete[] row_pointers;
-            return splashErrGeneric;
+            return SplashError::Generic;
         }
         delete[] row_pointers;
     } break;
 
     case splashModeBGR8: {
-        unsigned char *row = new unsigned char[3 * width];
+        auto *row = new unsigned char[3 * width];
         for (int y = 0; y < height; y++) {
             // Convert into a PNG row
             for (int x = 0; x < width; x++) {
@@ -740,14 +746,14 @@ SplashError SplashBitmap::writeImgFile(ImgWriter *writer, FILE *f, double hDPI, 
 
             if (!writer->writeRow(&row)) {
                 delete[] row;
-                return splashErrGeneric;
+                return SplashError::Generic;
             }
         }
         delete[] row;
     } break;
 
     case splashModeXBGR8: {
-        unsigned char *row = new unsigned char[3 * width];
+        auto *row = new unsigned char[3 * width];
         for (int y = 0; y < height; y++) {
             // Convert into a PNG row
             for (int x = 0; x < width; x++) {
@@ -758,7 +764,7 @@ SplashError SplashBitmap::writeImgFile(ImgWriter *writer, FILE *f, double hDPI, 
 
             if (!writer->writeRow(&row)) {
                 delete[] row;
-                return splashErrGeneric;
+                return SplashError::Generic;
             }
         }
         delete[] row;
@@ -767,7 +773,7 @@ SplashError SplashBitmap::writeImgFile(ImgWriter *writer, FILE *f, double hDPI, 
     case splashModeMono8: {
         if (imageWriterFormat == splashModeMono8) {
             SplashColorPtr row;
-            unsigned char **row_pointers = new unsigned char *[height];
+            auto **row_pointers = new unsigned char *[height];
             row = data;
 
             for (int y = 0; y < height; ++y) {
@@ -776,11 +782,11 @@ SplashError SplashBitmap::writeImgFile(ImgWriter *writer, FILE *f, double hDPI, 
             }
             if (!writer->writePointers(row_pointers, height)) {
                 delete[] row_pointers;
-                return splashErrGeneric;
+                return SplashError::Generic;
             }
             delete[] row_pointers;
         } else if (imageWriterFormat == splashModeRGB8) {
-            unsigned char *row = new unsigned char[3 * width];
+            auto *row = new unsigned char[3 * width];
             for (int y = 0; y < height; y++) {
                 // Convert into a PNG row
                 for (int x = 0; x < width; x++) {
@@ -791,20 +797,20 @@ SplashError SplashBitmap::writeImgFile(ImgWriter *writer, FILE *f, double hDPI, 
 
                 if (!writer->writeRow(&row)) {
                     delete[] row;
-                    return splashErrGeneric;
+                    return SplashError::Generic;
                 }
             }
             delete[] row;
         } else {
             // only splashModeMono8 or splashModeRGB8
-            return splashErrGeneric;
+            return SplashError::Generic;
         }
     } break;
 
     case splashModeMono1: {
         if (imageWriterFormat == splashModeMono1) {
             SplashColorPtr row;
-            unsigned char **row_pointers = new unsigned char *[height];
+            auto **row_pointers = new unsigned char *[height];
             row = data;
 
             for (int y = 0; y < height; ++y) {
@@ -813,11 +819,11 @@ SplashError SplashBitmap::writeImgFile(ImgWriter *writer, FILE *f, double hDPI, 
             }
             if (!writer->writePointers(row_pointers, height)) {
                 delete[] row_pointers;
-                return splashErrGeneric;
+                return SplashError::Generic;
             }
             delete[] row_pointers;
         } else if (imageWriterFormat == splashModeRGB8) {
-            unsigned char *row = new unsigned char[3 * width];
+            auto *row = new unsigned char[3 * width];
             for (int y = 0; y < height; y++) {
                 // Convert into a PNG row
                 for (int x = 0; x < width; x++) {
@@ -828,13 +834,13 @@ SplashError SplashBitmap::writeImgFile(ImgWriter *writer, FILE *f, double hDPI, 
 
                 if (!writer->writeRow(&row)) {
                     delete[] row;
-                    return splashErrGeneric;
+                    return SplashError::Generic;
                 }
             }
             delete[] row;
         } else {
             // only splashModeMono1 or splashModeRGB8
-            return splashErrGeneric;
+            return SplashError::Generic;
         }
     } break;
 
@@ -844,8 +850,8 @@ SplashError SplashBitmap::writeImgFile(ImgWriter *writer, FILE *f, double hDPI, 
     }
 
     if (!writer->close()) {
-        return splashErrGeneric;
+        return SplashError::Generic;
     }
 
-    return splashOk;
+    return SplashError::NoError;
 }

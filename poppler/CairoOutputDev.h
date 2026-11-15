@@ -23,12 +23,14 @@
 // Copyright (C) 2010-2013 Thomas Freitag <Thomas.Freitag@alfa.de>
 // Copyright (C) 2015 Suzuki Toshiya <mpsuzuki@hiroshima-u.ac.jp>
 // Copyright (C) 2016 Jason Crain <jason@aquaticape.us>
-// Copyright (C) 2018, 2019, 2021 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2018, 2019, 2021, 2025, 2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2018 Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>. Work sponsored by the LiMux project of the city of Munich
 // Copyright (C) 2020 Michal <sudolskym@gmail.com>
 // Copyright (C) 2021 Christian Persch <chpe@src.gnome.org>
 // Copyright (C) 2022 Marek Kasik <mkasik@redhat.com>
 // Copyright (C) 2024 Nelson Benítez León <nbenitezl@gmail.com>
+// Copyright (C) 2025, 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2026 Stefan Brüns <stefan.bruens@rwth-aachen.de>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -81,7 +83,7 @@ public:
     cairo_surface_t *getImage() const { return image; }
 
     // Get the image rectangle
-    void getRect(double *xa1, double *ya1, double *xa2, double *ya2)
+    void getRect(double *xa1, double *ya1, double *xa2, double *ya2) const
     {
         *xa1 = x1;
         *ya1 = y1;
@@ -158,7 +160,7 @@ public:
 
     //----- update graphics state
     void updateAll(GfxState *state) override;
-    void setDefaultCTM(const double *ctm) override;
+    void setDefaultCTM(const std::array<double, 6> &ctm) override;
     void updateCTM(GfxState *state, double m11, double m12, double m21, double m22, double m31, double m32) override;
     void updateLineDash(GfxState *state) override;
     void updateFlatness(GfxState *state) override;
@@ -181,7 +183,7 @@ public:
     void fill(GfxState *state) override;
     void eoFill(GfxState *state) override;
     void clipToStrokePath(GfxState *state) override;
-    bool tilingPatternFill(GfxState *state, Gfx *gfx, Catalog *cat, GfxTilingPattern *tPat, const double *mat, int x0, int y0, int x1, int y1, double xStep, double yStep) override;
+    bool tilingPatternFill(GfxState *state, Gfx *gfx, Catalog *cat, GfxTilingPattern *tPat, const std::array<double, 6> &mat, int x0, int y0, int x1, int y1, double xStep, double yStep) override;
     bool functionShadedFill(GfxState *state, GfxFunctionShading *shading) override;
     bool axialShadedFill(GfxState *state, GfxAxialShading *shading, double tMin, double tMax) override;
     bool axialShadedSupportExtend(GfxState *state, GfxAxialShading *shading) override;
@@ -195,10 +197,10 @@ public:
     void eoClip(GfxState *state) override;
 
     //----- text drawing
-    void beginString(GfxState *state, const GooString *s) override;
+    void beginString(GfxState *state, const std::string &s) override;
     void endString(GfxState *state) override;
     void drawChar(GfxState *state, double x, double y, double dx, double dy, double originX, double originY, CharCode code, int nBytes, const Unicode *u, int uLen) override;
-    void beginActualText(GfxState *state, const GooString *text) override;
+    void beginActualText(GfxState *state, const std::string &text) override;
     void endActualText(GfxState *state) override;
 
     bool beginType3Char(GfxState *state, double x, double y, double dx, double dy, CharCode code, const Unicode *u, int uLen) override;
@@ -206,14 +208,14 @@ public:
     void beginTextObject(GfxState *state) override;
     void endTextObject(GfxState *state) override;
 
-    void beginMarkedContent(const char *name, Dict *properties) override;
+    void beginMarkedContent(const std::string &name, Dict *properties) override;
     void endMarkedContent(GfxState *state) override;
 
     //----- image drawing
     void drawImageMask(GfxState *state, Object *ref, Stream *str, int width, int height, bool invert, bool interpolate, bool inlineImg) override;
-    void setSoftMaskFromImageMask(GfxState *state, Object *ref, Stream *str, int width, int height, bool invert, bool inlineImg, double *baseMatrix) override;
-    void unsetSoftMaskFromImageMask(GfxState *state, double *baseMatrix) override;
-    void drawImageMaskRegular(GfxState *state, Object *ref, Stream *str, int width, int height, bool invert, bool interpolate, bool inlineImg);
+    bool setSoftMaskFromImageMask(GfxState *state, Object *ref, Stream *str, int width, int height, bool invert, bool inlineImg, std::array<double, 6> &baseMatrix) override;
+    void unsetSoftMaskFromImageMask(GfxState *state, std::array<double, 6> &baseMatrix) override;
+    void drawImageMaskRegular(GfxState *state, Stream *str, int width, int height, bool invert, bool interpolate);
 
     void drawImage(GfxState *state, Object *ref, Stream *str, int width, int height, GfxImageColorMap *colorMap, bool interpolate, const int *maskColors, bool inlineImg) override;
     void drawSoftMaskedImage(GfxState *state, Object *ref, Stream *str, int width, int height, GfxImageColorMap *colorMap, bool interpolate, Stream *maskStr, int maskWidth, int maskHeight, GfxImageColorMap *maskColorMap,
@@ -225,11 +227,11 @@ public:
     bool supportJPXtransparency() override { return true; }
 
     //----- transparency groups and soft masks
-    void beginTransparencyGroup(GfxState * /*state*/, const double * /*bbox*/, GfxColorSpace * /*blendingColorSpace*/, bool /*isolated*/, bool /*knockout*/, bool /*forSoftMask*/) override;
+    void beginTransparencyGroup(GfxState * /*state*/, const std::array<double, 4> & /*bbox*/, GfxColorSpace * /*blendingColorSpace*/, bool /*isolated*/, bool /*knockout*/, bool /*forSoftMask*/) override;
     void endTransparencyGroup(GfxState * /*state*/) override;
     void popTransparencyGroup();
-    void paintTransparencyGroup(GfxState * /*state*/, const double * /*bbox*/) override;
-    void setSoftMask(GfxState * /*state*/, const double * /*bbox*/, bool /*alpha*/, Function * /*transferFunc*/, GfxColor * /*backdropColor*/) override;
+    void paintTransparencyGroup(GfxState * /*state*/, const std::array<double, 4> & /*bbox*/) override;
+    void setSoftMask(GfxState * /*state*/, const std::array<double, 4> & /*bbox*/, bool /*alpha*/, Function * /*transferFunc*/, const GfxColor & /*backdropColor*/) override;
     void clearSoftMask(GfxState * /*state*/) override;
 
     //----- Type 3 font operators
@@ -242,18 +244,16 @@ public:
     void startDoc(PDFDoc *docA, CairoFontEngine *fontEngine = nullptr);
 
     // Called to prepare this output dev for rendering CairoType3Font.
-    void startType3Render(GfxState *state, XRef *xref);
-
-    bool isReverseVideo() { return false; }
+    void startType3Render(XRef *xref);
 
     void setCairo(cairo_t *cr);
-    void setTextPage(TextPage *text);
+    void setTextPage(std::shared_ptr<TextPage> text);
     void setPrinting(bool printingA)
     {
         printing = printingA;
         needFontUpdate = true;
     }
-    void copyAntialias(cairo_t *cr, cairo_t *source_cr);
+    static void copyAntialias(cairo_t *cr, cairo_t *source_cr);
     void setLogicalStructure(bool logStruct) { this->logicalStruct = logStruct; }
 
     enum Type3RenderType
@@ -263,37 +263,37 @@ public:
         Type3RenderColor
     };
     void setType3RenderType(Type3RenderType state) { t3_render_state = state; }
-    void getType3GlyphWidth(double *wx, double *wy)
+    void getType3GlyphWidth(double *wx, double *wy) const
     {
         *wx = t3_glyph_wx;
         *wy = t3_glyph_wy;
     }
-    bool hasType3GlyphBBox() { return t3_glyph_has_bbox; }
+    bool hasType3GlyphBBox() const { return t3_glyph_has_bbox; }
     double *getType3GlyphBBox() { return t3_glyph_bbox; }
-    bool type3GlyphHasColor() { return t3_glyph_has_color; }
+    bool type3GlyphHasColor() const { return t3_glyph_has_color; }
 
 protected:
-    void doPath(cairo_t *cairo, GfxState *state, const GfxPath *path);
+    void doPath(cairo_t *cairo, const GfxPath *path);
     cairo_surface_t *downscaleSurface(cairo_surface_t *orig_surface);
-    void getScaledSize(const cairo_matrix_t *matrix, int orig_width, int orig_height, int *scaledWidth, int *scaledHeight);
+    static void getScaledSize(const cairo_matrix_t *matrix, int orig_width, int orig_height, int *scaledWidth, int *scaledHeight);
     cairo_filter_t getFilterForSurface(cairo_surface_t *image, bool interpolate);
-    bool getStreamData(Stream *str, char **buffer, int *length);
+    static bool getStreamData(Stream *str, char **buffer, int *length);
     void setMimeData(GfxState *state, Stream *str, Object *ref, GfxImageColorMap *colorMap, cairo_surface_t *image, int height);
-    void fillToStrokePathClip(GfxState *state);
+    void fillToStrokePathClip();
     void alignStrokeCoords(const GfxSubpath *subpath, int i, double *x, double *y);
     AnnotLink *findLinkObject(const StructElement *elem);
-    void quadToCairoRect(AnnotQuadrilaterals *quads, int idx, double destPageHeight, cairo_rectangle_t *rect);
-    bool appendLinkDestRef(GooString *s, const LinkDest *dest);
-    void appendLinkDestXY(GooString *s, const LinkDest *dest, double destPageHeight);
+    static void quadToCairoRect(const AnnotQuadrilaterals *quads, int idx, double destPageHeight, cairo_rectangle_t *rect);
+    bool appendLinkDestRef(std::string &s, const LinkDest *dest);
+    static void appendLinkDestXY(std::string &s, const LinkDest *dest, double destPageHeight);
     bool beginLinkTag(AnnotLink *annotLink);
     bool beginLink(const StructElement *linkElem);
-    void getStructElemAttributeString(const StructElement *elem);
+    static void getStructElemAttributeString(const StructElement *elem);
     int getContentElementStructParents(const StructElement *element);
     bool checkIfStructElementNeeded(const StructElement *element);
     void emitStructElement(const StructElement *elem);
-    void startFirstPage(int pageNum, GfxState *state, XRef *xrefA);
-    bool setMimeDataForJBIG2Globals(Stream *str, cairo_surface_t *image);
-    bool setMimeDataForCCITTParams(Stream *str, cairo_surface_t *image, int height);
+    void startFirstPage(XRef *xrefA);
+    static bool setMimeDataForJBIG2Globals(Stream *str, cairo_surface_t *image);
+    static bool setMimeDataForCCITTParams(Stream *str, cairo_surface_t *image, int height);
     static void textStringToQuotedUtf8(const GooString *text, GooString *s);
     bool isPDF();
 
@@ -355,12 +355,12 @@ protected:
     int pdfPageNum; // page number of the PDF file
     int cairoPageNum; // page number in cairo output
     std::vector<std::string> markedContentStack;
-    std::vector<Annot *> annotations;
+    std::vector<std::shared_ptr<Annot>> annotations;
     std::set<std::string> emittedDestinations;
     std::map<int, int> pdfPageToCairoPageMap;
 
-    TextPage *textPage; // text for the current page
-    ActualText *actualText;
+    std::shared_ptr<TextPage> textPage; // text for the current page
+    std::unique_ptr<ActualText> actualText;
 
     cairo_pattern_t *group;
     cairo_pattern_t *shape;
@@ -447,40 +447,44 @@ public:
     bool needNonText() override { return true; }
 
     //----- save/restore graphics state
-    void saveState(GfxState *state) override { }
-    void restoreState(GfxState *state) override { }
+    void saveState(GfxState * /*state*/) override { }
+    void restoreState(GfxState * /*state*/) override { }
 
     //----- update graphics state
-    void updateAll(GfxState *state) override { }
-    void setDefaultCTM(const double *ctm) override { }
-    void updateCTM(GfxState *state, double m11, double m12, double m21, double m22, double m31, double m32) override { }
-    void updateLineDash(GfxState *state) override { }
-    void updateFlatness(GfxState *state) override { }
-    void updateLineJoin(GfxState *state) override { }
-    void updateLineCap(GfxState *state) override { }
-    void updateMiterLimit(GfxState *state) override { }
-    void updateLineWidth(GfxState *state) override { }
-    void updateFillColor(GfxState *state) override { }
-    void updateStrokeColor(GfxState *state) override { }
-    void updateFillOpacity(GfxState *state) override { }
-    void updateStrokeOpacity(GfxState *state) override { }
-    void updateBlendMode(GfxState *state) override { }
+    void updateAll(GfxState * /*state*/) override { }
+    void setDefaultCTM(const std::array<double, 6> & /*ctm*/) override { }
+    void updateCTM(GfxState * /*state*/, double /*m11*/, double /*m12*/, double /*m21*/, double /*m22*/, double /*m31*/, double /*m32*/) override { }
+    void updateLineDash(GfxState * /*state*/) override { }
+    void updateFlatness(GfxState * /*state*/) override { }
+    void updateLineJoin(GfxState * /*state*/) override { }
+    void updateLineCap(GfxState * /*state*/) override { }
+    void updateMiterLimit(GfxState * /*state*/) override { }
+    void updateLineWidth(GfxState * /*state*/) override { }
+    void updateFillColor(GfxState * /*state*/) override { }
+    void updateStrokeColor(GfxState * /*state*/) override { }
+    void updateFillOpacity(GfxState * /*state*/) override { }
+    void updateStrokeOpacity(GfxState * /*state*/) override { }
+    void updateBlendMode(GfxState * /*state*/) override { }
 
     //----- update text state
-    void updateFont(GfxState *state) override { }
+    void updateFont(GfxState * /*state*/) override { }
 
     //----- path painting
-    void stroke(GfxState *state) override { }
-    void fill(GfxState *state) override { }
-    void eoFill(GfxState *state) override { }
-    void clipToStrokePath(GfxState *state) override { }
-    bool tilingPatternFill(GfxState *state, Gfx *gfx, Catalog *cat, GfxTilingPattern *tPat, const double *mat, int x0, int y0, int x1, int y1, double xStep, double yStep) override { return true; }
-    bool axialShadedFill(GfxState *state, GfxAxialShading *shading, double tMin, double tMax) override { return true; }
-    bool radialShadedFill(GfxState *state, GfxRadialShading *shading, double sMin, double sMax) override { return true; }
+    void stroke(GfxState * /*state*/) override { }
+    void fill(GfxState * /*state*/) override { }
+    void eoFill(GfxState * /*state*/) override { }
+    void clipToStrokePath(GfxState * /*state*/) override { }
+    bool tilingPatternFill(GfxState * /*state*/, Gfx * /*gfx*/, Catalog * /*cat*/, GfxTilingPattern * /*tPat*/, const std::array<double, 6> & /*mat*/, int /*x0*/, int /*y0*/, int /*x1*/, int /*y1*/, double /*xStep*/,
+                           double /*yStep*/) override
+    {
+        return true;
+    }
+    bool axialShadedFill(GfxState * /*state*/, GfxAxialShading * /*shading*/, double /*tMin*/, double /*tMax*/) override { return true; }
+    bool radialShadedFill(GfxState * /*state*/, GfxRadialShading * /*shading*/, double /*sMin*/, double /*sMax*/) override { return true; }
 
     //----- path clipping
-    void clip(GfxState *state) override { }
-    void eoClip(GfxState *state) override { }
+    void clip(GfxState * /*state*/) override { }
+    void eoClip(GfxState * /*state*/) override { }
 
     //----- image drawing
     void drawImageMask(GfxState *state, Object *ref, Stream *str, int width, int height, bool invert, bool interpolate, bool inlineImg) override;
@@ -488,14 +492,14 @@ public:
     void drawSoftMaskedImage(GfxState *state, Object *ref, Stream *str, int width, int height, GfxImageColorMap *colorMap, bool interpolate, Stream *maskStr, int maskWidth, int maskHeight, GfxImageColorMap *maskColorMap,
                              bool maskInterpolate) override;
     void drawMaskedImage(GfxState *state, Object *ref, Stream *str, int width, int height, GfxImageColorMap *colorMap, bool interpolate, Stream *maskStr, int maskWidth, int maskHeight, bool maskInvert, bool maskInterpolate) override;
-    void setSoftMaskFromImageMask(GfxState *state, Object *ref, Stream *str, int width, int height, bool invert, bool inlineImg, double *baseMatrix) override;
-    void unsetSoftMaskFromImageMask(GfxState *state, double *baseMatrix) override { }
+    bool setSoftMaskFromImageMask(GfxState *state, Object *ref, Stream *str, int width, int height, bool invert, bool inlineImg, std::array<double, 6> &baseMatrix) override;
+    void unsetSoftMaskFromImageMask(GfxState * /*state*/, std::array<double, 6> & /*baseMatrix*/) override { }
 
     //----- transparency groups and soft masks
-    void beginTransparencyGroup(GfxState * /*state*/, const double * /*bbox*/, GfxColorSpace * /*blendingColorSpace*/, bool /*isolated*/, bool /*knockout*/, bool /*forSoftMask*/) override { }
+    void beginTransparencyGroup(GfxState * /*state*/, const std::array<double, 4> & /*bbox*/, GfxColorSpace * /*blendingColorSpace*/, bool /*isolated*/, bool /*knockout*/, bool /*forSoftMask*/) override { }
     void endTransparencyGroup(GfxState * /*state*/) override { }
-    void paintTransparencyGroup(GfxState * /*state*/, const double * /*bbox*/) override { }
-    void setSoftMask(GfxState * /*state*/, const double * /*bbox*/, bool /*alpha*/, Function * /*transferFunc*/, GfxColor * /*backdropColor*/) override { }
+    void paintTransparencyGroup(GfxState * /*state*/, const std::array<double, 4> & /*bbox*/) override { }
+    void setSoftMask(GfxState * /*state*/, const std::array<double, 4> & /*bbox*/, bool /*alpha*/, Function * /*transferFunc*/, const GfxColor & /*backdropColor*/) override { }
     void clearSoftMask(GfxState * /*state*/) override { }
 
     //----- Image list
@@ -511,7 +515,7 @@ public:
 
 private:
     void saveImage(CairoImage *image);
-    void getBBox(GfxState *state, int width, int height, double *x1, double *y1, double *x2, double *y2);
+    static void getBBox(GfxState *state, int width, int height, double *x1, double *y1, double *x2, double *y2);
 
     CairoImage **images;
     int numImages;

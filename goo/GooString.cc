@@ -18,7 +18,7 @@
 // Copyright (C) 2006 Kristian Høgsberg <krh@redhat.com>
 // Copyright (C) 2006 Krzysztof Kowalczyk <kkowalczyk@gmail.com>
 // Copyright (C) 2007 Jeff Muizelaar <jeff@infidigm.net>
-// Copyright (C) 2008-2011, 2016-2018, 2022 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2008-2011, 2016-2018, 2022, 2025 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2011 Kenji Uno <ku@digitaldolphins.jp>
 // Copyright (C) 2012, 2013 Fabio D'Urso <fabiodurso@hotmail.it>
 // Copyright (C) 2012, 2017 Adrian Johnson <ajohnson@redneon.com>
@@ -31,6 +31,8 @@
 // Copyright (C) 2018 Greg Knight <lyngvi@gmail.com>
 // Copyright (C) 2019, 2022-2024 Oliver Sander <oliver.sander@tu-dresden.de>
 // Copyright (C) 2023 Even Rouault <even.rouault@mines-paris.org>
+// Copyright (C) 2025, 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2025 Jonathan Hähne <jonathan.haehne@hotmail.com>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -39,7 +41,6 @@
 
 #include <config.h>
 
-#include <algorithm>
 #include <cassert>
 #include <cctype>
 #include <cmath>
@@ -67,6 +68,7 @@ union GooStringFormatArg {
     char c;
     char *s;
     GooString *gs;
+    std::string *r;
 };
 
 enum GooStringFormatType
@@ -107,11 +109,14 @@ enum GooStringFormatType
     fmtChar,
     fmtString,
     fmtGooString,
-    fmtSpace
+    fmtStdString,
+    fmtSpace,
+    fmtInvalidFormat
 };
 
-const char *const formatStrings[] = { "d",   "x",   "X",   "o",   "b",   "ud",  "ux",   "uX",   "uo",   "ub",   "ld",   "lx", "lX", "lo", "lb", "uld", "ulx", "ulX", "ulo",
-                                      "ulb", "lld", "llx", "llX", "llo", "llb", "ulld", "ullx", "ullX", "ullo", "ullb", "f",  "gs", "g",  "c",  "s",   "t",   "w",   nullptr };
+const char *const formatStrings[] = { "d",   "x",   "X",   "o",   "b",   "ud",   "ux",   "uX",   "uo",   "ub",   "ld", "lx", "lX", "lo", "lb", "uld", "ulx", "ulX", "ulo",  "ulb",
+                                      "lld", "llx", "llX", "llo", "llb", "ulld", "ullx", "ullX", "ullo", "ullb", "f",  "gs", "g",  "c",  "s",  "t",   "r",   "w",   nullptr };
+static_assert((fmtInvalidFormat + 1) == (sizeof(formatStrings) / sizeof(char *)));
 
 void formatInt(long long x, char *buf, int bufSize, bool zeroFill, int width, int base, const char **p, int *len, bool upperCase = false);
 
@@ -127,36 +132,36 @@ void formatDoubleSmallAware(double x, char *buf, int bufSize, int prec, bool tri
 
 std::string GooString::format(const char *fmt, ...)
 {
-    GooString s;
+    std::string s;
 
     va_list argList;
     va_start(argList, fmt);
-    s.appendfv(fmt, argList);
+    appendfv(s, fmt, argList);
     va_end(argList);
 
-    return s.toStr();
+    return s;
 }
 
 std::string GooString::formatv(const char *fmt, va_list argList)
 {
-    GooString s;
+    std::string s;
 
-    s.appendfv(fmt, argList);
+    appendfv(s, fmt, argList);
 
-    return s.toStr();
+    return s;
 }
 
-GooString *GooString::appendf(const char *fmt, ...)
+std::string &GooString::appendf(std::string &that, const char *fmt, ...)
 {
     va_list argList;
     va_start(argList, fmt);
-    appendfv(fmt, argList);
+    appendfv(that, fmt, argList);
     va_end(argList);
 
-    return this;
+    return that;
 }
 
-GooString *GooString::appendfv(const char *fmt, va_list argList)
+std::string &GooString::appendfv(std::string &that, const char *fmt, va_list argList)
 {
     GooStringFormatArg *args;
     int argsLen, argsSize;
@@ -180,11 +185,11 @@ GooString *GooString::appendfv(const char *fmt, va_list argList)
             ++p0;
             if (*p0 == '{') {
                 ++p0;
-                append('{');
+                that.push_back('{');
             } else {
 
                 // parse the format string
-                if (!(*p0 >= '0' && *p0 <= '9')) {
+                if (*p0 < '0' || *p0 > '9') {
                     break;
                 }
                 idx = *p0 - '0';
@@ -218,7 +223,7 @@ GooString *GooString::appendfv(const char *fmt, va_list argList)
                 } else {
                     prec = 0;
                 }
-                for (ft = (GooStringFormatType)0; formatStrings[ft]; ft = (GooStringFormatType)(ft + 1)) {
+                for (ft = static_cast<GooStringFormatType>(0); formatStrings[ft]; ft = static_cast<GooStringFormatType>(ft + 1)) {
                     if (!strncmp(p0, formatStrings[ft], strlen(formatStrings[ft]))) {
                         break;
                     }
@@ -240,10 +245,10 @@ GooString *GooString::appendfv(const char *fmt, va_list argList)
                     if (argsLen == argsSize) {
                         argsSize *= 2;
                         if (args == argsBuf) {
-                            args = (GooStringFormatArg *)gmallocn(argsSize, sizeof(GooStringFormatArg));
+                            args = static_cast<GooStringFormatArg *>(gmallocn(argsSize, sizeof(GooStringFormatArg)));
                             memcpy(args, argsBuf, argsLen * sizeof(GooStringFormatArg));
                         } else {
-                            args = (GooStringFormatArg *)greallocn(args, argsSize, sizeof(GooStringFormatArg));
+                            args = static_cast<GooStringFormatArg *>(greallocn(args, argsSize, sizeof(GooStringFormatArg)));
                         }
                     }
                     switch (ft) {
@@ -296,7 +301,7 @@ GooString *GooString::appendfv(const char *fmt, va_list argList)
                         args[argsLen].f = va_arg(argList, double);
                         break;
                     case fmtChar:
-                        args[argsLen].c = (char)va_arg(argList, int);
+                        args[argsLen].c = static_cast<char>(va_arg(argList, int));
                         break;
                     case fmtString:
                         args[argsLen].s = va_arg(argList, char *);
@@ -304,6 +309,11 @@ GooString *GooString::appendfv(const char *fmt, va_list argList)
                     case fmtGooString:
                         args[argsLen].gs = va_arg(argList, GooString *);
                         break;
+                    case fmtStdString:
+                        args[argsLen].r = va_arg(argList, std::string *);
+                        break;
+                    case fmtInvalidFormat:
+                        assert(false);
                     }
                     ++argsLen;
                 }
@@ -431,7 +441,17 @@ GooString *GooString::appendfv(const char *fmt, va_list argList)
                 case fmtGooString:
                     if (arg.gs) {
                         str = arg.gs->c_str();
-                        len = arg.gs->getLength();
+                        len = arg.gs->size();
+                    } else {
+                        str = "(null)";
+                        len = 6;
+                    }
+                    reverseAlign = !reverseAlign;
+                    break;
+                case fmtStdString:
+                    if (arg.r) {
+                        str = arg.r->c_str();
+                        len = arg.r->size();
                     } else {
                         str = "(null)";
                         len = 6;
@@ -443,18 +463,20 @@ GooString *GooString::appendfv(const char *fmt, va_list argList)
                     len = 0;
                     width = arg.i;
                     break;
+                case fmtInvalidFormat:
+                    assert(false);
                 }
 
                 // append the formatted arg, handling width and alignment
                 if (!reverseAlign && len < width) {
                     for (i = len; i < width; ++i) {
-                        append(' ');
+                        that.push_back(' ');
                     }
                 }
-                append(str, len);
+                that.append(str, len);
                 if (reverseAlign && len < width) {
                     for (i = len; i < width; ++i) {
-                        append(' ');
+                        that.push_back(' ');
                     }
                 }
             }
@@ -464,13 +486,13 @@ GooString *GooString::appendfv(const char *fmt, va_list argList)
             if (*p0 == '}') {
                 ++p0;
             }
-            append('}');
+            that.push_back('}');
 
         } else {
             for (p1 = p0 + 1; *p1 && *p1 != '{' && *p1 != '}'; ++p1) {
                 ;
             }
-            append(p0, p1 - p0);
+            that.append(p0, p1 - p0);
             p0 = p1;
         }
     }
@@ -479,7 +501,7 @@ GooString *GooString::appendfv(const char *fmt, va_list argList)
         gfree(args);
     }
 
-    return this;
+    return that;
 }
 
 namespace {
@@ -558,7 +580,7 @@ void formatDouble(double x, char *buf, int bufSize, int prec, bool trim, const c
     started = !trim;
     for (j = 0; j < prec && i > 1; ++j) {
         x2 = floor(0.1 * (x + 0.5));
-        d = (int)floor(x - 10 * x2 + 0.5);
+        d = static_cast<int>(floor(x - 10 * x2 + 0.5));
         if (started || d != 0) {
             buf[--i] = '0' + d;
             started = true;
@@ -571,7 +593,7 @@ void formatDouble(double x, char *buf, int bufSize, int prec, bool trim, const c
     if (i > 1) {
         do {
             x2 = floor(0.1 * (x + 0.5));
-            d = (int)floor(x - 10 * x2 + 0.5);
+            d = static_cast<int>(floor(x - 10 * x2 + 0.5));
             buf[--i] = '0' + d;
             x = x2;
         } while (i > 1 && x);
@@ -599,12 +621,6 @@ void formatDoubleSmallAware(double x, char *buf, int bufSize, int prec, bool tri
 
 }
 
-GooString *GooString::lowerCase()
-{
-    lowerCase(*this);
-    return this;
-}
-
 void GooString::lowerCase(std::string &s)
 {
     for (auto &c : s) {
@@ -614,9 +630,9 @@ void GooString::lowerCase(std::string &s)
     }
 }
 
-std::string GooString::toLowerCase(const std::string &s)
+std::string GooString::toLowerCase(std::string_view s)
 {
-    std::string newString = s;
+    std::string newString(s);
     lowerCase(newString);
-    return s;
+    return newString;
 }

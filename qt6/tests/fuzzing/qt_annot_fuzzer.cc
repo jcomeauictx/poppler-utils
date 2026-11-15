@@ -1,25 +1,25 @@
 #include <cstdint>
-#include <poppler-qt5.h>
+#include <poppler-qt6.h>
 #include <QtCore/QBuffer>
-
-static void dummy_error_function(const QString &, const QVariant &) { }
+#include <GlobalParams.h>
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
-    Poppler::setDebugErrorFunction(dummy_error_function, QVariant());
+    GlobalParamsIniter globalParamsIniter(nullptr);
+    globalParams->setErrQuiet(true);
+
     const QFont font(QStringLiteral("Helvetica"), 20);
     const QColor color = QColor::fromRgb(0xAB, 0xCD, 0xEF);
 
     QByteArray in_data = QByteArray::fromRawData((const char *)data, size);
-    Poppler::Document *doc = Poppler::Document::loadFromData(in_data);
+    std::unique_ptr<Poppler::Document> doc = Poppler::Document::loadFromData(in_data);
 
     if (!doc || doc->isLocked()) {
-        delete doc;
         return 0;
     }
 
     for (int i = 0; i < doc->numPages(); i++) {
-        Poppler::Page *p = doc->page(i);
+        std::unique_ptr<Poppler::Page> p = doc->page(i);
         if (!p) {
             continue;
         }
@@ -27,7 +27,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         ann->setTextFont(font);
         ann->setTextColor(color);
         ann->setBoundary(QRectF(0.1, 0.1, 0.2, 0.2));
-        ann->setContents(QString(in_data));
+        ann->setContents(QString::fromUtf8(in_data));
         p->addAnnotation(ann);
 
         QBuffer buffer;
@@ -38,9 +38,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         conv->convert();
         buffer.close();
         delete ann;
-        delete p;
     }
 
-    delete doc;
     return 0;
 }

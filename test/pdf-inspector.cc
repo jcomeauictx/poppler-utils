@@ -4,7 +4,7 @@
 //
 // Copyright 2005 Jonathan Blandford <jrb@redhat.com>
 // Copyright 2018 Adam Reichold <adam.reichold@t-online.de>
-// Copyright 2019, 2022 Albert Astals Cid <aacid@kde.org>
+// Copyright 2019, 2022, 2025 Albert Astals Cid <aacid@kde.org>
 //
 //========================================================================
 
@@ -27,7 +27,7 @@
 #include <gtk/gtk.h>
 
 // Mapping
-#include "pdf-operators.c"
+#include "pdf-operators.h"
 
 enum
 {
@@ -47,7 +47,7 @@ public:
     void set_file_name(const char *file_name);
     void load(const char *file_name);
     void run();
-    void error_dialog(const char *error_message);
+    static void error_dialog(const char *error_message);
     void analyze_page(int page);
 
 private:
@@ -82,7 +82,7 @@ PdfInspector::PdfInspector()
     // setup the TreeView
     widget = GTK_WIDGET(gtk_builder_get_object(builder, "pdf_tree_view"));
     g_signal_connect(gtk_tree_view_get_selection(GTK_TREE_VIEW(widget)), "changed", G_CALLBACK(on_selection_changed), this);
-    model = (GtkTreeModel *)gtk_list_store_new(N_COLUMNS, G_TYPE_STRING, G_TYPE_INT, G_TYPE_DOUBLE, G_TYPE_DOUBLE, G_TYPE_DOUBLE);
+    model = reinterpret_cast<GtkTreeModel *>(gtk_list_store_new(N_COLUMNS, G_TYPE_STRING, G_TYPE_INT, G_TYPE_DOUBLE, G_TYPE_DOUBLE, G_TYPE_DOUBLE));
     gtk_tree_view_set_model(GTK_TREE_VIEW(widget), model);
     gtk_tree_view_insert_column_with_attributes(GTK_TREE_VIEW(widget), 0, "Operation", gtk_cell_renderer_text_new(), "text", OP_STRING, NULL);
 
@@ -161,14 +161,14 @@ void PdfInspector::on_selection_changed(GtkTreeSelection *selection, PdfInspecto
     g_free(op);
 }
 
-void PdfInspector::on_analyze_clicked(GtkWidget *widget, PdfInspector *inspector)
+void PdfInspector::on_analyze_clicked(GtkWidget * /*widget*/, PdfInspector *inspector)
 {
     GtkWidget *spin;
     int page;
 
     spin = GTK_WIDGET(gtk_builder_get_object(inspector->builder, "pdf_spin"));
 
-    page = (int)gtk_spin_button_get_value(GTK_SPIN_BUTTON(spin));
+    page = static_cast<int>(gtk_spin_button_get_value(GTK_SPIN_BUTTON(spin)));
 
     inspector->analyze_page(page);
 }
@@ -228,7 +228,7 @@ void PdfInspector::load(const char *file_name)
     }
 
     if (doc && !doc->isOk()) {
-        this->error_dialog("Failed to load file.");
+        PdfInspector::error_dialog("Failed to load file.");
         delete doc;
         doc = nullptr;
     }

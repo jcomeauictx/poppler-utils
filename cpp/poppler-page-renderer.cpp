@@ -3,8 +3,10 @@
  * Copyright (C) 2015 William Bader <williambader@hotmail.com>
  * Copyright (C) 2018, Zsombor Hollay-Horvath <hollay.horvath@gmail.com>
  * Copyright (C) 2019, Julián Unrrein <junrrein@gmail.com>
- * Copyright (C) 2020, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2020, 2026, Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2021, Hubert Figuiere <hub@figuiere.net>
+ * Copyright (C) 2026, g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+ * Copyright (C) 2026, Trevor L Davis <trevor.l.davis@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -42,15 +44,15 @@ using namespace poppler;
 class poppler::page_renderer_private
 {
 public:
-    page_renderer_private() : paper_color(0xffffffff), hints(0), image_format(image::format_enum::format_argb32), line_mode(page_renderer::line_mode_enum::line_default) { }
+    page_renderer_private() = default;
 
     static bool conv_color_mode(image::format_enum mode, SplashColorMode &splash_mode);
     static bool conv_line_mode(page_renderer::line_mode_enum mode, SplashThinLineMode &splash_mode);
 
-    argb paper_color;
-    unsigned int hints;
-    image::format_enum image_format;
-    page_renderer::line_mode_enum line_mode;
+    argb paper_color = 0xffffffff;
+    unsigned int hints = 0;
+    image::format_enum image_format = image::format_enum::format_argb32;
+    page_renderer::line_mode_enum line_mode = page_renderer::line_mode_enum::line_default;
 };
 
 bool page_renderer_private::conv_color_mode(image::format_enum mode, SplashColorMode &splash_mode)
@@ -167,7 +169,7 @@ void page_renderer::set_render_hint(page_renderer::render_hint hint, bool on)
     if (on) {
         d->hints |= hint;
     } else {
-        d->hints &= ~(int)hint;
+        d->hints &= ~static_cast<int>(hint);
     }
 }
 
@@ -259,12 +261,12 @@ image page_renderer::render_page(const page *p, double xres, double yres, int x,
     }
 
     page_private *pp = page_private::get(p);
-    PDFDoc *pdfdoc = pp->doc->doc;
+    PDFDoc *pdfdoc = pp->doc->doc.get();
 
     SplashColorMode colorMode;
     SplashThinLineMode lineMode;
 
-    if (!d->conv_color_mode(d->image_format, colorMode) || !d->conv_line_mode(d->line_mode, lineMode)) {
+    if (!poppler::page_renderer_private::conv_color_mode(d->image_format, colorMode) || !poppler::page_renderer_private::conv_line_mode(d->line_mode, lineMode)) {
         return image();
     }
 
@@ -272,18 +274,23 @@ image page_renderer::render_page(const page *p, double xres, double yres, int x,
     bgColor[0] = d->paper_color & 0xff;
     bgColor[1] = (d->paper_color >> 8) & 0xff;
     bgColor[2] = (d->paper_color >> 16) & 0xff;
-    SplashOutputDev splashOutputDev(colorMode, 4, false, bgColor, true, lineMode);
-    splashOutputDev.setFontAntialias(d->hints & text_antialiasing ? true : false);
-    splashOutputDev.setVectorAntialias(d->hints & antialiasing ? true : false);
-    splashOutputDev.setFreeTypeHinting(d->hints & text_hinting ? true : false, false);
+    const bool ignorePaperColor = (d->hints & ignore_paper_color);
+    SplashOutputDev splashOutputDev(colorMode, 4, ignorePaperColor ? nullptr : bgColor, true, lineMode);
+    splashOutputDev.setFontAntialias((d->hints & text_antialiasing) != 0);
+    splashOutputDev.setVectorAntialias((d->hints & antialiasing) != 0);
+    splashOutputDev.setFreeTypeHinting((d->hints & text_hinting) != 0, false);
     splashOutputDev.startDoc(pdfdoc);
-    pdfdoc->displayPageSlice(&splashOutputDev, pp->index + 1, xres, yres, int(rotate) * 90, false, true, false, x, y, w, h, nullptr, nullptr, nullptr, nullptr, true);
+    pdfdoc->displayPageSlice(&splashOutputDev, pp->index + 1, xres, yres, static_cast<int>(rotate) * 90, false, true, false, x, y, w, h, nullptr, nullptr, nullptr, nullptr, true);
 
     SplashBitmap *bitmap = splashOutputDev.getBitmap();
     const int bw = bitmap->getWidth();
     const int bh = bitmap->getHeight();
 
     SplashColorPtr data_ptr = bitmap->getDataPtr();
+
+    if (ignorePaperColor && colorMode == splashModeXBGR8) {
+        bitmap->convertToXBGR(SplashBitmap::conversionAlpha);
+    }
 
     const image img(reinterpret_cast<char *>(data_ptr), bw, bh, d->image_format);
     return img.copy();

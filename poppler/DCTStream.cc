@@ -5,7 +5,7 @@
 // This file is licensed under the GPLv2 or later
 //
 // Copyright 2005 Jeff Muizelaar <jeff@infidigm.net>
-// Copyright 2005-2010, 2012, 2017, 2020-2023 Albert Astals Cid <aacid@kde.org>
+// Copyright 2005-2010, 2012, 2017, 2020-2023, 2025 Albert Astals Cid <aacid@kde.org>
 // Copyright 2009 Ryszard Trojnacki <rysiek@menel.com>
 // Copyright 2010 Carlos Garcia Campos <carlosgc@gnome.org>
 // Copyright 2011 Daiki Ueno <ueno@unixuser.org>
@@ -13,17 +13,20 @@
 // Copyright 2012, 2013 Thomas Freitag <Thomas.Freitag@alfa.de>
 // Copyright 2017 Adrian Johnson <ajohnson@redneon.com>
 // Copyright 2020 Lluís Batlle i Rossell <viric@viric.name>
+// Copyright 2025 Nelson Benítez León <nbenitezl@gmail.com>
+// Copyright 2025, 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2025 Arnav V <arnav0872@gmail.com>
 //
 //========================================================================
 
 #include "DCTStream.h"
 
-static void str_init_source(j_decompress_ptr cinfo) { }
+static void str_init_source(j_decompress_ptr /*cinfo*/) { }
 
 static boolean str_fill_input_buffer(j_decompress_ptr cinfo)
 {
     int c;
-    struct str_src_mgr *src = (struct str_src_mgr *)cinfo->src;
+    auto *src = reinterpret_cast<struct str_src_mgr *>(cinfo->src);
     if (src->index == 0) {
         c = 0xFF;
         src->index++;
@@ -38,27 +41,30 @@ static boolean str_fill_input_buffer(j_decompress_ptr cinfo)
     src->pub.bytes_in_buffer = 1;
     if (c != EOF) {
         return TRUE;
-    } else {
-        return FALSE;
     }
+    return FALSE;
 }
 
-static void str_skip_input_data(j_decompress_ptr cinfo, long num_bytes)
+static void str_skip_input_data(j_decompress_ptr cinfo, long num_bytes_l)
 {
-    struct str_src_mgr *src = (struct str_src_mgr *)cinfo->src;
-    if (num_bytes > 0) {
-        while (num_bytes > (long)src->pub.bytes_in_buffer) {
-            num_bytes -= (long)src->pub.bytes_in_buffer;
-            str_fill_input_buffer(cinfo);
-        }
-        src->pub.next_input_byte += (size_t)num_bytes;
-        src->pub.bytes_in_buffer -= (size_t)num_bytes;
+    if (num_bytes_l <= 0) {
+        return;
     }
+
+    size_t num_bytes = num_bytes_l;
+
+    auto *src = reinterpret_cast<struct str_src_mgr *>(cinfo->src);
+    while (num_bytes > src->pub.bytes_in_buffer) {
+        num_bytes -= src->pub.bytes_in_buffer;
+        str_fill_input_buffer(cinfo);
+    }
+    src->pub.next_input_byte += num_bytes;
+    src->pub.bytes_in_buffer -= num_bytes;
 }
 
-static void str_term_source(j_decompress_ptr cinfo) { }
+static void str_term_source(j_decompress_ptr /*cinfo*/) { }
 
-DCTStream::DCTStream(Stream *strA, int colorXformA, Dict *dict, int recursion) : FilterStream(strA)
+DCTStream::DCTStream(std::unique_ptr<Stream> strA, int colorXformA, Dict *dict, int recursion) : OwnedFilterStream(std::move(strA))
 {
     colorXform = colorXformA;
     if (dict != nullptr) {
@@ -75,13 +81,12 @@ DCTStream::DCTStream(Stream *strA, int colorXformA, Dict *dict, int recursion) :
 DCTStream::~DCTStream()
 {
     jpeg_destroy_decompress(&cinfo);
-    delete str;
 }
 
 static void exitErrorHandler(jpeg_common_struct *error)
 {
-    j_decompress_ptr cinfo = (j_decompress_ptr)error;
-    str_error_mgr *err = (struct str_error_mgr *)cinfo->err;
+    auto *cinfo = reinterpret_cast<j_decompress_ptr>(error);
+    auto *err = reinterpret_cast<struct str_error_mgr *>(cinfo->err);
     if (cinfo->err->msg_code == JERR_IMAGE_TOO_BIG && err->width != 0 && err->height != 0) {
         cinfo->image_height = err->height;
         cinfo->image_width = err->width;
@@ -109,16 +114,16 @@ void DCTStream::init()
     cinfo.err = &err.pub;
     if (!setjmp(err.setjmp_buffer)) {
         jpeg_create_decompress(&cinfo);
-        cinfo.src = (jpeg_source_mgr *)&src;
+        cinfo.src = reinterpret_cast<jpeg_source_mgr *>(&src);
     }
     row_buffer = nullptr;
 }
 
-void DCTStream::reset()
+bool DCTStream::rewind()
 {
     int row_stride;
 
-    str->reset();
+    bool success = str->rewind();
 
     if (row_buffer) {
         jpeg_destroy_decompress(&cinfo);
@@ -137,7 +142,7 @@ void DCTStream::reset()
             c = str->getChar();
             if (c == -1) {
                 error(errSyntaxError, -1, "Could not find start of jpeg data");
-                return;
+                return false;
             }
             if (c != 0xFF) {
                 c = 0;
@@ -160,7 +165,8 @@ void DCTStream::reset()
                 if (cinfo.num_components == 3) {
                     if (cinfo.saw_JFIF_marker) {
                         colorXform = 1;
-                    } else if (cinfo.cur_comp_info[0]->component_id == 82 && cinfo.cur_comp_info[1]->component_id == 71 && cinfo.cur_comp_info[2]->component_id == 66) { // ASCII "RGB"
+                    } else if (cinfo.cur_comp_info[0] && cinfo.cur_comp_info[1] && cinfo.cur_comp_info[2] && cinfo.cur_comp_info[0]->component_id == 82 && cinfo.cur_comp_info[1]->component_id == 71
+                               && cinfo.cur_comp_info[2]->component_id == 66) { // ASCII "RGB"
                         colorXform = 0;
                     } else {
                         colorXform = 1;
@@ -184,9 +190,11 @@ void DCTStream::reset()
             jpeg_start_decompress(&cinfo);
 
             row_stride = cinfo.output_width * cinfo.output_components;
-            row_buffer = cinfo.mem->alloc_sarray((j_common_ptr)&cinfo, JPOOL_IMAGE, row_stride, 1);
+            row_buffer = cinfo.mem->alloc_sarray(reinterpret_cast<j_common_ptr>(&cinfo), JPOOL_IMAGE, row_stride, 1);
         }
     }
+
+    return success;
 }
 
 bool DCTStream::readLine()
@@ -195,17 +203,14 @@ bool DCTStream::readLine()
         if (!setjmp(err.setjmp_buffer)) {
             if (!jpeg_read_scanlines(&cinfo, row_buffer, 1)) {
                 return false;
-            } else {
-                current = &row_buffer[0][0];
-                limit = &row_buffer[0][(cinfo.output_width - 1) * cinfo.output_components] + cinfo.output_components;
-                return true;
             }
-        } else {
-            return false;
+            current = &row_buffer[0][0];
+            limit = &row_buffer[0][(cinfo.output_width - 1) * cinfo.output_components] + cinfo.output_components;
+            return true;
         }
-    } else {
         return false;
     }
+    return false;
 }
 
 int DCTStream::getChar()
@@ -246,21 +251,21 @@ int DCTStream::lookChar()
     return *current;
 }
 
-GooString *DCTStream::getPSFilter(int psLevel, const char *indent)
+std::optional<std::string> DCTStream::getPSFilter(int psLevel, const char *indent)
 {
-    GooString *s;
+    std::optional<std::string> s;
 
     if (psLevel < 2) {
-        return nullptr;
+        return {};
     }
     if (!(s = str->getPSFilter(psLevel, indent))) {
-        return nullptr;
+        return {};
     }
-    s->append(indent)->append("<< >> /DCTDecode filter\n");
+    s->append(indent).append("<< >> /DCTDecode filter\n");
     return s;
 }
 
-bool DCTStream::isBinary(bool last) const
+bool DCTStream::isBinary(bool /*last*/) const
 {
     return str->isBinary(true);
 }

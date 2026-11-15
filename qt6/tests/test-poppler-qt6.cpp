@@ -21,9 +21,9 @@ public:
     void display();
 
 protected:
-    void paintEvent(QPaintEvent *) override;
-    void keyPressEvent(QKeyEvent *) override;
-    void mousePressEvent(QMouseEvent *) override;
+    void paintEvent(QPaintEvent *event) override;
+    void keyPressEvent(QKeyEvent *e) override;
+    void mousePressEvent(QMouseEvent *e) override;
 
 private:
     int m_currentPage;
@@ -81,9 +81,9 @@ void PDFDisplay::display()
     }
 }
 
-PDFDisplay::~PDFDisplay() { }
+PDFDisplay::~PDFDisplay() = default;
 
-void PDFDisplay::paintEvent(QPaintEvent *e)
+void PDFDisplay::paintEvent(QPaintEvent * /*e*/)
 {
     QPainter paint(this); // paint widget
     if (!image.isNull()) {
@@ -167,7 +167,7 @@ int main(int argc, char **argv)
 
     if (doc->hasEmbeddedFiles()) {
         qDebug() << "Embedded files:";
-        foreach (Poppler::EmbeddedFile *file, doc->embeddedFiles()) {
+        Q_FOREACH (Poppler::EmbeddedFile *file, doc->embeddedFiles()) {
             qDebug() << "   " << file->name();
         }
         qDebug();
@@ -195,14 +195,13 @@ int main(int argc, char **argv)
         test.display();
         test.show(); // show it
 
-        return a.exec(); // start event loop
-    } else {
-        std::unique_ptr<Poppler::Page> page = doc->page(0);
-
-        QLabel *l = new QLabel(page->text(QRectF()), nullptr);
-        l->show();
-        return a.exec();
+        return QApplication::exec(); // start event loop
     }
+    std::unique_ptr<Poppler::Page> page = doc->page(0);
+
+    auto *l = new QLabel(page->text(QRectF()), nullptr);
+    l->show();
+    return QApplication::exec();
 }
 
 #include "test-poppler-qt6.moc"

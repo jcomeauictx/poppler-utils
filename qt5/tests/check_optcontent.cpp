@@ -2,6 +2,7 @@
 
 #include "PDFDoc.h"
 #include "GlobalParams.h"
+#include "OptionalContent.h"
 
 #include <poppler-qt5.h>
 #include <poppler-optcontent-private.h>
@@ -11,19 +12,19 @@ class TestOptionalContent : public QObject
     Q_OBJECT
 public:
     explicit TestOptionalContent(QObject *parent = nullptr) : QObject(parent) { }
-private slots:
-    void checkVisPolicy();
-    void checkNestedLayers();
-    void checkNoOptionalContent();
-    void checkIsVisible();
-    void checkVisibilitySetting();
-    void checkRadioButtons();
+private Q_SLOTS:
+    static void checkVisPolicy();
+    static void checkNestedLayers();
+    static void checkNoOptionalContent();
+    static void checkIsVisible();
+    static void checkVisibilitySetting();
+    static void checkRadioButtons();
 };
 
 void TestOptionalContent::checkVisPolicy()
 {
     Poppler::Document *doc;
-    doc = Poppler::Document::load(TESTDATADIR "/unittestcases/vis_policy_test.pdf");
+    doc = Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/vis_policy_test.pdf"));
     QVERIFY(doc);
 
     QVERIFY(doc->hasOptionalContent());
@@ -43,7 +44,7 @@ void TestOptionalContent::checkVisPolicy()
 void TestOptionalContent::checkNestedLayers()
 {
     Poppler::Document *doc;
-    doc = Poppler::Document::load(TESTDATADIR "/unittestcases/NestedLayers.pdf");
+    doc = Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/NestedLayers.pdf"));
     QVERIFY(doc);
 
     QVERIFY(doc->hasOptionalContent());
@@ -78,7 +79,7 @@ void TestOptionalContent::checkNestedLayers()
 void TestOptionalContent::checkNoOptionalContent()
 {
     Poppler::Document *doc;
-    doc = Poppler::Document::load(TESTDATADIR "/unittestcases/orientation.pdf");
+    doc = Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/orientation.pdf"));
     QVERIFY(doc);
 
     QCOMPARE(doc->hasOptionalContent(), false);
@@ -89,10 +90,10 @@ void TestOptionalContent::checkNoOptionalContent()
 void TestOptionalContent::checkIsVisible()
 {
     globalParams = std::make_unique<GlobalParams>();
-    PDFDoc *doc = new PDFDoc(std::make_unique<GooString>(TESTDATADIR "/unittestcases/vis_policy_test.pdf"));
+    auto *doc = new PDFDoc(std::make_unique<GooString>(TESTDATADIR "/unittestcases/vis_policy_test.pdf"));
     QVERIFY(doc);
 
-    OCGs *ocgs = doc->getOptContentConfig();
+    const OCGs *ocgs = doc->getOptContentConfig();
     QVERIFY(ocgs);
 
     XRef *xref = doc->getXRef();
@@ -161,10 +162,10 @@ void TestOptionalContent::checkIsVisible()
 void TestOptionalContent::checkVisibilitySetting()
 {
     globalParams = std::make_unique<GlobalParams>();
-    PDFDoc *doc = new PDFDoc(std::make_unique<GooString>(TESTDATADIR "/unittestcases/vis_policy_test.pdf"));
+    auto *doc = new PDFDoc(std::make_unique<GooString>(TESTDATADIR "/unittestcases/vis_policy_test.pdf"));
     QVERIFY(doc);
 
-    OCGs *ocgs = doc->getOptContentConfig();
+    const OCGs *ocgs = doc->getOptContentConfig();
     QVERIFY(ocgs);
 
     XRef *xref = doc->getXRef();
@@ -173,20 +174,20 @@ void TestOptionalContent::checkVisibilitySetting()
 
     // In this test, both Ref(21,0) and Ref(28,0) start On,
     // based on the file settings
-    Object ref21obj(Ref { 21, 0 });
+    Object ref21obj(Ref { .num = 21, .gen = 0 });
     Ref ref21 = ref21obj.getRef();
     OptionalContentGroup *ocgA = ocgs->findOcgByRef(ref21);
     QVERIFY(ocgA);
 
-    QVERIFY((ocgA->getName()->cmp("A")) == 0);
+    QVERIFY((ocgA->getName()->compare("A")) == 0);
     QCOMPARE(ocgA->getState(), OptionalContentGroup::On);
 
-    Object ref28obj(Ref { 28, 0 });
+    Object ref28obj(Ref { .num = 28, .gen = 0 });
     Ref ref28 = ref28obj.getRef();
     OptionalContentGroup *ocgB = ocgs->findOcgByRef(ref28);
     QVERIFY(ocgB);
 
-    QVERIFY((ocgB->getName()->cmp("B")) == 0);
+    QVERIFY((ocgB->getName()->compare("B")) == 0);
     QCOMPARE(ocgB->getState(), OptionalContentGroup::On);
 
     // turn one Off
@@ -364,7 +365,7 @@ void TestOptionalContent::checkVisibilitySetting()
 void TestOptionalContent::checkRadioButtons()
 {
     Poppler::Document *doc;
-    doc = Poppler::Document::load(TESTDATADIR "/unittestcases/ClarityOCGs.pdf");
+    doc = Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/ClarityOCGs.pdf"));
     QVERIFY(doc);
 
     QVERIFY(doc->hasOptionalContent());

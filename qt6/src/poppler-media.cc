@@ -1,6 +1,8 @@
 /* poppler-media.cc: qt interface to poppler
  * Copyright (C) 2012 Guillermo A. Amaral B. <gamaral@kde.org>
- * Copyright (C) 2013, 2018, 2021, 2024 Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2013, 2018, 2021, 2024, 2026 Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2025, 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+ * Copyright (C) 2025 Arnav V <arnav0872@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,7 +27,7 @@
 
 #include <QtCore/QBuffer>
 
-#define BUFFER_MAX 4096
+constexpr int BUFFER_MAX = 4096;
 
 namespace Poppler {
 
@@ -88,12 +90,15 @@ QByteArray MediaRendition::data() const
         return QByteArray();
     }
 
+    if (!s->rewind()) {
+        return QByteArray {};
+    }
+
     QBuffer buffer;
     unsigned char data[BUFFER_MAX];
     int bread;
 
     buffer.open(QIODevice::WriteOnly);
-    s->reset();
     while ((bread = s->doGetChars(BUFFER_MAX, data)) != 0) {
         buffer.write(reinterpret_cast<const char *>(data), bread);
     }
@@ -107,11 +112,12 @@ bool MediaRendition::autoPlay() const
     Q_D(const MediaRendition);
     if (d->rendition->getBEParameters()) {
         return d->rendition->getBEParameters()->autoPlay;
-    } else if (d->rendition->getMHParameters()) {
-        return d->rendition->getMHParameters()->autoPlay;
-    } else {
-        qDebug("No BE or MH parameters to reference!");
     }
+    if (d->rendition->getMHParameters()) {
+        return d->rendition->getMHParameters()->autoPlay;
+    }
+    qDebug("No BE or MH parameters to reference!");
+
     return false;
 }
 
@@ -120,11 +126,12 @@ bool MediaRendition::showControls() const
     Q_D(const MediaRendition);
     if (d->rendition->getBEParameters()) {
         return d->rendition->getBEParameters()->showControls;
-    } else if (d->rendition->getMHParameters()) {
-        return d->rendition->getMHParameters()->showControls;
-    } else {
-        qDebug("No BE or MH parameters to reference!");
     }
+    if (d->rendition->getMHParameters()) {
+        return d->rendition->getMHParameters()->showControls;
+    }
+    qDebug("No BE or MH parameters to reference!");
+
     return false;
 }
 
@@ -133,18 +140,19 @@ float MediaRendition::repeatCount() const
     Q_D(const MediaRendition);
     if (d->rendition->getBEParameters()) {
         return d->rendition->getBEParameters()->repeatCount;
-    } else if (d->rendition->getMHParameters()) {
-        return d->rendition->getMHParameters()->repeatCount;
-    } else {
-        qDebug("No BE or MH parameters to reference!");
     }
-    return 1.f;
+    if (d->rendition->getMHParameters()) {
+        return d->rendition->getMHParameters()->repeatCount;
+    }
+    qDebug("No BE or MH parameters to reference!");
+
+    return 1.F;
 }
 
 QSize MediaRendition::size() const
 {
     Q_D(const MediaRendition);
-    const MediaParameters *mp = nullptr;
+    std::optional<MediaParameters> mp;
 
     if (d->rendition->getBEParameters()) {
         mp = d->rendition->getBEParameters();

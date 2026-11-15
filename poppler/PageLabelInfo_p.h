@@ -3,11 +3,12 @@
 // This file is under the GPLv2 or later license
 //
 // Copyright (C) 2005-2006 Kristian Høgsberg <krh@redhat.com>
-// Copyright (C) 2005, 2009, 2014, 2019, 2020, 2022 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2005, 2009, 2014, 2019, 2020, 2022, 2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2011 Simon Kellner <kellner@kit.edu>
 // Copyright (C) 2012 Fabio D'Urso <fabiodurso@hotmail.it>
 // Copyright (C) 2018 Adam Reichold <adam.reichold@t-online.de>
 // Copyright (C) 2019, 2024 Oliver Sander <oliver.sander@tu-dresden.de>
+// Copyright (C) 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -21,6 +22,7 @@
 
 #include "config.h"
 
+#include "goo/GooLikely.h"
 #include "goo/GooString.h"
 #include "Error.h"
 #include "UTF.h"
@@ -111,7 +113,7 @@ static int fromRoman(const char *buffer)
     return value;
 }
 
-static void toRoman(int number, GooString *str, bool uppercase)
+static void toRoman(int number, std::string *str, bool uppercase)
 {
     static const char uppercaseNumerals[] = "IVXLCDM";
     static const char lowercaseNumerals[] = "ivxlcdm";
@@ -139,23 +141,23 @@ static void toRoman(int number, GooString *str, bool uppercase)
         case 0:
             break;
         case 5:
-            str->append(wh[2 * k + 1]);
+            str->push_back(wh[2 * k + 1]);
             break;
         case 9:
-            str->append(wh[2 * k + 0]);
-            str->append(wh[2 * k + 2]);
+            str->push_back(wh[2 * k + 0]);
+            str->push_back(wh[2 * k + 2]);
             break;
         case 4:
-            str->append(wh[2 * k + 0]);
-            str->append(wh[2 * k + 1]);
+            str->push_back(wh[2 * k + 0]);
+            str->push_back(wh[2 * k + 1]);
             break;
         default:
             if (i > 5) {
-                str->append(wh[2 * k + 1]);
+                str->push_back(wh[2 * k + 1]);
                 i -= 5;
             }
             for (j = 0; j < i; j++) {
-                str->append(wh[2 * k + 0]);
+                str->push_back(wh[2 * k + 0]);
             }
         }
 
@@ -189,7 +191,7 @@ static int fromLatin(const char *buffer)
     return -1;
 }
 
-static void toLatin(int number, GooString *str, bool uppercase)
+static void toLatin(int number, std::string *str, bool uppercase)
 {
     char base, letter;
     int i, count;
@@ -204,7 +206,7 @@ static void toLatin(int number, GooString *str, bool uppercase)
     letter = base + (number - 1) % 26;
 
     for (i = 0; i < count; i++) {
-        str->append(letter);
+        str->push_back(letter);
     }
 }
 

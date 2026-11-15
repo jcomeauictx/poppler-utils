@@ -3,10 +3,12 @@
 // ImageEmbeddingUtils.cc
 //
 // Copyright (C) 2021 Georgiy Sgibnev <georgiy@sgibnev.com>. Work sponsored by lab50.net.
-// Copyright (C) 2021, 2022 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2021, 2022, 2025 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2021 Marco Genasci <fedeliallalinea@gmail.com>
 // Copyright (C) 2023 Jordan Abrahams-Whitehead <ajordanr@google.com>
-// Copyright (C) 2024 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2024-2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2026 Aditya Tiwari <suntiwari3495@gmail.com>
+// Copyright (C) 2026 Stefan Brüns <stefan.bruens@rwth-aachen.de>
 //
 // This file is licensed under the GPLv2 or later
 //
@@ -15,19 +17,18 @@
 #include <config.h>
 
 #include <memory>
-#ifdef ENABLE_LIBJPEG
-#    include <cstdio>
+#if ENABLE_LIBJPEG
+#    include <cstdio> // jpeglib.h is broken on purpose and needs cstdio include before it
 extern "C" {
 #    include <jpeglib.h>
 }
 #    include <csetjmp>
 #endif
-#ifdef ENABLE_LIBPNG
+#if ENABLE_LIBPNG
 #    include <png.h>
 #endif
 
 #include "ImageEmbeddingUtils.h"
-#include "goo/gmem.h"
 #include "goo/GooCheckedOps.h"
 #include "Object.h"
 #include "Array.h"
@@ -41,7 +42,7 @@ static const uint8_t JPEG_MAGIC_NUM[] = { 0xff, 0xd8, 0xff };
 static const uint8_t JPEG2000_MAGIC_NUM[] = { 0x00, 0x00, 0x00, 0x0c, 0x6a, 0x50, 0x20, 0x20 };
 static const Goffset MAX_MAGIC_NUM_SIZE = sizeof(JPEG2000_MAGIC_NUM);
 
-static bool checkMagicNum(const uint8_t *fileContent, const uint8_t *magicNum, const uint8_t size)
+static bool checkMagicNum(const char *fileContent, const uint8_t *magicNum, const uint8_t size)
 {
     return (memcmp(fileContent, magicNum, size) == 0);
 }
@@ -59,12 +60,12 @@ protected:
     ImageEmbedder(const int width, const int height) : m_width(width), m_height(height) { }
 
     // Creates an object of type XObject. You own the returned ptr.
-    static Dict *createImageDict(XRef *xref, const char *colorSpace, const int width, const int height, const int bitsPerComponent)
+    static std::unique_ptr<Dict> createImageDict(XRef *xref, const char *colorSpace, const int width, const int height, const int bitsPerComponent)
     {
-        Dict *imageDict = new Dict(xref);
-        imageDict->add("Type", Object(objName, "XObject"));
-        imageDict->add("Subtype", Object(objName, "Image"));
-        imageDict->add("ColorSpace", Object(objName, colorSpace));
+        auto imageDict = std::make_unique<Dict>(xref);
+        imageDict->add("Type", Object::name("XObject"));
+        imageDict->add("Subtype", Object::name("Image"));
+        imageDict->add("ColorSpace", Object::name(colorSpace));
         imageDict->add("Width", Object(width));
         imageDict->add("Height", Object(height));
         imageDict->add("BitsPerComponent", Object(bitsPerComponent));
@@ -84,7 +85,7 @@ public:
 
 ImageEmbedder::~ImageEmbedder() { }
 
-#ifdef ENABLE_LIBPNG
+#if ENABLE_LIBPNG
 // Transforms a PNG image to XObject.
 class PngEmbedder : public ImageEmbedder
 {
@@ -92,8 +93,8 @@ class PngEmbedder : public ImageEmbedder
     // Used with png_set_read_fn().
     class LibpngInputStream
     {
-        std::unique_ptr<uint8_t[]> m_fileContent;
-        uint8_t *m_iterator;
+        std::vector<char> m_fileContent;
+        char *m_iterator;
         png_size_t m_remainingSize;
 
         void read(png_bytep out, const png_size_t size)
@@ -105,7 +106,7 @@ class PngEmbedder : public ImageEmbedder
         }
 
     public:
-        LibpngInputStream(std::unique_ptr<uint8_t[]> &&fileContent, const Goffset size) : m_fileContent(std::move(fileContent)), m_iterator(m_fileContent.get()), m_remainingSize(size) { }
+        explicit LibpngInputStream(std::vector<char> &&fileContent) : m_fileContent(std::move(fileContent)), m_iterator(m_fileContent.data()), m_remainingSize(m_fileContent.size()) { }
         LibpngInputStream() = delete;
         LibpngInputStream(const LibpngInputStream &) = delete;
         LibpngInputStream &operator=(const LibpngInputStream &) = delete;
@@ -114,7 +115,7 @@ class PngEmbedder : public ImageEmbedder
         // Pass this static function to png_set_read_fn().
         static void readCallback(png_structp png, png_bytep out, png_size_t size)
         {
-            LibpngInputStream *stream = (LibpngInputStream *)png_get_io_ptr(png);
+            auto *stream = static_cast<LibpngInputStream *>(png_get_io_ptr(png));
             if (stream) {
                 stream->read(out, size);
             }
@@ -123,7 +124,7 @@ class PngEmbedder : public ImageEmbedder
 
     png_structp m_png;
     png_infop m_info;
-    LibpngInputStream *m_stream;
+    std::unique_ptr<LibpngInputStream> m_stream;
     const png_byte m_type;
     const bool m_hasAlpha;
     // Number of color channels.
@@ -135,11 +136,16 @@ class PngEmbedder : public ImageEmbedder
     // Should be 1 or 2.
     const png_byte m_byteDepth;
 
-    PngEmbedder(png_structp png, png_infop info, LibpngInputStream *stream)
+    struct PrivateTag
+    {
+    };
+
+public:
+    PngEmbedder(png_structp png, png_infop info, std::unique_ptr<LibpngInputStream> stream, PrivateTag /*unused*/ = {})
         : ImageEmbedder(png_get_image_width(png, info), png_get_image_height(png, info)),
           m_png(png),
           m_info(info),
-          m_stream(stream),
+          m_stream(std::move(stream)),
           m_type(png_get_color_type(m_png, m_info)),
           m_hasAlpha(m_type & PNG_COLOR_MASK_ALPHA),
           m_n(png_get_channels(m_png, m_info)),
@@ -149,12 +155,13 @@ class PngEmbedder : public ImageEmbedder
     {
     }
 
+private:
     // Reads pixels into mainBuffer (RGB/gray channels) and maskBuffer (alpha channel).
     void readPixels(png_bytep mainBuffer, png_bytep maskBuffer)
     {
         // Read pixels from m_png.
         const int rowSize = png_get_rowbytes(m_png, m_info);
-        png_bytepp pixels = new png_bytep[m_height];
+        auto *pixels = new png_bytep[m_height];
         for (int y = 0; y < m_height; y++) {
             pixels[y] = new png_byte[rowSize];
         }
@@ -217,15 +224,11 @@ public:
     PngEmbedder() = delete;
     PngEmbedder(const PngEmbedder &) = delete;
     PngEmbedder &operator=(const PngEmbedder &) = delete;
-    ~PngEmbedder() override
-    {
-        png_destroy_read_struct(&m_png, &m_info, nullptr);
-        delete m_stream;
-    }
+    ~PngEmbedder() override { png_destroy_read_struct(&m_png, &m_info, nullptr); }
 
     Ref embedImage(XRef *xref) override;
 
-    static std::unique_ptr<ImageEmbedder> create(std::unique_ptr<uint8_t[]> &&fileContent, const Goffset fileSize)
+    static std::unique_ptr<ImageEmbedder> create(std::vector<char> &&fileContent)
     {
         png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
         if (png == nullptr) {
@@ -238,24 +241,22 @@ public:
             png_destroy_read_struct(&png, nullptr, nullptr);
             return nullptr;
         }
+        auto stream = std::make_unique<LibpngInputStream>(std::move(fileContent));
         if (setjmp(png_jmpbuf(png))) {
-            error(errInternal, -1, "Couldn't load PNG. Failed to set up error handling for reading PNG");
+            error(errInternal, -1, "Couldn't load PNG. libpng error while reading PNG info");
             png_destroy_read_struct(&png, &info, nullptr);
             return nullptr;
         }
-
-        LibpngInputStream *stream = new LibpngInputStream(std::move(fileContent), fileSize);
-        png_set_read_fn(png, stream, LibpngInputStream::readCallback);
+        png_set_read_fn(png, stream.get(), LibpngInputStream::readCallback);
         png_read_info(png, info);
         fixPng(png, info);
         const png_byte bitDepth = png_get_bit_depth(png, info);
         if ((bitDepth != 8) && (bitDepth != 16)) {
             error(errInternal, -1, "Couldn't load PNG. Fixing bit depth failed");
             png_destroy_read_struct(&png, &info, nullptr);
-            delete stream;
             return nullptr;
         }
-        return std::unique_ptr<ImageEmbedder>(new PngEmbedder(png, info, stream));
+        return std::make_unique<PngEmbedder>(png, info, std::move(stream));
     }
 };
 
@@ -279,23 +280,25 @@ Ref PngEmbedder::embedImage(XRef *xref)
         error(errIO, -1, "PngEmbedder::embedImage: width * height * m_byteDepth * m_nWithoutAlpha overflows Goffset");
         return Ref::INVALID();
     }
-    png_bytep mainBuffer = (png_bytep)gmalloc(mainBufferSize);
-    png_bytep maskBuffer = (m_hasAlpha) ? (png_bytep)gmalloc(maskBufferSize) : nullptr;
-    readPixels(mainBuffer, maskBuffer);
+    std::vector<char> mainBuffer;
+    mainBuffer.resize(mainBufferSize);
+    std::vector<char> maskBuffer;
+    maskBuffer.resize((m_hasAlpha) ? maskBufferSize : 0);
+    readPixels(reinterpret_cast<png_bytep>(mainBuffer.data()), reinterpret_cast<png_bytep>(maskBuffer.data()));
 
     // Create a mask XObject and a main XObject.
     const char *colorSpace = ((m_type == PNG_COLOR_TYPE_GRAY) || (m_type == PNG_COLOR_TYPE_GRAY_ALPHA)) ? DEVICE_GRAY : DEVICE_RGB;
-    Dict *baseImageDict = createImageDict(xref, colorSpace, m_width, m_height, m_bitDepth);
+    std::unique_ptr<Dict> baseImageDict = createImageDict(xref, colorSpace, m_width, m_height, m_bitDepth);
     if (m_hasAlpha) {
-        Dict *maskImageDict = createImageDict(xref, DEVICE_GRAY, m_width, m_height, m_bitDepth);
-        Ref maskImageRef = xref->addStreamObject(maskImageDict, maskBuffer, maskBufferSize, StreamCompression::Compress);
+        std::unique_ptr<Dict> maskImageDict = createImageDict(xref, DEVICE_GRAY, m_width, m_height, m_bitDepth);
+        Ref maskImageRef = xref->addStreamObject(std::move(maskImageDict), std::move(maskBuffer), StreamCompression::Compress);
         baseImageDict->add("SMask", Object(maskImageRef));
     }
-    return xref->addStreamObject(baseImageDict, mainBuffer, mainBufferSize, StreamCompression::Compress);
+    return xref->addStreamObject(std::move(baseImageDict), std::move(mainBuffer), StreamCompression::Compress);
 }
 #endif
 
-#ifdef ENABLE_LIBJPEG
+#if ENABLE_LIBJPEG
 
 struct JpegErrorManager
 {
@@ -306,7 +309,7 @@ struct JpegErrorManager
 // Note: an address of pub is equal to an address of a JpegErrorManager instance.
 static void jpegExitErrorHandler(j_common_ptr info)
 {
-    JpegErrorManager *errorManager = (JpegErrorManager *)info->err;
+    auto *errorManager = reinterpret_cast<JpegErrorManager *>(info->err);
     (*errorManager->pub.output_message)(info);
     // Jump to the setjmp point.
     longjmp(errorManager->setjmpBuffer, 1);
@@ -315,12 +318,15 @@ static void jpegExitErrorHandler(j_common_ptr info)
 // Transforms a JPEG image to XObject.
 class JpegEmbedder : public ImageEmbedder
 {
-    std::unique_ptr<uint8_t[]> m_fileContent;
-    Goffset m_fileSize;
+    std::vector<char> m_fileContent;
 
-    JpegEmbedder(const int width, const int height, std::unique_ptr<uint8_t[]> &&fileContent, const Goffset fileSize) : ImageEmbedder(width, height), m_fileContent(std::move(fileContent)), m_fileSize(fileSize) { }
+    class PrivateTag
+    {
+    };
 
 public:
+    JpegEmbedder(const int width, const int height, std::vector<char> &&fileContent, PrivateTag /*unused*/ = {}) : ImageEmbedder(width, height), m_fileContent(std::move(fileContent)) { }
+
     JpegEmbedder() = delete;
     JpegEmbedder(const JpegEmbedder &) = delete;
     JpegEmbedder &operator=(const JpegEmbedder &) = delete;
@@ -328,7 +334,7 @@ public:
 
     Ref embedImage(XRef *xref) override;
 
-    static std::unique_ptr<ImageEmbedder> create(std::unique_ptr<uint8_t[]> &&fileContent, const Goffset fileSize)
+    static std::unique_ptr<ImageEmbedder> create(std::vector<char> &&fileContent)
     {
         jpeg_decompress_struct info;
         JpegErrorManager errorManager;
@@ -344,10 +350,10 @@ public:
         jpeg_create_decompress(&info);
         // fileSize is guaranteed to be in the range 0..int max by the checks in embed()
         // jpeg_mem_src takes an unsigned long in the 3rd parameter
-        jpeg_mem_src(&info, fileContent.get(), static_cast<unsigned long>(fileSize));
+        jpeg_mem_src(&info, reinterpret_cast<unsigned char *>(fileContent.data()), static_cast<unsigned long>(fileContent.size()));
         jpeg_read_header(&info, TRUE);
         jpeg_start_decompress(&info);
-        auto result = std::unique_ptr<ImageEmbedder>(new JpegEmbedder(info.output_width, info.output_height, std::move(fileContent), fileSize));
+        auto result = std::make_unique<JpegEmbedder>(info.output_width, info.output_height, std::move(fileContent));
         jpeg_abort_decompress(&info);
         jpeg_destroy_decompress(&info);
         return result;
@@ -356,12 +362,12 @@ public:
 
 Ref JpegEmbedder::embedImage(XRef *xref)
 {
-    if (m_fileContent == nullptr) {
+    if (m_fileContent.empty()) {
         return Ref::INVALID();
     }
-    Dict *baseImageDict = createImageDict(xref, DEVICE_RGB, m_width, m_height, 8);
-    baseImageDict->add("Filter", Object(objName, "DCTDecode"));
-    Ref baseImageRef = xref->addStreamObject(baseImageDict, m_fileContent.release(), m_fileSize, StreamCompression::None);
+    std::unique_ptr<Dict> baseImageDict = createImageDict(xref, DEVICE_RGB, m_width, m_height, 8);
+    baseImageDict->add("Filter", Object::name("DCTDecode"));
+    Ref baseImageRef = xref->addStreamObject(std::move(baseImageDict), std::move(m_fileContent), StreamCompression::None);
     return baseImageRef;
 }
 #endif
@@ -379,27 +385,28 @@ Ref embed(XRef *xref, const GooFile &imageFile)
         error(errIO, -1, "file size too big");
         return Ref::INVALID();
     }
-    std::unique_ptr<uint8_t[]> fileContent = std::make_unique<uint8_t[]>(fileSize);
-    const int bytesRead = imageFile.read((char *)fileContent.get(), static_cast<int>(fileSize), 0);
+    std::vector<char> fileContent;
+    fileContent.resize(fileSize);
+    const int bytesRead = imageFile.read(fileContent.data(), static_cast<int>(fileSize), 0);
     if ((bytesRead != fileSize) || (fileSize < MAX_MAGIC_NUM_SIZE)) {
         error(errIO, -1, "Couldn't load the image file");
         return Ref::INVALID();
     }
 
     std::unique_ptr<ImageEmbedder> embedder;
-    if (checkMagicNum(fileContent.get(), PNG_MAGIC_NUM, sizeof(PNG_MAGIC_NUM))) {
-#ifdef ENABLE_LIBPNG
-        embedder = PngEmbedder::create(std::move(fileContent), fileSize);
+    if (checkMagicNum(fileContent.data(), PNG_MAGIC_NUM, sizeof(PNG_MAGIC_NUM))) {
+#if ENABLE_LIBPNG
+        embedder = PngEmbedder::create(std::move(fileContent));
 #else
         error(errUnimplemented, -1, "PNG format is not supported");
 #endif
-    } else if (checkMagicNum(fileContent.get(), JPEG_MAGIC_NUM, sizeof(JPEG_MAGIC_NUM))) {
-#ifdef ENABLE_LIBJPEG
-        embedder = JpegEmbedder::create(std::move(fileContent), fileSize);
+    } else if (checkMagicNum(fileContent.data(), JPEG_MAGIC_NUM, sizeof(JPEG_MAGIC_NUM))) {
+#if ENABLE_LIBJPEG
+        embedder = JpegEmbedder::create(std::move(fileContent));
 #else
         error(errUnimplemented, -1, "JPEG format is not supported");
 #endif
-    } else if (checkMagicNum(fileContent.get(), JPEG2000_MAGIC_NUM, sizeof(JPEG2000_MAGIC_NUM))) {
+    } else if (checkMagicNum(fileContent.data(), JPEG2000_MAGIC_NUM, sizeof(JPEG2000_MAGIC_NUM))) {
         // TODO: implement JPEG2000 support using libopenjpeg2.
         error(errUnimplemented, -1, "JPEG2000 format is not supported");
         return Ref::INVALID();
@@ -418,7 +425,7 @@ Ref embed(XRef *xref, const std::string &imagePath)
 {
     std::unique_ptr<GooFile> imageFile(GooFile::open(imagePath));
     if (!imageFile) {
-        error(errIO, -1, "Couldn't open {0:s}", imagePath.c_str());
+        error(errIO, -1, "Couldn't open {0:r}", &imagePath);
         return Ref::INVALID();
     }
     return embed(xref, *imageFile);

@@ -11,13 +11,13 @@ class TestPageLabelInfo : public QObject
     Q_OBJECT
 public:
     explicit TestPageLabelInfo(QObject *parent = nullptr) : QObject(parent) { }
-private slots:
-    void testFromDecimal();
-    void testFromDecimalUnicode();
-    void testToRoman();
-    void testFromRoman();
-    void testToLatin();
-    void testFromLatin();
+private Q_SLOTS:
+    static void testFromDecimal();
+    static void testFromDecimalUnicode();
+    static void testToRoman();
+    static void testFromRoman();
+    static void testToLatin();
+    static void testFromLatin();
 };
 
 void TestPageLabelInfo::testFromDecimal()
@@ -38,27 +38,27 @@ void TestPageLabelInfo::testFromDecimalUnicode()
 
 void TestPageLabelInfo::testToRoman()
 {
-    GooString str;
+    std::string str;
     toRoman(177, &str, false);
     QCOMPARE(str.c_str(), "clxxvii");
 }
 
 void TestPageLabelInfo::testFromRoman()
 {
-    GooString roman("clxxvii");
+    const std::string roman("clxxvii");
     QCOMPARE(fromRoman(roman.c_str()), 177);
 }
 
 void TestPageLabelInfo::testToLatin()
 {
-    GooString str;
+    std::string str;
     toLatin(54, &str, false);
     QCOMPARE(str.c_str(), "bbb");
 }
 
 void TestPageLabelInfo::testFromLatin()
 {
-    GooString latin("ddd");
+    const std::string latin("ddd");
     QCOMPARE(fromLatin(latin.c_str()), 56);
 }
 

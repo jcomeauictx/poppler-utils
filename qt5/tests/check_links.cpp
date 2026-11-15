@@ -9,11 +9,11 @@ class TestLinks : public QObject
     Q_OBJECT
 public:
     explicit TestLinks(QObject *parent = nullptr) : QObject(parent) { }
-private slots:
-    void checkDocumentWithNoDests();
-    void checkDests_xr01();
-    void checkDests_xr02();
-    void checkDocumentURILink();
+private Q_SLOTS:
+    static void checkDocumentWithNoDests();
+    static void checkDests_xr01();
+    static void checkDests_xr02();
+    static void checkDocumentURILink();
 };
 
 static bool isDestinationValid_pageNumber(const Poppler::LinkDestination *dest, const Poppler::Document *doc)
@@ -29,7 +29,7 @@ static bool isDestinationValid_name(const Poppler::LinkDestination *dest)
 void TestLinks::checkDocumentWithNoDests()
 {
     Poppler::Document *doc;
-    doc = Poppler::Document::load(TESTDATADIR "/unittestcases/WithAttachments.pdf");
+    doc = Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/WithAttachments.pdf"));
     QVERIFY(doc);
 
     std::unique_ptr<Poppler::LinkDestination> dest;
@@ -43,7 +43,7 @@ void TestLinks::checkDocumentWithNoDests()
 void TestLinks::checkDests_xr01()
 {
     Poppler::Document *doc;
-    doc = Poppler::Document::load(TESTDATADIR "/unittestcases/xr01.pdf");
+    doc = Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/xr01.pdf"));
     QVERIFY(doc);
 
     Poppler::Page *page = doc->page(0);
@@ -54,7 +54,7 @@ void TestLinks::checkDests_xr01()
 
     {
         QCOMPARE(links.at(0)->linkType(), Poppler::Link::Goto);
-        Poppler::LinkGoto *link = static_cast<Poppler::LinkGoto *>(links.at(0));
+        auto *link = static_cast<Poppler::LinkGoto *>(links.at(0));
         const Poppler::LinkDestination dest = link->destination();
         QVERIFY(!isDestinationValid_pageNumber(&dest, doc));
         QVERIFY(isDestinationValid_name(&dest));
@@ -63,7 +63,7 @@ void TestLinks::checkDests_xr01()
 
     {
         QCOMPARE(links.at(1)->linkType(), Poppler::Link::Goto);
-        Poppler::LinkGoto *link = static_cast<Poppler::LinkGoto *>(links.at(1));
+        auto *link = static_cast<Poppler::LinkGoto *>(links.at(1));
         const Poppler::LinkDestination dest = link->destination();
         QVERIFY(!isDestinationValid_pageNumber(&dest, doc));
         QVERIFY(isDestinationValid_name(&dest));
@@ -78,7 +78,7 @@ void TestLinks::checkDests_xr01()
 void TestLinks::checkDests_xr02()
 {
     Poppler::Document *doc;
-    doc = Poppler::Document::load(TESTDATADIR "/unittestcases/xr02.pdf");
+    doc = Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/xr02.pdf"));
     QVERIFY(doc);
 
     std::unique_ptr<Poppler::LinkDestination> dest;
@@ -98,7 +98,7 @@ void TestLinks::checkDests_xr02()
 void TestLinks::checkDocumentURILink()
 {
     Poppler::Document *doc;
-    doc = Poppler::Document::load(TESTDATADIR "/unittestcases/checkbox_issue_159.pdf");
+    doc = Poppler::Document::load(QStringLiteral(TESTDATADIR "/unittestcases/checkbox_issue_159.pdf"));
     QVERIFY(doc);
 
     Poppler::Page *page = doc->page(0);
@@ -108,7 +108,7 @@ void TestLinks::checkDocumentURILink()
     QCOMPARE(links.count(), 1);
 
     QCOMPARE(links.at(0)->linkType(), Poppler::Link::Browse);
-    Poppler::LinkBrowse *link = static_cast<Poppler::LinkBrowse *>(links.at(0));
+    auto *link = static_cast<Poppler::LinkBrowse *>(links.at(0));
     QCOMPARE(link->url(), QLatin1String("http://www.tcpdf.org"));
 
     qDeleteAll(links);

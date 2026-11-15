@@ -1,6 +1,7 @@
 /* poppler-input-stream.cc: glib interface to poppler
  *
  * Copyright (C) 2012 Carlos Garcia Campos <carlosgc@gnome.org>
+ * Copyright (C) 2025, 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,8 +23,8 @@
 
 PopplerInputStream::PopplerInputStream(GInputStream *inputStreamA, GCancellable *cancellableA, Goffset startA, bool limitedA, Goffset lengthA, Object &&dictA) : BaseSeekInputStream(startA, limitedA, lengthA, std::move(dictA))
 {
-    inputStream = (GInputStream *)g_object_ref(inputStreamA);
-    cancellable = cancellableA ? (GCancellable *)g_object_ref(cancellableA) : nullptr;
+    inputStream = static_cast<GInputStream *> g_object_ref(inputStreamA);
+    cancellable = cancellableA ? static_cast<GCancellable *> g_object_ref(cancellableA) : nullptr;
 }
 
 PopplerInputStream::~PopplerInputStream()
@@ -35,14 +36,14 @@ PopplerInputStream::~PopplerInputStream()
     }
 }
 
-BaseStream *PopplerInputStream::copy()
+std::unique_ptr<BaseStream> PopplerInputStream::copy()
 {
-    return new PopplerInputStream(inputStream, cancellable, start, limited, length, dict.copy());
+    return std::make_unique<PopplerInputStream>(inputStream, cancellable, start, limited, length, dict.copy());
 }
 
-Stream *PopplerInputStream::makeSubStream(Goffset startA, bool limitedA, Goffset lengthA, Object &&dictA)
+std::unique_ptr<Stream> PopplerInputStream::makeSubStream(Goffset startA, bool limitedA, Goffset lengthA, Object &&dictA)
 {
-    return new PopplerInputStream(inputStream, cancellable, startA, limitedA, lengthA, std::move(dictA));
+    return std::make_unique<PopplerInputStream>(inputStream, cancellable, startA, limitedA, lengthA, std::move(dictA));
 }
 
 Goffset PopplerInputStream::currentPos() const

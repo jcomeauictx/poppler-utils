@@ -4,10 +4,11 @@
  * Copyright (C) 2014, 2015 Hans-Peter Deifel <hpdeifel@gmx.de>
  * Copyright (C) 2015, Tamas Szekeres <szekerest@gmail.com>
  * Copyright (C) 2016 Jakub Alba <jakubalba@gmail.com>
- * Copyright (C) 2018, 2020-2022, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2018, 2020-2022, 2025, Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2018 Suzuki Toshiya <mpsuzuki@hiroshima-u.ac.jp>
  * Copyright (C) 2018, 2020, Adam Reichold <adam.reichold@t-online.de>
  * Copyright (C) 2022, Oliver Sander <oliver.sander@tu-dresden.de>
+ * Copyright (C) 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,9 +31,9 @@
 #include "poppler-global.h"
 
 #include "poppler-private.h"
-#include "poppler-document-private.h"
 
 #include "DateInfo.h"
+#include "GlobalParams.h"
 
 #include <algorithm>
 
@@ -58,7 +59,10 @@ struct MiniIconv
     }
     MiniIconv(const MiniIconv &) = delete;
     MiniIconv &operator=(const MiniIconv &) = delete;
-    bool is_valid() const { return i_ != (iconv_t)-1; }
+    bool is_valid() const
+    {
+        return i_ != reinterpret_cast<iconv_t>(-1); // NOLINT(performance-no-int-to-ptr)
+    }
     explicit operator iconv_t() const { return i_; }
     iconv_t i_;
 };
@@ -203,25 +207,27 @@ using namespace poppler;
  The case sensitivity.
 */
 
-noncopyable::noncopyable() { }
+// Not great to assign -1 to a size_t (which is unsigned)
+// but that's what the documentation says
+static constexpr size_t kIconvError = -1;
 
-noncopyable::~noncopyable() { }
+noncopyable::noncopyable() = default;
 
 noncopyable &noncopyable::operator=(noncopyable &&other) noexcept = default;
 
-ustring::ustring() { }
+ustring::ustring() = default;
 
 ustring::ustring(size_type len, value_type ch) : std::basic_string<value_type>(len, ch) { }
 
-ustring::~ustring() { }
+ustring::~ustring() = default;
 
 byte_array ustring::to_utf8() const
 {
-    if (!size()) {
+    if (empty()) {
         return byte_array();
     }
 
-#ifdef WORDS_BIGENDIAN
+#if WORDS_BIGENDIAN
     MiniIconv ic("UTF-8", "UTF-16BE");
 #else
     MiniIconv ic("UTF-8", "UTF-16LE");
@@ -231,17 +237,17 @@ byte_array ustring::to_utf8() const
     }
     const value_type *me_data = data();
     byte_array str(size() * sizeof(value_type));
-    char *str_data = &str[0];
+    char *str_data = str.data();
     size_t me_len_char = size() * sizeof(value_type);
     size_t str_len_left = str.size();
-    size_t ir = iconv(static_cast<iconv_t>(ic), (ICONV_CONST char **)&me_data, &me_len_char, &str_data, &str_len_left);
-    if ((ir == (size_t)-1) && (errno == E2BIG)) {
-        const size_t delta = str_data - &str[0];
+    size_t ir = iconv(static_cast<iconv_t>(ic), (ICONV_CONST char **)&me_data, &me_len_char, &str_data, &str_len_left); // NOLINT(readability-redundant-casting,modernize-avoid-c-style-cast)
+    if ((ir == kIconvError) && (errno == E2BIG)) {
+        const size_t delta = str_data - str.data();
         str_len_left += str.size();
         str.resize(str.size() * 2);
         str_data = &str[delta];
-        ir = iconv(static_cast<iconv_t>(ic), (ICONV_CONST char **)&me_data, &me_len_char, &str_data, &str_len_left);
-        if (ir == (size_t)-1) {
+        ir = iconv(static_cast<iconv_t>(ic), (ICONV_CONST char **)&me_data, &me_len_char, &str_data, &str_len_left); // NOLINT(readability-redundant-casting,modernize-avoid-c-style-cast)
+        if (ir == kIconvError) {
             return byte_array();
         }
     }
@@ -251,7 +257,7 @@ byte_array ustring::to_utf8() const
 
 std::string ustring::to_latin1() const
 {
-    if (!size()) {
+    if (empty()) {
         return std::string();
     }
 
@@ -259,7 +265,7 @@ std::string ustring::to_latin1() const
     std::string ret(mylength, '\0');
     const value_type *me = data();
     for (size_type i = 0; i < mylength; ++i) {
-        ret[i] = (char)*me++;
+        ret[i] = static_cast<char>(*me++);
     }
     return ret;
 }
@@ -273,7 +279,7 @@ ustring ustring::from_utf8(const char *str, int len)
         }
     }
 
-#ifdef WORDS_BIGENDIAN
+#if WORDS_BIGENDIAN
     MiniIconv ic("UTF-16BE", "UTF-8");
 #else
     MiniIconv ic("UTF-16LE", "UTF-8");
@@ -284,18 +290,18 @@ ustring ustring::from_utf8(const char *str, int len)
 
     // +1, because iconv inserts byte order marks
     ustring ret(len + 1, 0);
-    char *ret_data = reinterpret_cast<char *>(&ret[0]);
+    char *ret_data = reinterpret_cast<char *>(ret.data());
     char *str_data = const_cast<char *>(str);
     size_t str_len_char = len;
     size_t ret_len_left = ret.size() * sizeof(ustring::value_type);
-    size_t ir = iconv(static_cast<iconv_t>(ic), (ICONV_CONST char **)&str_data, &str_len_char, &ret_data, &ret_len_left);
-    if ((ir == (size_t)-1) && (errno == E2BIG)) {
-        const size_t delta = ret_data - reinterpret_cast<char *>(&ret[0]);
+    size_t ir = iconv(static_cast<iconv_t>(ic), (ICONV_CONST char **)&str_data, &str_len_char, &ret_data, &ret_len_left); // NOLINT(readability-redundant-casting,modernize-avoid-c-style-cast)
+    if ((ir == kIconvError) && (errno == E2BIG)) {
+        const size_t delta = ret_data - reinterpret_cast<char *>(ret.data());
         ret_len_left += ret.size() * sizeof(ustring::value_type);
         ret.resize(ret.size() * 2);
-        ret_data = reinterpret_cast<char *>(&ret[0]) + delta;
-        ir = iconv(static_cast<iconv_t>(ic), (ICONV_CONST char **)&str_data, &str_len_char, &ret_data, &ret_len_left);
-        if (ir == (size_t)-1) {
+        ret_data = reinterpret_cast<char *>(ret.data()) + delta;
+        ir = iconv(static_cast<iconv_t>(ic), (ICONV_CONST char **)&str_data, &str_len_char, &ret_data, &ret_len_left); // NOLINT(readability-redundant-casting,modernize-avoid-c-style-cast)
+        if (ir == kIconvError) {
             return ustring();
         }
     }
@@ -320,21 +326,11 @@ ustring ustring::from_latin1(const std::string &str)
 }
 
 /**
- Converts a string representing a PDF date to a value compatible with time_type.
- */
-time_type poppler::convert_date(const std::string &date)
-{
-    GooString gooDateStr(date.c_str());
-    return static_cast<time_type>(dateStringToTime(&gooDateStr));
-}
-
-/**
  Converts a string representing a PDF date to a value compatible with time_t.
  */
 time_t poppler::convert_date_t(const std::string &date)
 {
-    GooString gooDateStr(date.c_str());
-    return dateStringToTime(&gooDateStr);
+    return dateStringToTime(date);
 }
 
 std::ostream &poppler::operator<<(std::ostream &stream, const byte_array &array)
@@ -342,7 +338,7 @@ std::ostream &poppler::operator<<(std::ostream &stream, const byte_array &array)
     stream << "[";
     const std::ios_base::fmtflags f = stream.flags();
     std::hex(stream);
-    const char *data = &array[0];
+    const char *data = array.data();
     const byte_array::size_type out_len = std::min<byte_array::size_type>(array.size(), 50);
     for (byte_array::size_type i = 0; i < out_len; ++i) {
         if (i != 0) {

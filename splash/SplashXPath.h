@@ -12,7 +12,8 @@
 // under GPL version 2 or later
 //
 // Copyright (C) 2013 Thomas Freitag <Thomas.Freitag@alfa.de>
-// Copyright (C) 2018, 2021 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2018, 2021, 2025 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2025 Stefan Brüns <stefan.bruens@rwth-aachen.de>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -23,13 +24,15 @@
 #define SPLASHXPATH_H
 
 #include "SplashTypes.h"
+#include <memory>
+#include <array>
 
 class SplashPath;
 struct SplashXPathAdjust;
 
 //------------------------------------------------------------------------
 
-#define splashMaxCurveSplits (1 << 10)
+static constexpr int splashMaxCurveSplits = 1 << 10;
 
 //------------------------------------------------------------------------
 // SplashXPathSeg
@@ -37,20 +40,17 @@ struct SplashXPathAdjust;
 
 struct SplashXPathSeg
 {
-    SplashCoord x0, y0; // first endpoint
-    SplashCoord x1, y1; // second endpoint
-    SplashCoord dxdy; // slope: delta-x / delta-y
-    SplashCoord dydx; // slope: delta-y / delta-x
+    double x0, y0; // first endpoint
+    double x1, y1; // second endpoint
+    double dxdy; // slope: delta-x / delta-y
     unsigned int flags;
 };
 
 #define splashXPathHoriz                                                                                                                                                                                                                       \
     0x01 // segment is vertical (y0 == y1)
          //   (dxdy is undef)
-#define splashXPathVert                                                                                                                                                                                                                        \
-    0x02 // segment is horizontal (x0 == x1)
-         //   (dydx is undef)
-#define splashXPathFlip 0x04 // y0 > y1
+#define splashXPathVert 0x02 // segment is horizontal (x0 == x1)
+#define splashXPathFlipped 0x04 // y0 > y1
 
 //------------------------------------------------------------------------
 // SplashXPath
@@ -63,7 +63,7 @@ public:
     // lines) <path>.  Transforms all points from user space to device
     // space, via <matrix>.  If <closeSubpaths> is true, closes all open
     // subpaths.
-    SplashXPath(SplashPath *path, SplashCoord *matrix, SplashCoord flatness, bool closeSubpaths, bool adjustLines = false, int linePosI = 0);
+    SplashXPath(const SplashPath &path, const std::array<double, 6> &matrix, double flatness, bool closeSubpaths, bool adjustLines = false, int linePosI = 0);
 
     ~SplashXPath();
 
@@ -74,18 +74,23 @@ public:
     // anti-aliased rendering.
     void aaScale();
 
-    // Sort by upper coordinate (lower y), in y-major order.
-    void sort();
-
 protected:
-    void transform(SplashCoord *matrix, SplashCoord xi, SplashCoord yi, SplashCoord *xo, SplashCoord *yo);
-    void strokeAdjust(SplashXPathAdjust *adjust, SplashCoord *xp, SplashCoord *yp);
+    static void transform(const std::array<double, 6> &matrix, double xi, double yi, double *xo, double *yo);
+    static void strokeAdjust(SplashXPathAdjust *adjust, double *xp, double *yp);
     void grow(int nSegs);
-    void addCurve(SplashCoord x0, SplashCoord y0, SplashCoord x1, SplashCoord y1, SplashCoord x2, SplashCoord y2, SplashCoord x3, SplashCoord y3, SplashCoord flatness, bool first, bool last, bool end0, bool end1);
-    void addSegment(SplashCoord x0, SplashCoord y0, SplashCoord x1, SplashCoord y1);
+    void addCurve(double x0, double y0, double x1, double y1, double x2, double y2, double x3, double y3, double flatness);
+    void addSegment(double x0, double y0, double x1, double y1);
 
     SplashXPathSeg *segs;
     int length, size; // length and size of segs array
+
+    struct CurveData
+    {
+        std::array<double, (splashMaxCurveSplits + 1) * 3> cx;
+        std::array<double, (splashMaxCurveSplits + 1) * 3> cy;
+        std::array<int, splashMaxCurveSplits + 1> cNext;
+    };
+    std::unique_ptr<CurveData> curveData;
 
     friend class SplashXPathScanner;
     friend class SplashClip;

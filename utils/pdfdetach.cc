@@ -16,11 +16,12 @@
 // Copyright (C) 2011 Carlos Garcia Campos <carlosgc@gnome.org>
 // Copyright (C) 2013 Yury G. Kudryashov <urkud.urkud@gmail.com>
 // Copyright (C) 2014, 2017 Adrian Johnson <ajohnson@redneon.com>
-// Copyright (C) 2018, 2020, 2022, 2024 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2018, 2020, 2022, 2024-2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2018 Adam Reichold <adam.reichold@t-online.de>
 // Copyright (C) 2019, 2021, 2024 Oliver Sander <oliver.sander@tu-dresden.de>
 // Copyright (C) 2020 <r.coeffier@bee-buzziness.com>
-// Copyright (C) 2024 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2024, 2025 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2026 Stefan Brüns <stefan.bruens@rwth-aachen.de>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -30,7 +31,6 @@
 #include "config.h"
 #include <poppler-config.h>
 #include <cstdio>
-#include "goo/gmem.h"
 #include "parseargs.h"
 #include "Annot.h"
 #include "GlobalParams.h"
@@ -54,25 +54,53 @@ static char saveFile[128] = "";
 static bool saveAll = false;
 static char savePath[1024] = "";
 static char textEncName[128] = "";
-static char ownerPassword[33] = "\001";
-static char userPassword[33] = "\001";
+static char ownerPassword[128] = "\001";
+static char userPassword[128] = "\001";
 static bool printVersion = false;
 static bool printHelp = false;
 
-static const ArgDesc argDesc[] = { { "-list", argFlag, &doList, 0, "list all embedded files" },
-                                   { "-save", argInt, &saveNum, 0, "save the specified embedded file (file number)" },
-                                   { "-savefile", argString, &saveFile, sizeof(saveFile), "save the specified embedded file (file name)" },
-                                   { "-saveall", argFlag, &saveAll, 0, "save all embedded files" },
-                                   { "-o", argString, savePath, sizeof(savePath), "file name for the saved embedded file" },
-                                   { "-enc", argString, textEncName, sizeof(textEncName), "output text encoding name" },
-                                   { "-opw", argString, ownerPassword, sizeof(ownerPassword), "owner password (for encrypted files)" },
-                                   { "-upw", argString, userPassword, sizeof(userPassword), "user password (for encrypted files)" },
-                                   { "-v", argFlag, &printVersion, 0, "print copyright and version info" },
-                                   { "-h", argFlag, &printHelp, 0, "print usage information" },
-                                   { "-help", argFlag, &printHelp, 0, "print usage information" },
-                                   { "--help", argFlag, &printHelp, 0, "print usage information" },
-                                   { "-?", argFlag, &printHelp, 0, "print usage information" },
+static const ArgDesc argDesc[] = { { .arg = "-list", .kind = argFlag, .val = &doList, .size = 0, .usage = "list all embedded files" },
+                                   { .arg = "-save", .kind = argInt, .val = &saveNum, .size = 0, .usage = "save the specified embedded file (file number)" },
+                                   { .arg = "-savefile", .kind = argString, .val = &saveFile, .size = sizeof(saveFile), .usage = "save the specified embedded file (file name)" },
+                                   { .arg = "-saveall", .kind = argFlag, .val = &saveAll, .size = 0, .usage = "save all embedded files" },
+                                   { .arg = "-o", .kind = argString, .val = savePath, .size = sizeof(savePath), .usage = "file name for the saved embedded file" },
+                                   { .arg = "-enc", .kind = argString, .val = textEncName, .size = sizeof(textEncName), .usage = "output text encoding name" },
+                                   { .arg = "-opw", .kind = argString, .val = ownerPassword, .size = sizeof(ownerPassword), .usage = "owner password (for encrypted files)" },
+                                   { .arg = "-upw", .kind = argString, .val = userPassword, .size = sizeof(userPassword), .usage = "user password (for encrypted files)" },
+                                   { .arg = "-v", .kind = argFlag, .val = &printVersion, .size = 0, .usage = "print copyright and version info" },
+                                   { .arg = "-h", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
+                                   { .arg = "-help", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
+                                   { .arg = "--help", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
+                                   { .arg = "-?", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
                                    {} };
+
+static std::string getFileName(const std::string &s, const UnicodeMap &uMap)
+{
+    size_t j;
+    Unicode u;
+    bool isUnicode;
+    char uBuf[8];
+    std::string res;
+    if (hasUnicodeByteOrderMarkAndLengthIsEven(s)) {
+        isUnicode = true;
+        j = 2;
+    } else {
+        isUnicode = false;
+        j = 0;
+    }
+    while (j < s.size()) {
+        if (isUnicode) {
+            u = ((s[j] & 0xff) << 8) | (s[j + 1] & 0xff);
+            j += 2;
+        } else {
+            u = pdfDocEncoding[s[j] & 0xff];
+            ++j;
+        }
+        const int n = uMap.mapUnicode(u, uBuf, sizeof(uBuf));
+        res.append(uBuf, n);
+    }
+    return res;
+}
 
 int main(int argc, char *argv[])
 {
@@ -80,16 +108,12 @@ int main(int argc, char *argv[])
     GooString *fileName;
     const UnicodeMap *uMap;
     std::optional<GooString> ownerPW, userPW;
-    char uBuf[8];
     bool ok;
     bool hasSaveFile;
     std::vector<std::unique_ptr<FileSpec>> embeddedFiles;
-    int nFiles, nPages, n, i, j;
+    int nFiles, nPages, i;
     Page *page;
     Annots *annots;
-    const GooString *s1;
-    Unicode u;
-    bool isUnicode;
 
     Win32Console win32Console(&argc, &argv);
 
@@ -152,11 +176,11 @@ int main(int argc, char *argv[])
             break;
         }
 
-        for (Annot *annot : annots->getAnnots()) {
+        for (const std::shared_ptr<Annot> &annot : annots->getAnnots()) {
             if (annot->getType() != Annot::typeFileAttachment) {
                 continue;
             }
-            embeddedFiles.push_back(std::make_unique<FileSpec>(static_cast<AnnotFileAttachment *>(annot)->getFile()));
+            embeddedFiles.push_back(std::make_unique<FileSpec>(static_cast<AnnotFileAttachment *>(annot.get())->getFile()));
         }
     }
 
@@ -168,29 +192,11 @@ int main(int argc, char *argv[])
         for (i = 0; i < nFiles; ++i) {
             const std::unique_ptr<FileSpec> &fileSpec = embeddedFiles[i];
             printf("%d: ", i + 1);
-            s1 = fileSpec->getFileName();
+            const GooString *s1 = fileSpec->getFileName();
             if (!s1) {
                 return 3;
             }
-            if (hasUnicodeByteOrderMark(s1->toStr())) {
-                isUnicode = true;
-                j = 2;
-            } else {
-                isUnicode = false;
-                j = 0;
-            }
-            while (j < s1->getLength()) {
-                if (isUnicode) {
-                    u = ((s1->getChar(j) & 0xff) << 8) | (s1->getChar(j + 1) & 0xff);
-                    j += 2;
-                } else {
-                    u = pdfDocEncoding[s1->getChar(j) & 0xff];
-                    ++j;
-                }
-                n = uMap->mapUnicode(u, uBuf, sizeof(uBuf));
-                fwrite(uBuf, 1, n, stdout);
-            }
-            fputc('\n', stdout);
+            printf("%s\n", getFileName(s1->toStr(), *uMap).c_str());
         }
 
         // save all embedded files
@@ -203,36 +209,17 @@ int main(int argc, char *argv[])
 
         for (i = 0; i < nFiles; ++i) {
             const std::unique_ptr<FileSpec> &fileSpec = embeddedFiles[i];
-            std::string filename;
 
-            s1 = fileSpec->getFileName();
+            const GooString *s1 = fileSpec->getFileName();
             if (!s1) {
                 return 3;
             }
-            if (hasUnicodeByteOrderMark(s1->toStr())) {
-                isUnicode = true;
-                j = 2;
-            } else {
-                isUnicode = false;
-                j = 0;
-            }
-            while (j < s1->getLength()) {
-                if (isUnicode) {
-                    u = ((s1->getChar(j) & 0xff) << 8) | (s1->getChar(j + 1) & 0xff);
-                    j += 2;
-                } else {
-                    u = pdfDocEncoding[s1->getChar(j) & 0xff];
-                    ++j;
-                }
-                n = uMap->mapUnicode(u, uBuf, sizeof(uBuf));
-                filename.append(uBuf, n);
-            }
-
-            if (filename.empty()) {
+            const std::string currentFileName = getFileName(s1->toStr(), *uMap);
+            if (currentFileName.empty()) {
                 return 3;
             }
             std::filesystem::path filePath = basePath;
-            filePath = filePath.append(filename).lexically_normal();
+            filePath = filePath.append(currentFileName).lexically_normal();
 
             if (!filePath.generic_string().starts_with(basePath.generic_string())) {
                 error(errIO, -1, "Preventing directory traversal");
@@ -254,15 +241,23 @@ int main(int argc, char *argv[])
         if (hasSaveFile) {
             for (i = 0; i < nFiles; ++i) {
                 const std::unique_ptr<FileSpec> &fileSpec = embeddedFiles[i];
-                s1 = fileSpec->getFileName();
-                if (strcmp(s1->c_str(), saveFile) == 0) {
+                const GooString *s1 = fileSpec->getFileName();
+                if (!s1) {
+                    continue;
+                }
+                const std::string currentFileName = getFileName(s1->toStr(), *uMap);
+                if (currentFileName == saveFile) {
                     saveNum = i + 1;
                     break;
                 }
             }
         }
         if (saveNum < 1 || saveNum > nFiles) {
-            error(errCommandLine, -1, hasSaveFile ? "Invalid file name" : "Invalid file number");
+            if (hasSaveFile) {
+                error(errCommandLine, -1, "Invalid file name");
+            } else {
+                error(errCommandLine, -1, "Invalid file number");
+            }
             return 99;
         }
 
@@ -270,28 +265,12 @@ int main(int argc, char *argv[])
         std::string targetPath = savePath;
         if (targetPath.empty()) {
             // The user hasn't given a path to save, just use the filename specified in the pdf as name
-            s1 = fileSpec->getFileName();
+            const GooString *s1 = fileSpec->getFileName();
             if (!s1) {
                 return 3;
             }
-            if (hasUnicodeByteOrderMark(s1->toStr())) {
-                isUnicode = true;
-                j = 2;
-            } else {
-                isUnicode = false;
-                j = 0;
-            }
-            while (j < s1->getLength()) {
-                if (isUnicode) {
-                    u = ((s1->getChar(j) & 0xff) << 8) | (s1->getChar(j + 1) & 0xff);
-                    j += 2;
-                } else {
-                    u = pdfDocEncoding[s1->getChar(j) & 0xff];
-                    ++j;
-                }
-                n = uMap->mapUnicode(u, uBuf, sizeof(uBuf));
-                targetPath.append(uBuf, n);
-            }
+            const std::string targetFileName = getFileName(s1->toStr(), *uMap);
+            targetPath.append(targetFileName);
 
             const std::filesystem::path basePath = std::filesystem::current_path().lexically_normal();
             std::filesystem::path filePath = basePath;
@@ -309,7 +288,7 @@ int main(int argc, char *argv[])
             return 3;
         }
         if (!embFile->save(targetPath)) {
-            error(errIO, -1, "Error saving embedded file as '{0:s}'", targetPath.c_str());
+            error(errIO, -1, "Error saving embedded file as '{0:r}'", &targetPath);
             return 2;
         }
     }

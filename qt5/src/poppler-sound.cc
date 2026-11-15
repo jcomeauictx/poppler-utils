@@ -1,6 +1,8 @@
 /* poppler-sound.cc: qt interface to poppler
  * Copyright (C) 2006-2007, Pino Toscano <pino@kde.org>
- * Copyright (C) 2008, 2018, 2020, 2024, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2008, 2018, 2020, 2024, 2026, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2025, g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+ * Copyright (C) 2025 Arnav V <arnav0872@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,7 +30,7 @@ namespace Poppler {
 class SoundData
 {
 public:
-    SoundData() : m_soundObj(nullptr) { }
+    SoundData() = default;
 
     ~SoundData() { delete m_soundObj; }
 
@@ -36,10 +38,10 @@ public:
     SoundData &operator=(const SoundData &) = delete;
 
     SoundObject::SoundType m_type;
-    Sound *m_soundObj;
+    Sound *m_soundObj = nullptr;
 };
 
-SoundObject::SoundObject(Sound *popplersound)
+SoundObject::SoundObject(const Sound *popplersound)
 {
     m_soundData = new SoundData();
     switch (popplersound->getSoundKind()) {
@@ -71,7 +73,7 @@ QString SoundObject::url() const
         return QString();
     }
 
-    return QString(m_soundData->m_soundObj->getFileName().c_str());
+    return QString::fromStdString(m_soundData->m_soundObj->getFileName());
 }
 
 QByteArray SoundObject::data() const
@@ -81,12 +83,14 @@ QByteArray SoundObject::data() const
     }
 
     Stream *stream = m_soundData->m_soundObj->getStream();
-    stream->reset();
+    if (!stream->rewind()) {
+        return QByteArray {};
+    }
     int dataLen = 0;
     QByteArray fileArray;
     int i;
     while ((i = stream->getChar()) != EOF) {
-        fileArray[dataLen] = (char)i;
+        fileArray[dataLen] = static_cast<char>(i);
         ++dataLen;
     }
     fileArray.resize(dataLen);

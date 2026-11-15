@@ -6,7 +6,8 @@
 // This file is licensed under the GPLv2 or later
 //
 // Copyright (C) 2021 Georgiy Sgibnev <georgiy@sgibnev.com>. Work sponsored by lab50.net.
-// Copyright (C) 2022 by Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2022, 2026 by Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
 //
 //========================================================================
 
@@ -29,15 +30,15 @@ static bool smask = false;
 static bool fail = false;
 static bool printHelp = false;
 
-static const ArgDesc argDesc[] = { { "-depth", argInt, &depth, 0, "XObject's property 'BitsPerComponent'" },
-                                   { "-colorspace", argGooString, &colorSpace, 0, "XObject's property 'ColorSpace'" },
-                                   { "-filter", argGooString, &filter, 0, "XObject's property 'Filter'" },
-                                   { "-smask", argFlag, &smask, 0, "SMask should exist" },
-                                   { "-fail", argFlag, &fail, 0, "the image embedding API is expected to fail" },
-                                   { "-h", argFlag, &printHelp, 0, "print usage information" },
-                                   { "-help", argFlag, &printHelp, 0, "print usage information" },
-                                   { "--help", argFlag, &printHelp, 0, "print usage information" },
-                                   { "-?", argFlag, &printHelp, 0, "print usage information" },
+static const ArgDesc argDesc[] = { { .arg = "-depth", .kind = argInt, .val = &depth, .size = 0, .usage = "XObject's property 'BitsPerComponent'" },
+                                   { .arg = "-colorspace", .kind = argGooString, .val = &colorSpace, .size = 0, .usage = "XObject's property 'ColorSpace'" },
+                                   { .arg = "-filter", .kind = argGooString, .val = &filter, .size = 0, .usage = "XObject's property 'Filter'" },
+                                   { .arg = "-smask", .kind = argFlag, .val = &smask, .size = 0, .usage = "SMask should exist" },
+                                   { .arg = "-fail", .kind = argFlag, .val = &fail, .size = 0, .usage = "the image embedding API is expected to fail" },
+                                   { .arg = "-h", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
+                                   { .arg = "-help", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
+                                   { .arg = "--help", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
+                                   { .arg = "-?", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
                                    {} };
 
 int main(int argc, char *argv[])
@@ -46,7 +47,7 @@ int main(int argc, char *argv[])
     const bool ok = parseArgs(argDesc, &argc, argv);
     if (!ok || (argc != 3) || printHelp) {
         printUsage(argv[0], "PDF-FILE IMAGE-FILE", argDesc);
-        return (printHelp) ? 0 : 1;
+        return printHelp ? 0 : 1;
     }
     const GooString docPath(argv[1]);
     const GooString imagePath(argv[2]);
@@ -62,10 +63,9 @@ int main(int argc, char *argv[])
     if (baseImageRef == Ref::INVALID()) {
         if (fail) {
             return 0;
-        } else {
-            fprintf(stderr, "ImageEmbeddingUtils::embed() failed.\n");
-            return 1;
         }
+        fprintf(stderr, "ImageEmbeddingUtils::embed() failed.\n");
+        return 1;
     }
 
     // Save the updated PDF document.
@@ -75,7 +75,7 @@ int main(int argc, char *argv[])
 
     // Check the base image.
     Object baseImageObj = Object(baseImageRef).fetch(doc->getXRef());
-    Dict *baseImageDict = baseImageObj.streamGetDict();
+    Dict *baseImageDict = baseImageObj.getStream()->getDict();
     if (std::string("XObject") != baseImageDict->lookup("Type").getName()) {
         fprintf(stderr, "A problem with Type.\n");
         return 1;
@@ -91,13 +91,13 @@ int main(int argc, char *argv[])
         }
     }
     if (!colorSpace.toStr().empty()) {
-        if (colorSpace.cmp(baseImageDict->lookup("ColorSpace").getName()) != 0) {
+        if (colorSpace.toStr() != baseImageDict->lookup("ColorSpace").getName()) {
             fprintf(stderr, "A problem with ColorSpace.\n");
             return 1;
         }
     }
     if (!filter.toStr().empty()) {
-        if (filter.cmp(baseImageDict->lookup("Filter").getName()) != 0) {
+        if (filter.toStr() != baseImageDict->lookup("Filter").getName()) {
             fprintf(stderr, "A problem with Filter.\n");
             return 1;
         }

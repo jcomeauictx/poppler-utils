@@ -11,13 +11,14 @@
 // All changes made under the Poppler project to this file are licensed
 // under GPL version 2 or later
 //
-// Copyright (C) 2006, 2010, 2019, 2020 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2006, 2010, 2019, 2020, 2025, 2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2008 Tomas Are Haavet <tomasare@gmail.com>
 // Copyright (C) 2009, 2011-2013 Thomas Freitag <Thomas.Freitag@alfa.de>
 // Copyright (C) 2009 Stefan Thomas <thomas@eload24.com>
 // Copyright (C) 2010 William Bader <williambader@hotmail.com>
 // Copyright (C) 2017 Adrian Johnson <ajohnson@redneon.com>
 // Copyright (C) 2018 Stefan Brüns <stefan.bruens@rwth-aachen.de>
+// Copyright (C) 2025 Adam Sampson <ats@offog.org>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -28,16 +29,6 @@
 #define SPLASHTYPES_H
 
 #include <cstddef>
-
-//------------------------------------------------------------------------
-// coordinates
-//------------------------------------------------------------------------
-
-#if defined(USE_FLOAT)
-typedef float SplashCoord;
-#else
-typedef double SplashCoord;
-#endif
 
 //------------------------------------------------------------------------
 // antialiasing
@@ -85,9 +76,9 @@ extern int splashColorModeNComps[];
 // max number of components in any SplashColor
 constexpr std::size_t splashMaxColorComps = SPOT_NCOMPS + 4;
 
-typedef unsigned char SplashColor[splashMaxColorComps];
-typedef unsigned char *SplashColorPtr;
-typedef const unsigned char *SplashColorConstPtr;
+using SplashColor = unsigned char[splashMaxColorComps];
+using SplashColorPtr = unsigned char *;
+using SplashColorConstPtr = const unsigned char *;
 
 // RGB8
 static inline unsigned char splashRGB8R(SplashColorPtr rgb8)
@@ -189,22 +180,11 @@ static inline bool splashColorEqual(SplashColorConstPtr dest, SplashColorConstPt
     return true;
 }
 
-static inline void splashColorXor(SplashColorPtr dest, SplashColorConstPtr src)
-{
-    dest[0] ^= src[0];
-    dest[1] ^= src[1];
-    dest[2] ^= src[2];
-    dest[3] ^= src[3];
-    for (int i = 4; i < SPOT_NCOMPS + 4; i++) {
-        dest[i] ^= src[i];
-    }
-}
-
 //------------------------------------------------------------------------
 // blend functions
 //------------------------------------------------------------------------
 
-typedef void (*SplashBlendFunc)(SplashColorPtr src, SplashColorPtr dest, SplashColorPtr blend, SplashColorMode cm);
+using SplashBlendFunc = void (*)(SplashColorPtr src, SplashColorPtr dest, SplashColorPtr blend, SplashColorMode cm);
 
 //------------------------------------------------------------------------
 // screen parameters
@@ -222,16 +202,7 @@ struct SplashScreenParams
     SplashScreenType type;
     int size;
     int dotRadius;
-    SplashCoord gamma;
-    SplashCoord blackThreshold;
-    SplashCoord whiteThreshold;
 };
-
-//------------------------------------------------------------------------
-// error results
-//------------------------------------------------------------------------
-
-typedef int SplashError;
 
 //------------------------------------------------------------------------
 // image file formats
@@ -243,6 +214,28 @@ enum SplashImageFileFormat
     splashFormatPng,
     splashFormatTiff,
     splashFormatJpegCMYK
+};
+
+//------------------------------------------------------------------------
+// line cap values
+//------------------------------------------------------------------------
+
+enum class SplashLineCap
+{
+    Butt,
+    Round,
+    Projecting
+};
+
+//------------------------------------------------------------------------
+// line join values
+//------------------------------------------------------------------------
+
+enum class SplashLineJoin
+{
+    Miter,
+    Round,
+    Bevel
 };
 
 #endif

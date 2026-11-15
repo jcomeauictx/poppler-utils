@@ -2,6 +2,7 @@
  * Copyright (C) 2010, 2011, Pino Toscano <pino@kde.org>
  * Copyright (C) 2021 Klarälvdalens Datakonsult AB, a KDAB Group company, <info@kdab.com>
  * Copyright (C) 2024 Oliver Sander <oliver.sander@tu-dresden.de>
+ * Copyright (C) 2025 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,23 +37,22 @@ class TestStrings : public QObject
 public:
     explicit TestStrings(QObject *parent = nullptr) : QObject(parent) { }
 
-private slots:
-    void initTestCase();
-    void cleanupTestCase();
-    void check_unicodeToQString_data();
-    void check_unicodeToQString();
-    void check_UnicodeParsedString_data();
-    void check_UnicodeParsedString();
-    void check_QStringToUnicodeGooString_data();
-    void check_QStringToUnicodeGooString();
-    void check_QStringToGooString_data();
-    void check_QStringToGooString();
-
-private:
     GooString *newGooString(const char *s);
     GooString *newGooString(const char *s, int l);
 
     QVector<GooString *> m_gooStrings;
+
+private Q_SLOTS:
+    static void initTestCase();
+    void cleanupTestCase() const;
+    static void check_unicodeToQString_data();
+    static void check_unicodeToQString();
+    void check_UnicodeParsedString_data();
+    static void check_UnicodeParsedString();
+    static void check_QStringToUnicodeGooString_data();
+    static void check_QStringToUnicodeGooString();
+    void check_QStringToGooString_data();
+    static void check_QStringToGooString();
 };
 
 void TestStrings::initTestCase()
@@ -63,7 +63,7 @@ void TestStrings::initTestCase()
     globalParams = std::make_unique<GlobalParams>();
 }
 
-void TestStrings::cleanupTestCase()
+void TestStrings::cleanupTestCase() const
 {
     qDeleteAll(m_gooStrings);
 
@@ -78,40 +78,40 @@ void TestStrings::check_unicodeToQString_data()
 
     {
         const int l = 1;
-        Unicode *u = new Unicode[l];
-        u[0] = int('a');
+        auto *u = new Unicode[l];
+        u[0] = static_cast<int>('a');
         QTest::newRow("a") << u << l << QStringLiteral("a");
     }
     {
         const int l = 1;
-        Unicode *u = new Unicode[l];
+        auto *u = new Unicode[l];
         u[0] = 0x0161;
         QTest::newRow("\u0161") << u << l << QStringLiteral("\u0161");
     }
     {
         const int l = 2;
-        Unicode *u = new Unicode[l];
-        u[0] = int('a');
-        u[1] = int('b');
+        auto *u = new Unicode[l];
+        u[0] = static_cast<int>('a');
+        u[1] = static_cast<int>('b');
         QTest::newRow("ab") << u << l << QStringLiteral("ab");
     }
     {
         const int l = 2;
-        Unicode *u = new Unicode[l];
-        u[0] = int('a');
+        auto *u = new Unicode[l];
+        u[0] = static_cast<int>('a');
         u[1] = 0x0161;
         QTest::newRow("a\u0161") << u << l << QStringLiteral("a\u0161");
     }
     {
         const int l = 2;
-        Unicode *u = new Unicode[l];
+        auto *u = new Unicode[l];
         u[0] = 0x5c01;
         u[1] = 0x9762;
         QTest::newRow("\xe5\xb0\x81\xe9\x9d\xa2") << u << l << QStringLiteral("封面");
     }
     {
         const int l = 3;
-        Unicode *u = new Unicode[l];
+        auto *u = new Unicode[l];
         u[0] = 0x5c01;
         u[1] = 0x9762;
         u[2] = 0x0;
@@ -119,7 +119,7 @@ void TestStrings::check_unicodeToQString_data()
     }
     {
         const int l = 4;
-        Unicode *u = new Unicode[l];
+        auto *u = new Unicode[l];
         u[0] = 0x5c01;
         u[1] = 0x9762;
         u[2] = 0x0;
@@ -191,17 +191,15 @@ void TestStrings::check_QStringToUnicodeGooString()
     QFETCH(QString, string);
     QFETCH(QByteArray, result);
 
-    GooString *goo = Poppler::QStringToUnicodeGooString(string);
+    std::unique_ptr<GooString> goo = Poppler::QStringToUnicodeGooString(string);
     if (string.isEmpty()) {
         QVERIFY(goo->toStr().empty());
-        QCOMPARE(goo->getLength(), 0);
+        QCOMPARE(goo->size(), 0);
     } else {
         QVERIFY(hasUnicodeByteOrderMark(goo->toStr()));
-        QCOMPARE(goo->getLength(), string.length() * 2 + 2);
-        QCOMPARE(result, QByteArray::fromRawData(goo->c_str() + 2, goo->getLength() - 2));
+        QCOMPARE(goo->size(), string.length() * 2 + 2);
+        QCOMPARE(result, QByteArray::fromRawData(goo->c_str() + 2, goo->size() - 2));
     }
-
-    delete goo;
 }
 
 void TestStrings::check_QStringToGooString_data()
@@ -220,22 +218,20 @@ void TestStrings::check_QStringToGooString()
     QFETCH(QString, string);
     QFETCH(GooString *, result);
 
-    GooString *goo = Poppler::QStringToGooString(string);
+    const std::unique_ptr<GooString> goo = Poppler::QStringToGooString(string);
     QCOMPARE(goo->c_str(), result->c_str());
-
-    delete goo;
 }
 
 GooString *TestStrings::newGooString(const char *s)
 {
-    GooString *goo = new GooString(s);
+    auto *goo = new GooString(s);
     m_gooStrings.append(goo);
     return goo;
 }
 
 GooString *TestStrings::newGooString(const char *s, int l)
 {
-    GooString *goo = new GooString(s, l);
+    auto *goo = new GooString(s, l);
     m_gooStrings.append(goo);
     return goo;
 }

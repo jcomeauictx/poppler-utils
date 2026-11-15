@@ -5,7 +5,10 @@
  * Copyright (C) 2020 Oliver Sander <oliver.sander@tu-dresden.de>
  * Copyright (C) 2021 André Guerreiro <aguerreiro1985@gmail.com>
  * Copyright (C) 2021, 2023 Marek Kasik <mkasik@redhat.com>
- * Copyright (C) 2023, 2024 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+ * Copyright (C) 2023-2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+ * Copyright (C) 2025 Jan-Michael Brummer <jan-michael.brummer1@volkswagen.de>
+ * Copyright (C) 2025 lbaudin <lbaudin@gnome.org>
+ * Copyright (C) 2025, 2026 Albert Astals Cid <aacid@kde.org>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,7 +31,7 @@
 #include "poppler-private.h"
 
 #include <CertificateInfo.h>
-#ifdef ENABLE_NSS3
+#if ENABLE_NSS3
 #    include <NSSCryptoSignBackend.h>
 #endif
 #include <CryptoSignBackend.h>
@@ -39,11 +42,11 @@
  * @title: PopplerFormField
  */
 
-typedef struct _PopplerFormFieldClass PopplerFormFieldClass;
 struct _PopplerFormFieldClass
 {
     GObjectClass parent_class;
 };
+using PopplerFormFieldClass = _PopplerFormFieldClass;
 
 G_DEFINE_TYPE(PopplerFormField, poppler_form_field, G_TYPE_OBJECT)
 
@@ -64,7 +67,7 @@ static void poppler_form_field_finalize(GObject *object)
     G_OBJECT_CLASS(poppler_form_field_parent_class)->finalize(object);
 }
 
-static void poppler_form_field_init(PopplerFormField *field) { }
+static void poppler_form_field_init(PopplerFormField * /*field*/) { }
 
 static void poppler_form_field_class_init(PopplerFormFieldClass *klass)
 {
@@ -82,7 +85,7 @@ PopplerFormField *_poppler_form_field_new(PopplerDocument *document, FormWidget 
 
     poppler_field = POPPLER_FORM_FIELD(g_object_new(POPPLER_TYPE_FORM_FIELD, nullptr));
 
-    poppler_field->document = (PopplerDocument *)g_object_ref(document);
+    poppler_field->document = static_cast<PopplerDocument *> g_object_ref(document);
     poppler_field->widget = field;
 
     return poppler_field;
@@ -179,7 +182,7 @@ gboolean poppler_form_field_is_read_only(PopplerFormField *field)
  */
 PopplerAction *poppler_form_field_get_action(PopplerFormField *field)
 {
-    LinkAction *action;
+    const LinkAction *action;
 
     if (field->action) {
         return field->action;
@@ -303,7 +306,7 @@ void poppler_form_field_button_set_state(PopplerFormField *field, gboolean state
 {
     g_return_if_fail(field->widget->getType() == formButton);
 
-    static_cast<FormWidgetButton *>(field->widget)->setState((bool)state);
+    static_cast<FormWidgetButton *>(field->widget)->setState(static_cast<bool>(state));
 }
 
 /**
@@ -324,7 +327,7 @@ gchar *poppler_form_field_get_partial_name(PopplerFormField *field)
 
     tmp = field->widget->getPartialName();
 
-    return tmp ? _poppler_goo_string_to_utf8(tmp) : nullptr;
+    return tmp ? _poppler_goo_string_to_utf8(tmp->toStr()) : nullptr;
 }
 
 /**
@@ -346,7 +349,7 @@ gchar *poppler_form_field_get_mapping_name(PopplerFormField *field)
 
     tmp = field->widget->getMappingName();
 
-    return tmp ? _poppler_goo_string_to_utf8(tmp) : nullptr;
+    return tmp ? _poppler_goo_string_to_utf8(tmp->toStr()) : nullptr;
 }
 
 /**
@@ -362,13 +365,11 @@ gchar *poppler_form_field_get_mapping_name(PopplerFormField *field)
  **/
 gchar *poppler_form_field_get_name(PopplerFormField *field)
 {
-    GooString *tmp;
-
     g_return_val_if_fail(POPPLER_IS_FORM_FIELD(field), NULL);
 
-    tmp = field->widget->getFullyQualifiedName();
+    const GooString *tmp = field->widget->getFullyQualifiedName();
 
-    return tmp ? _poppler_goo_string_to_utf8(tmp) : nullptr;
+    return tmp ? _poppler_goo_string_to_utf8(tmp->toStr()) : nullptr;
 }
 
 /**
@@ -391,7 +392,7 @@ gchar *poppler_form_field_get_alternate_ui_name(PopplerFormField *field)
 
     tmp = field->widget->getAlternateUiName();
 
-    return tmp ? _poppler_goo_string_to_utf8(tmp) : nullptr;
+    return tmp ? _poppler_goo_string_to_utf8(tmp->toStr()) : nullptr;
 }
 
 /**
@@ -415,8 +416,6 @@ struct _PopplerCertificateInfo
     GDateTime *issued;
     GDateTime *expires;
 };
-
-typedef struct _PopplerCertificateInfo PopplerCertificateInfo;
 
 G_DEFINE_BOXED_TYPE(PopplerCertificateInfo, poppler_certificate_info, poppler_certificate_info_copy, poppler_certificate_info_free)
 
@@ -453,7 +452,7 @@ static PopplerSignatureInfo *_poppler_form_field_signature_validate(PopplerFormF
 
     sig_field = static_cast<FormFieldSignature *>(field->widget->getField());
 
-    sig_info = sig_field->validateSignatureAsync(flags & POPPLER_SIGNATURE_VALIDATION_FLAG_VALIDATE_CERTIFICATE, force_revalidation, -1, flags & POPPLER_SIGNATURE_VALIDATION_FLAG_WITHOUT_OCSP_REVOCATION_CHECK,
+    sig_info = sig_field->validateSignatureAsync(flags & POPPLER_SIGNATURE_VALIDATION_FLAG_VALIDATE_CERTIFICATE, force_revalidation, -1, !(flags & POPPLER_SIGNATURE_VALIDATION_FLAG_WITHOUT_OCSP_REVOCATION_CHECK),
                                                  flags & POPPLER_SIGNATURE_VALIDATION_FLAG_USE_AIA_CERTIFICATE_FETCH, {});
     CertificateValidationStatus certificateStatus = sig_field->validateSignatureResult();
 
@@ -523,18 +522,18 @@ static PopplerSignatureInfo *_poppler_form_field_signature_validate(PopplerFormF
         poppler_sig_info->certificate_info->issuer_common_name = g_strdup(issuer_info.commonName.c_str());
         poppler_sig_info->certificate_info->issuer_email = g_strdup(issuer_info.email.c_str());
         poppler_sig_info->certificate_info->issuer_organization = g_strdup(issuer_info.organization.c_str());
-        poppler_sig_info->certificate_info->issued = g_date_time_new_from_unix_utc(validity.notBefore);
-        poppler_sig_info->certificate_info->expires = g_date_time_new_from_unix_utc(validity.notAfter);
+        poppler_sig_info->certificate_info->issued = g_date_time_new_from_unix_utc(std::chrono::duration_cast<std::chrono::seconds>(validity.notBefore.time_since_epoch()).count());
+        poppler_sig_info->certificate_info->expires = g_date_time_new_from_unix_utc(std::chrono::duration_cast<std::chrono::seconds>(validity.notAfter.time_since_epoch()).count());
     }
 
     return poppler_sig_info;
 }
 
-static void signature_validate_thread(GTask *task, gpointer source_object, gpointer task_data, GCancellable *cancellable)
+static void signature_validate_thread(GTask *task, gpointer source_object, gpointer task_data, GCancellable * /*cancellable*/)
 {
-    PopplerSignatureValidationFlags flags = (PopplerSignatureValidationFlags)GPOINTER_TO_INT(task_data);
+    auto flags = static_cast<PopplerSignatureValidationFlags> GPOINTER_TO_INT(task_data);
     PopplerSignatureInfo *signature_info;
-    PopplerFormField *field = (PopplerFormField *)source_object;
+    auto *field = static_cast<PopplerFormField *>(source_object);
     GError *error = nullptr;
 
     signature_info = _poppler_form_field_signature_validate(field, flags, FALSE, &error);
@@ -544,7 +543,7 @@ static void signature_validate_thread(GTask *task, gpointer source_object, gpoin
     }
 
     if (g_task_set_return_on_cancel(task, FALSE)) {
-        g_task_return_pointer(task, signature_info, (GDestroyNotify)poppler_signature_info_free);
+        g_task_return_pointer(task, signature_info, reinterpret_cast<GDestroyNotify>(poppler_signature_info_free));
     }
 }
 
@@ -567,7 +566,7 @@ PopplerSignatureInfo *poppler_form_field_signature_validate_sync(PopplerFormFiel
     PopplerSignatureInfo *signature_info;
     GTask *task;
 
-    g_return_val_if_fail(error == NULL || *error == NULL, NULL);
+    g_return_val_if_fail(error == nullptr || *error == nullptr, NULL);
 
     task = g_task_new(field, cancellable, nullptr, nullptr);
     g_task_set_task_data(task, GINT_TO_POINTER(flags), nullptr);
@@ -575,7 +574,7 @@ PopplerSignatureInfo *poppler_form_field_signature_validate_sync(PopplerFormFiel
 
     g_task_run_in_thread_sync(task, signature_validate_thread);
 
-    signature_info = (PopplerSignatureInfo *)g_task_propagate_pointer(task, error);
+    signature_info = static_cast<PopplerSignatureInfo *>(g_task_propagate_pointer(task, error));
     g_object_unref(task);
 
     return signature_info;
@@ -624,7 +623,7 @@ PopplerSignatureInfo *poppler_form_field_signature_validate_finish(PopplerFormFi
 {
     g_return_val_if_fail(g_task_is_valid(result, field), NULL);
 
-    return (PopplerSignatureInfo *)g_task_propagate_pointer(G_TASK(result), error);
+    return static_cast<PopplerSignatureInfo *>(g_task_propagate_pointer(G_TASK(result), error));
 }
 
 G_DEFINE_BOXED_TYPE(PopplerSignatureInfo, poppler_signature_info, poppler_signature_info_copy, poppler_signature_info_free)
@@ -643,7 +642,7 @@ PopplerSignatureInfo *poppler_signature_info_copy(const PopplerSignatureInfo *si
 {
     PopplerSignatureInfo *new_info;
 
-    g_return_val_if_fail(siginfo != NULL, NULL);
+    g_return_val_if_fail(siginfo != nullptr, NULL);
 
     new_info = g_new(PopplerSignatureInfo, 1);
     new_info->sig_status = siginfo->sig_status;
@@ -687,7 +686,7 @@ void poppler_signature_info_free(PopplerSignatureInfo *siginfo)
  **/
 PopplerSignatureStatus poppler_signature_info_get_signature_status(const PopplerSignatureInfo *siginfo)
 {
-    g_return_val_if_fail(siginfo != NULL, POPPLER_SIGNATURE_GENERIC_ERROR);
+    g_return_val_if_fail(siginfo != nullptr, POPPLER_SIGNATURE_GENERIC_ERROR);
 
     return siginfo->sig_status;
 }
@@ -704,7 +703,7 @@ PopplerSignatureStatus poppler_signature_info_get_signature_status(const Poppler
  **/
 PopplerCertificateInfo *poppler_signature_info_get_certificate_info(const PopplerSignatureInfo *siginfo)
 {
-    g_return_val_if_fail(siginfo != NULL, NULL);
+    g_return_val_if_fail(siginfo != nullptr, NULL);
 
     return siginfo->certificate_info;
 }
@@ -721,7 +720,7 @@ PopplerCertificateInfo *poppler_signature_info_get_certificate_info(const Popple
  **/
 PopplerCertificateStatus poppler_signature_info_get_certificate_status(const PopplerSignatureInfo *siginfo)
 {
-    g_return_val_if_fail(siginfo != NULL, POPPLER_CERTIFICATE_GENERIC_ERROR);
+    g_return_val_if_fail(siginfo != nullptr, POPPLER_CERTIFICATE_GENERIC_ERROR);
 
     return siginfo->cert_status;
 }
@@ -738,7 +737,7 @@ PopplerCertificateStatus poppler_signature_info_get_certificate_status(const Pop
  **/
 const gchar *poppler_signature_info_get_signer_name(const PopplerSignatureInfo *siginfo)
 {
-    g_return_val_if_fail(siginfo != NULL, NULL);
+    g_return_val_if_fail(siginfo != nullptr, NULL);
 
     return siginfo->signer_name;
 }
@@ -759,7 +758,7 @@ const gchar *poppler_signature_info_get_signer_name(const PopplerSignatureInfo *
  **/
 GDateTime *poppler_signature_info_get_local_signing_time(const PopplerSignatureInfo *siginfo)
 {
-    g_return_val_if_fail(siginfo != NULL, NULL);
+    g_return_val_if_fail(siginfo != nullptr, NULL);
 
     return siginfo->local_signing_time;
 }
@@ -783,7 +782,8 @@ PopplerFormTextType poppler_form_field_text_get_text_type(PopplerFormField *fiel
 
     if (text_field->isMultiline()) {
         return POPPLER_FORM_TEXT_MULTILINE;
-    } else if (text_field->isFileSelect()) {
+    }
+    if (text_field->isFileSelect()) {
         return POPPLER_FORM_TEXT_FILE_SELECT;
     }
 
@@ -808,7 +808,7 @@ gchar *poppler_form_field_text_get_text(PopplerFormField *field)
     text_field = static_cast<FormWidgetText *>(field->widget);
     tmp = text_field->getContent();
 
-    return tmp ? _poppler_goo_string_to_utf8(tmp) : nullptr;
+    return tmp ? _poppler_goo_string_to_utf8(tmp->toStr()) : nullptr;
 }
 
 /**
@@ -820,17 +820,15 @@ gchar *poppler_form_field_text_get_text(PopplerFormField *field)
  **/
 void poppler_form_field_text_set_text(PopplerFormField *field, const gchar *text)
 {
-    GooString *goo_tmp;
     gchar *tmp;
     gsize length = 0;
 
     g_return_if_fail(field->widget->getType() == formText);
 
     tmp = text ? g_convert(text, -1, "UTF-16BE", "UTF-8", nullptr, &length, nullptr) : nullptr;
-    goo_tmp = new GooString(tmp, length);
+    std::unique_ptr<GooString> goo_tmp = std::make_unique<GooString>(tmp, length);
     g_free(tmp);
-    static_cast<FormWidgetText *>(field->widget)->setContent(goo_tmp);
-    delete goo_tmp;
+    static_cast<FormWidgetText *>(field->widget)->setContent(std::move(goo_tmp));
 }
 
 /**
@@ -915,9 +913,8 @@ PopplerFormChoiceType poppler_form_field_choice_get_choice_type(PopplerFormField
 
     if (static_cast<FormWidgetChoice *>(field->widget)->isCombo()) {
         return POPPLER_FORM_CHOICE_COMBO;
-    } else {
-        return POPPLER_FORM_CHOICE_LIST;
     }
+    return POPPLER_FORM_CHOICE_LIST;
 }
 
 /**
@@ -984,7 +981,7 @@ gint poppler_form_field_choice_get_n_items(PopplerFormField *field)
 {
     g_return_val_if_fail(field->widget->getType() == formChoice, -1);
 
-    return static_cast<FormWidgetChoice *>(field->widget)->getNumChoices();
+    return static_cast<FormWidgetChoice *>(field->widget)->getChoices().size();
 }
 
 /**
@@ -1004,7 +1001,7 @@ gchar *poppler_form_field_choice_get_item(PopplerFormField *field, gint index)
     g_return_val_if_fail(index >= 0 && index < poppler_form_field_choice_get_n_items(field), NULL);
 
     tmp = static_cast<FormWidgetChoice *>(field->widget)->getChoice(index);
-    return tmp ? _poppler_goo_string_to_utf8(tmp) : nullptr;
+    return tmp ? _poppler_goo_string_to_utf8(tmp->toStr()) : nullptr;
 }
 
 /**
@@ -1076,17 +1073,15 @@ void poppler_form_field_choice_toggle_item(PopplerFormField *field, gint index)
  **/
 void poppler_form_field_choice_set_text(PopplerFormField *field, const gchar *text)
 {
-    GooString *goo_tmp;
     gchar *tmp;
     gsize length = 0;
 
     g_return_if_fail(field->widget->getType() == formChoice);
 
     tmp = text ? g_convert(text, -1, "UTF-16BE", "UTF-8", nullptr, &length, nullptr) : nullptr;
-    goo_tmp = new GooString(tmp, length);
+    std::unique_ptr<GooString> goo_tmp = std::make_unique<GooString>(tmp, length);
     g_free(tmp);
-    static_cast<FormWidgetChoice *>(field->widget)->setEditChoice(goo_tmp);
-    delete goo_tmp;
+    static_cast<FormWidgetChoice *>(field->widget)->setEditChoice(std::move(goo_tmp));
 }
 
 /**
@@ -1104,7 +1099,7 @@ gchar *poppler_form_field_choice_get_text(PopplerFormField *field)
     g_return_val_if_fail(field->widget->getType() == formChoice, NULL);
 
     tmp = static_cast<FormWidgetChoice *>(field->widget)->getEditChoice();
-    return tmp ? _poppler_goo_string_to_utf8(tmp) : nullptr;
+    return tmp ? _poppler_goo_string_to_utf8(tmp->toStr()) : nullptr;
 }
 
 /**
@@ -1140,8 +1135,6 @@ struct _PopplerSigningData
     char *document_user_password;
 };
 
-typedef struct _PopplerSigningData PopplerSigningData;
-
 G_DEFINE_BOXED_TYPE(PopplerSigningData, poppler_signing_data, poppler_signing_data_copy, poppler_signing_data_free)
 
 /**
@@ -1155,7 +1148,7 @@ G_DEFINE_BOXED_TYPE(PopplerSigningData, poppler_signing_data, poppler_signing_da
  **/
 PopplerSigningData *poppler_signing_data_new(void)
 {
-    PopplerSigningData *data = (PopplerSigningData *)g_malloc0(sizeof(PopplerSigningData));
+    auto *data = static_cast<PopplerSigningData *>(g_malloc0(sizeof(PopplerSigningData)));
 
     data->password = g_strdup("");
     data->page = 0;
@@ -1166,21 +1159,21 @@ PopplerSigningData *poppler_signing_data_new(void)
 
     /* Grey background */
     auto background_color = PopplerColor();
-    background_color.red = 0xEF;
-    background_color.green = 0xEF;
-    background_color.blue = 0xEF;
+    background_color.red = 0xEF00;
+    background_color.green = 0xEF00;
+    background_color.blue = 0xEF00;
     poppler_signing_data_set_background_color(data, &background_color);
 
     /* Red border color */
     auto border_color = PopplerColor();
-    border_color.red = 0xFF;
+    border_color.red = 0xFFFF;
     border_color.green = 0x00;
     border_color.blue = 0x00;
     poppler_signing_data_set_border_color(data, &border_color);
 
     /* Red font color */
     auto font_color = PopplerColor();
-    font_color.red = 0xFF;
+    font_color.red = 0xFFFF;
     font_color.green = 0x00;
     border_color.blue = 0x00;
     poppler_signing_data_set_font_color(data, &font_color);
@@ -1204,7 +1197,7 @@ PopplerSigningData *poppler_signing_data_copy(const PopplerSigningData *signing_
 
     g_return_val_if_fail(signing_data != nullptr, nullptr);
 
-    data = (PopplerSigningData *)g_malloc0(sizeof(PopplerSigningData));
+    data = static_cast<PopplerSigningData *>(g_malloc0(sizeof(PopplerSigningData)));
     data->destination_filename = g_strdup(signing_data->destination_filename);
     data->certificate_info = poppler_certificate_info_copy(signing_data->certificate_info);
     data->page = signing_data->page;
@@ -1573,7 +1566,7 @@ void poppler_signing_data_set_font_size(PopplerSigningData *signing_data, gdoubl
  **/
 gdouble poppler_signing_data_get_font_size(const PopplerSigningData *signing_data)
 {
-    g_return_val_if_fail(signing_data != nullptr, 20.0f);
+    g_return_val_if_fail(signing_data != nullptr, 20.0F);
     return signing_data->font_size;
 }
 
@@ -1990,7 +1983,7 @@ const gchar *poppler_signing_data_get_document_user_password(const PopplerSignin
  **/
 PopplerCertificateInfo *poppler_certificate_info_new(void)
 {
-    return (PopplerCertificateInfo *)g_malloc0(sizeof(PopplerCertificateInfo));
+    return static_cast<PopplerCertificateInfo *>(g_malloc0(sizeof(PopplerCertificateInfo)));
 }
 
 /**
@@ -2155,8 +2148,8 @@ static PopplerCertificateInfo *create_certificate_info(const X509CertificateInfo
     certificate_info->issuer_common_name = g_strdup(issuer_info.commonName.c_str());
     certificate_info->issuer_organization = g_strdup(issuer_info.organization.c_str());
     certificate_info->issuer_email = g_strdup(issuer_info.email.c_str());
-    certificate_info->issued = g_date_time_new_from_unix_utc(validity.notBefore);
-    certificate_info->expires = g_date_time_new_from_unix_utc(validity.notAfter);
+    certificate_info->issued = g_date_time_new_from_unix_utc(std::chrono::duration_cast<std::chrono::seconds>(validity.notBefore.time_since_epoch()).count());
+    certificate_info->expires = g_date_time_new_from_unix_utc(std::chrono::duration_cast<std::chrono::seconds>(validity.notAfter.time_since_epoch()).count());
 
     return certificate_info;
 }
@@ -2177,7 +2170,7 @@ PopplerCertificateInfo *poppler_certificate_info_copy(const PopplerCertificateIn
 
     g_return_val_if_fail(certificate_info != nullptr, nullptr);
 
-    dup = (PopplerCertificateInfo *)g_malloc0(sizeof(PopplerCertificateInfo));
+    dup = static_cast<PopplerCertificateInfo *>(g_malloc0(sizeof(PopplerCertificateInfo)));
     dup->id = g_strdup(certificate_info->id);
     dup->subject_common_name = g_strdup(certificate_info->subject_common_name);
     dup->subject_organization = g_strdup(certificate_info->subject_organization);
@@ -2256,7 +2249,7 @@ PopplerCertificateInfo *poppler_get_certificate_info_by_id(const char *id)
     GList *list;
 
     for (list = certificate_info; list != nullptr; list = list->next) {
-        PopplerCertificateInfo *info = (PopplerCertificateInfo *)list->data;
+        auto *info = static_cast<PopplerCertificateInfo *>(list->data);
 
         if (g_strcmp0(info->id, id) == 0) {
             ret = poppler_certificate_info_copy(info);
@@ -2264,7 +2257,7 @@ PopplerCertificateInfo *poppler_get_certificate_info_by_id(const char *id)
         }
     }
 
-    g_list_free_full(certificate_info, (GDestroyNotify)poppler_certificate_info_free);
+    g_list_free_full(certificate_info, reinterpret_cast<GDestroyNotify>(poppler_certificate_info_free));
 
     return ret;
 }
@@ -2280,8 +2273,8 @@ PopplerCertificateInfo *poppler_get_certificate_info_by_id(const char *id)
  **/
 void poppler_set_nss_dir(const char *path)
 {
-#ifdef ENABLE_NSS3
-    NSSSignatureConfiguration::setNSSDir(GooString(path));
+#if ENABLE_NSS3
+    NSSSignatureConfiguration::setNSSDir(GooString(path ? path : ""));
 #else
     (void)path;
 #endif
@@ -2298,7 +2291,7 @@ void poppler_set_nss_dir(const char *path)
  **/
 char *poppler_get_nss_dir(void)
 {
-#ifdef ENABLE_NSS3
+#if ENABLE_NSS3
     return g_strdup(NSSSignatureConfiguration::getNSSDir().c_str());
 #else
     return nullptr;
@@ -2315,7 +2308,7 @@ char *poppler_get_nss_dir(void)
  **/
 void poppler_set_nss_password_callback(PopplerNssPasswordFunc func)
 {
-#ifdef ENABLE_NSS3
+#if ENABLE_NSS3
     NSSSignatureConfiguration::setNSSPasswordCallback(func);
 #else
     g_warning("poppler_set_nss_password_callback called but this poppler is built without NSS support");

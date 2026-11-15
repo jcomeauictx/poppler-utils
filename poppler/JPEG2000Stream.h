@@ -8,7 +8,9 @@
 // Copyright 2011 Daniel Glöckner <daniel-gl@gmx.net>
 // Copyright 2013, 2014 Adrian Johnson <ajohnson@redneon.com>
 // Copyright 2015 Adam Reichold <adam.reichold@t-online.de>
-// Copyright 2024 Nelson Benítez León <nbenitezl@gmail.com>
+// Copyright 2024, 2025 Nelson Benítez León <nbenitezl@gmail.com>
+// Copyright 2025, 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2025 Arnav V <arnav0872@gmail.com>
 //
 // Licensed under GPLv2 or later
 //
@@ -23,22 +25,22 @@
 
 struct JPXStreamPrivate;
 
-class JPXStream : public FilterStream
+class JPXStream : public OwnedFilterStream
 {
 public:
-    explicit JPXStream(Stream *strA);
+    explicit JPXStream(std::unique_ptr<Stream> strA);
     ~JPXStream() override;
 
     JPXStream(const JPXStream &other) = delete;
     JPXStream &operator=(const JPXStream &other) = delete;
 
     StreamKind getKind() const override { return strJPX; }
-    void reset() override;
+    [[nodiscard]] bool rewind() override;
     void close() override;
     Goffset getPos() override;
     int getChar() override;
     int lookChar() override;
-    GooString *getPSFilter(int psLevel, const char *indent) override;
+    std::optional<std::string> getPSFilter(int psLevel, const char *indent) override;
     bool isBinary(bool last = true) const override;
     void getImageParams(int *bitsPerComponent, StreamColorSpaceMode *csMode, bool *hasAlpha) override;
 
@@ -46,7 +48,7 @@ public:
     void setSupportJPXtransparency(bool val) { handleJPXtransparency = val; }
 
     // Does this JPX stream support transparency (alpha channel)?
-    bool supportJPXtransparency() { return handleJPXtransparency; }
+    bool supportJPXtransparency() const { return handleJPXtransparency; }
 
     int readStream(int nChars, unsigned char *buffer) { return str->doGetChars(nChars, buffer); }
 

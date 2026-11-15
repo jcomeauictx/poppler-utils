@@ -21,14 +21,14 @@
 #    include <SignatureInfo.h>
 #endif
 
-#define SUPPORTED_ROTATION(r) (r == 90 || r == 180 || r == 270)
+#define SUPPORTED_ROTATION(r) ((r) == 90 || (r) == 180 || (r) == 270)
 
 struct _PopplerDocument
 {
     /*< private >*/
     GObject parent_instance;
     std::unique_ptr<GlobalParamsIniter> initer;
-    PDFDoc *doc;
+    std::unique_ptr<PDFDoc> doc;
 
     GList *layers;
     GList *layers_rbgroups;
@@ -66,7 +66,8 @@ struct _PopplerPage
     PopplerDocument *document;
     Page *page;
     int index;
-    TextPage *text;
+    std::shared_ptr<TextPage> text;
+    std::mutex mutex;
 };
 
 struct _PopplerFormField
@@ -85,16 +86,22 @@ struct _PopplerFormField
 struct _PopplerAnnot
 {
     GObject parent_instance;
-    Annot *annot;
+    std::shared_ptr<Annot> annot;
 };
 
-typedef struct _Layer
+struct _PopplerPath
+{
+    PopplerPoint *points;
+    gsize n_points;
+};
+
+struct Layer
 {
     /*< private >*/
     GList *kids;
     gchar *label;
     OptionalContentGroup *oc;
-} Layer;
+};
 
 struct _PopplerLayer
 {
@@ -120,7 +127,7 @@ struct _PopplerStructureElement
  * The real type behind the public PopplerRectangle.
  * Must be ABI compatible to it!
  */
-typedef struct
+struct PopplerRectangleExtended
 {
     /*< private >*/
     double x1;
@@ -129,7 +136,7 @@ typedef struct
     double y2;
     bool match_continued; /* Described in poppler_rectangle_find_get_match_continued() */
     bool ignored_hyphen; /* Described in poppler_rectangle_find_get_ignored_hyphen() */
-} PopplerRectangleExtended;
+};
 
 PopplerRectangle *poppler_rectangle_new_from_pdf_rectangle(const PDFRectangle *rect);
 
@@ -137,8 +144,10 @@ GList *_poppler_document_get_layers(PopplerDocument *document);
 GList *_poppler_document_get_layer_rbgroup(PopplerDocument *document, Layer *layer);
 PopplerPage *_poppler_page_new(PopplerDocument *document, Page *page, int index);
 void _unrotate_rect_for_annot_and_page(Page *page, Annot *annot, double *x1, double *y1, double *x2, double *y2);
-AnnotQuadrilaterals *_page_new_quads_unrotated(Page *page, AnnotQuadrilaterals *quads);
-AnnotQuadrilaterals *new_quads_from_offset_cropbox(const PDFRectangle *crop_box, AnnotQuadrilaterals *quads, gboolean add);
+void _page_unrotate_xy(Page *page, double *x, double *y);
+void _page_rotate_xy(Page *page, double *x, double *y);
+AnnotQuadrilaterals *_page_new_quads_unrotated(Page *page, const AnnotQuadrilaterals *quads);
+AnnotQuadrilaterals *new_quads_from_offset_cropbox(const PDFRectangle *crop_box, const AnnotQuadrilaterals *quads, gboolean add);
 PopplerAction *_poppler_action_new(PopplerDocument *document, const LinkAction *link, const gchar *title);
 PopplerLayer *_poppler_layer_new(PopplerDocument *document, Layer *layer, GList *rbgroup);
 PopplerDest *_poppler_dest_new_goto(PopplerDocument *document, LinkDest *link_dest);
@@ -146,24 +155,25 @@ PopplerFormField *_poppler_form_field_new(PopplerDocument *document, FormWidget 
 PopplerAttachment *_poppler_attachment_new(FileSpec *file);
 PopplerMovie *_poppler_movie_new(const Movie *movie);
 PopplerMedia *_poppler_media_new(const MediaRendition *media);
-PopplerAnnot *_poppler_annot_new(Annot *annot);
-PopplerAnnot *_poppler_annot_text_new(Annot *annot);
-PopplerAnnot *_poppler_annot_free_text_new(Annot *annot);
-PopplerAnnot *_poppler_annot_text_markup_new(Annot *annot);
-PopplerAnnot *_poppler_annot_file_attachment_new(Annot *annot);
-PopplerAnnot *_poppler_annot_movie_new(Annot *annot);
-PopplerAnnot *_poppler_annot_screen_new(PopplerDocument *doc, Annot *annot);
-PopplerAnnot *_poppler_annot_line_new(Annot *annot);
-PopplerAnnot *_poppler_annot_circle_new(Annot *annot);
-PopplerAnnot *_poppler_annot_square_new(Annot *annot);
-PopplerAnnot *_poppler_annot_stamp_new(Annot *annot);
+PopplerAnnot *_poppler_annot_new(const std::shared_ptr<Annot> &annot);
+PopplerAnnot *_poppler_annot_text_new(const std::shared_ptr<Annot> &annot);
+PopplerAnnot *_poppler_annot_free_text_new(const std::shared_ptr<Annot> &annot);
+PopplerAnnot *_poppler_annot_text_markup_new(const std::shared_ptr<Annot> &annot);
+PopplerAnnot *_poppler_annot_file_attachment_new(const std::shared_ptr<Annot> &annot);
+PopplerAnnot *_poppler_annot_movie_new(const std::shared_ptr<Annot> &annot);
+PopplerAnnot *_poppler_annot_screen_new(PopplerDocument *doc, const std::shared_ptr<Annot> &annot);
+PopplerAnnot *_poppler_annot_line_new(const std::shared_ptr<Annot> &annot);
+PopplerAnnot *_poppler_annot_circle_new(const std::shared_ptr<Annot> &annot);
+PopplerAnnot *_poppler_annot_square_new(const std::shared_ptr<Annot> &annot);
+PopplerAnnot *_poppler_annot_stamp_new(const std::shared_ptr<Annot> &annot);
+PopplerAnnot *_poppler_annot_ink_new(const std::shared_ptr<Annot> &annot);
 
 const PDFRectangle *_poppler_annot_get_cropbox(PopplerAnnot *poppler_annot);
 
-char *_poppler_goo_string_to_utf8(const GooString *s);
-gboolean _poppler_convert_pdf_date_to_gtime(const GooString *date, time_t *gdate);
-GDateTime *_poppler_convert_pdf_date_to_date_time(const GooString *date);
-GooString *_poppler_convert_date_time_to_pdf_date(GDateTime *datetime);
+char *_poppler_goo_string_to_utf8(const std::string &s);
+gboolean _poppler_convert_pdf_date_to_gtime(const std::string &date, time_t *gdate);
+GDateTime *_poppler_convert_pdf_date_to_date_time(const std::string &date);
+std::unique_ptr<GooString> _poppler_convert_date_time_to_pdf_date(GDateTime *datetime);
 AnnotStampImageHelper *_poppler_convert_cairo_image_to_stamp_image_helper(const cairo_surface_t *image);
 PopplerColor *_poppler_convert_annot_color_to_poppler_color(const AnnotColor *color);
 std::unique_ptr<AnnotColor> _poppler_convert_poppler_color_to_annot_color(const PopplerColor *poppler_color);

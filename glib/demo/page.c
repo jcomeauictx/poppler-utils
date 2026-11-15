@@ -99,10 +99,10 @@ static void image_set_from_surface(GtkImage *gtkimage, cairo_surface_t *surface)
             tmp = p[0];
             p[0] = p[2];
             p[2] = tmp;
-            p[3] = (has_alpha) ? p[3] : 0xff;
+            p[3] = has_alpha ? p[3] : 0xff;
 #    else
             tmp = p[0];
-            p[0] = (has_alpha) ? p[3] : 0xff;
+            p[0] = has_alpha ? p[3] : 0xff;
             p[3] = p[2];
             p[2] = p[1];
             p[1] = tmp;
@@ -254,13 +254,8 @@ GtkWidget *pgd_page_create_widget(PopplerDocument *document)
     table = gtk_grid_new();
     gtk_widget_set_margin_top(table, 5);
     gtk_widget_set_margin_bottom(table, 5);
-#if GTK_CHECK_VERSION(3, 12, 0)
     gtk_widget_set_margin_start(table, 12);
     gtk_widget_set_margin_end(table, 5);
-#else
-    gtk_widget_set_margin_left(table, 12);
-    gtk_widget_set_margin_right(table, 5);
-#endif
     gtk_grid_set_column_spacing(GTK_GRID(table), 6);
     gtk_grid_set_row_spacing(GTK_GRID(table), 6);
 
@@ -286,13 +281,8 @@ GtkWidget *pgd_page_create_widget(PopplerDocument *document)
     thumnail_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
     gtk_widget_set_margin_top(thumnail_box, 5);
     gtk_widget_set_margin_bottom(thumnail_box, 5);
-#if GTK_CHECK_VERSION(3, 12, 0)
     gtk_widget_set_margin_start(thumnail_box, 12);
     gtk_widget_set_margin_end(thumnail_box, 5);
-#else
-    gtk_widget_set_margin_left(thumnail_box, 12);
-    gtk_widget_set_margin_right(thumnail_box, 5);
-#endif
 
     demo->thumbnail = gtk_image_new();
     gtk_box_pack_start(GTK_BOX(thumnail_box), demo->thumbnail, TRUE, TRUE, 0);

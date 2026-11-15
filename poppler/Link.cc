@@ -16,7 +16,7 @@
 // Copyright (C) 2006, 2008 Pino Toscano <pino@kde.org>
 // Copyright (C) 2007, 2010, 2011 Carlos Garcia Campos <carlosgc@gnome.org>
 // Copyright (C) 2008 Hugo Mercier <hmercier31@gmail.com>
-// Copyright (C) 2008-2010, 2012-2014, 2016-2023 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2008-2010, 2012-2014, 2016-2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2009 Kovid Goyal <kovid@kovidgoyal.net>
 // Copyright (C) 2009 Ilya Gorenbein <igorenbein@finjan.com>
 // Copyright (C) 2012 Tobias Koening <tobias.koenig@kdab.com>
@@ -26,6 +26,9 @@
 // Copyright (C) 2019, 2020 Oliver Sander <oliver.sander@tu-dresden.de>
 // Copyright (C) 2020 Marek Kasik <mkasik@redhat.com>
 // Copyright (C) 2024 Pratham Gandhi <ppg.1382@gmail.com>
+// Copyright (C) 2025, 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2026 Aditya Tiwari <adityatiwari342005@gmail.com>
+// Copyright (C) 2026 Stefan Brüns <stefan.bruens@rwth-aachen.de>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -36,7 +39,7 @@
 
 #include <cstddef>
 #include <cstring>
-#include "goo/gmem.h"
+#include <memory>
 #include "goo/GooString.h"
 #include "Error.h"
 #include "Object.h"
@@ -47,6 +50,7 @@
 #include "FileSpec.h"
 #include "Rendition.h"
 #include "Annot.h"
+#include "Stream.h"
 
 //------------------------------------------------------------------------
 // LinkAction
@@ -67,10 +71,12 @@ std::unique_ptr<LinkAction> LinkAction::parseDest(const Object *obj)
 std::unique_ptr<LinkAction> LinkAction::parseAction(const Object *obj, const std::optional<std::string> &baseURI)
 {
     std::set<int> seenNextActions;
-    return parseAction(obj, baseURI, &seenNextActions);
+    return parseAction(obj, baseURI, &seenNextActions, 0);
 }
 
-std::unique_ptr<LinkAction> LinkAction::parseAction(const Object *obj, const std::optional<std::string> &baseURI, std::set<int> *seenNextActions)
+static constexpr int MAX_ACTION_DEPTH = 50;
+
+std::unique_ptr<LinkAction> LinkAction::parseAction(const Object *obj, const std::optional<std::string> &baseURI, std::set<int> *seenNextActions, int depth)
 {
 
     if (!obj->isDict()) {
@@ -141,7 +147,7 @@ std::unique_ptr<LinkAction> LinkAction::parseAction(const Object *obj, const std
 
         // unknown action
     } else if (obj2.isName()) {
-        action = std::make_unique<LinkUnknown>(obj2.getName());
+        action = std::make_unique<LinkUnknown>(std::string { obj2.getNameString() });
 
         // action is missing or wrong type
     } else {
@@ -156,6 +162,11 @@ std::unique_ptr<LinkAction> LinkAction::parseAction(const Object *obj, const std
 
     if (!action) {
         return nullptr;
+    }
+
+    if (depth >= MAX_ACTION_DEPTH) {
+        error(errSyntaxWarning, -1, "parseAction: Next action chain too deep, stopping.");
+        return action;
     }
 
     // parse the next actions
@@ -175,7 +186,7 @@ std::unique_ptr<LinkAction> LinkAction::parseAction(const Object *obj, const std
         }
 
         actionList.reserve(1);
-        actionList.push_back(parseAction(&nextObj, {}, seenNextActions));
+        actionList.push_back(parseAction(&nextObj, {}, seenNextActions, depth + 1));
     } else if (nextObj.isArray()) {
         const Array *a = nextObj.getArray();
         const int n = a->getLength();
@@ -197,7 +208,7 @@ std::unique_ptr<LinkAction> LinkAction::parseAction(const Object *obj, const std
                 }
             }
 
-            actionList.push_back(parseAction(&obj3, {}, seenNextActions));
+            actionList.push_back(parseAction(&obj3, {}, seenNextActions, depth + 1));
         }
     }
 
@@ -215,7 +226,7 @@ const std::vector<std::unique_ptr<LinkAction>> &LinkAction::nextActions() const
 // LinkDest
 //------------------------------------------------------------------------
 
-LinkDest::LinkDest(const Array *a)
+LinkDest::LinkDest(const Array &a)
 {
     // initialize fields
     left = bottom = right = top = zoom = 0;
@@ -223,11 +234,11 @@ LinkDest::LinkDest(const Array *a)
     ok = false;
 
     // get page
-    if (a->getLength() < 2) {
+    if (a.getLength() < 2) {
         error(errSyntaxWarning, -1, "Annotation destination array is too short");
         return;
     }
-    const Object &obj0 = a->getNF(0);
+    const Object &obj0 = a.getNF(0);
     if (obj0.isInt()) {
         pageNum = obj0.getInt() + 1;
         pageIsRef = false;
@@ -240,15 +251,15 @@ LinkDest::LinkDest(const Array *a)
     }
 
     // get destination type
-    Object obj1 = a->get(1);
+    Object obj1 = a.get(1);
 
     // XYZ link
     if (obj1.isName("XYZ")) {
         kind = destXYZ;
-        if (a->getLength() < 3) {
+        if (a.getLength() < 3) {
             changeLeft = false;
         } else {
-            Object obj2 = a->get(2);
+            Object obj2 = a.get(2);
             if (obj2.isNull()) {
                 changeLeft = false;
             } else if (obj2.isNum()) {
@@ -259,10 +270,10 @@ LinkDest::LinkDest(const Array *a)
                 return;
             }
         }
-        if (a->getLength() < 4) {
+        if (a.getLength() < 4) {
             changeTop = false;
         } else {
-            Object obj2 = a->get(3);
+            Object obj2 = a.get(3);
             if (obj2.isNull()) {
                 changeTop = false;
             } else if (obj2.isNum()) {
@@ -273,15 +284,15 @@ LinkDest::LinkDest(const Array *a)
                 return;
             }
         }
-        if (a->getLength() < 5) {
+        if (a.getLength() < 5) {
             changeZoom = false;
         } else {
-            Object obj2 = a->get(4);
+            Object obj2 = a.get(4);
             if (obj2.isNull()) {
                 changeZoom = false;
             } else if (obj2.isNum()) {
                 zoom = obj2.getNum();
-                changeZoom = (zoom == 0) ? false : true;
+                changeZoom = zoom != 0;
             } else {
                 error(errSyntaxWarning, -1, "Bad annotation destination position");
                 return;
@@ -295,10 +306,10 @@ LinkDest::LinkDest(const Array *a)
         // FitH link
     } else if (obj1.isName("FitH")) {
         kind = destFitH;
-        if (a->getLength() < 3) {
+        if (a.getLength() < 3) {
             changeTop = false;
         } else {
-            Object obj2 = a->get(2);
+            Object obj2 = a.get(2);
             if (obj2.isNull()) {
                 changeTop = false;
             } else if (obj2.isNum()) {
@@ -312,12 +323,12 @@ LinkDest::LinkDest(const Array *a)
 
         // FitV link
     } else if (obj1.isName("FitV")) {
-        if (a->getLength() < 3) {
+        if (a.getLength() < 3) {
             error(errSyntaxWarning, -1, "Annotation destination array is too short");
             return;
         }
         kind = destFitV;
-        Object obj2 = a->get(2);
+        Object obj2 = a.get(2);
         if (obj2.isNull()) {
             changeLeft = false;
         } else if (obj2.isNum()) {
@@ -330,33 +341,33 @@ LinkDest::LinkDest(const Array *a)
 
         // FitR link
     } else if (obj1.isName("FitR")) {
-        if (a->getLength() < 6) {
+        if (a.getLength() < 6) {
             error(errSyntaxWarning, -1, "Annotation destination array is too short");
             return;
         }
         kind = destFitR;
-        Object obj2 = a->get(2);
+        Object obj2 = a.get(2);
         if (obj2.isNum()) {
             left = obj2.getNum();
         } else {
             error(errSyntaxWarning, -1, "Bad annotation destination position");
             kind = destFit;
         }
-        obj2 = a->get(3);
+        obj2 = a.get(3);
         if (obj2.isNum()) {
             bottom = obj2.getNum();
         } else {
             error(errSyntaxWarning, -1, "Bad annotation destination position");
             kind = destFit;
         }
-        obj2 = a->get(4);
+        obj2 = a.get(4);
         if (obj2.isNum()) {
             right = obj2.getNum();
         } else {
             error(errSyntaxWarning, -1, "Bad annotation destination position");
             kind = destFit;
         }
-        obj2 = a->get(5);
+        obj2 = a.get(5);
         if (obj2.isNum()) {
             top = obj2.getNum();
         } else {
@@ -370,12 +381,12 @@ LinkDest::LinkDest(const Array *a)
 
         // FitBH link
     } else if (obj1.isName("FitBH")) {
-        if (a->getLength() < 3) {
+        if (a.getLength() < 3) {
             error(errSyntaxWarning, -1, "Annotation destination array is too short");
             return;
         }
         kind = destFitBH;
-        Object obj2 = a->get(2);
+        Object obj2 = a.get(2);
         if (obj2.isNull()) {
             changeTop = false;
         } else if (obj2.isNum()) {
@@ -388,12 +399,12 @@ LinkDest::LinkDest(const Array *a)
 
         // FitBV link
     } else if (obj1.isName("FitBV")) {
-        if (a->getLength() < 3) {
+        if (a.getLength() < 3) {
             error(errSyntaxWarning, -1, "Annotation destination array is too short");
             return;
         }
         kind = destFitBV;
-        Object obj2 = a->get(2);
+        Object obj2 = a.get(2);
         if (obj2.isNull()) {
             changeLeft = false;
         } else if (obj2.isNum()) {
@@ -421,13 +432,13 @@ LinkGoTo::LinkGoTo(const Object *destObj)
 {
     // named destination
     if (destObj->isName()) {
-        namedDest = std::make_unique<GooString>(destObj->getName());
+        namedDest = std::make_unique<GooString>(destObj->getNameString());
     } else if (destObj->isString()) {
-        namedDest = std::unique_ptr<GooString>(destObj->getString()->copy());
+        namedDest = std::make_unique<GooString>(destObj->getString());
 
         // destination dictionary
     } else if (destObj->isArray()) {
-        dest = std::make_unique<LinkDest>(destObj->getArray());
+        dest = std::make_unique<LinkDest>(*destObj->getArray());
         if (!dest->isOk()) {
             dest.reset();
         }
@@ -449,18 +460,18 @@ LinkGoToR::LinkGoToR(Object *fileSpecObj, Object *destObj)
     // get file name
     Object obj1 = getFileSpecNameForPlatform(fileSpecObj);
     if (obj1.isString()) {
-        fileName = std::unique_ptr<GooString>(obj1.getString()->copy());
+        fileName = obj1.takeString();
     }
 
     // named destination
     if (destObj->isName()) {
-        namedDest = std::make_unique<GooString>(destObj->getName());
+        namedDest = std::make_unique<GooString>(destObj->getNameString());
     } else if (destObj->isString()) {
-        namedDest = std::unique_ptr<GooString>(destObj->getString()->copy());
+        namedDest = std::make_unique<GooString>(destObj->getString());
 
         // destination dictionary
     } else if (destObj->isArray()) {
-        dest = std::make_unique<LinkDest>(destObj->getArray());
+        dest = std::make_unique<LinkDest>(*destObj->getArray());
         if (!dest->isOk()) {
             dest.reset();
         }
@@ -485,7 +496,7 @@ LinkLaunch::LinkLaunch(const Object *actionObj)
         if (!obj1.isNull()) {
             Object obj3 = getFileSpecNameForPlatform(&obj1);
             if (obj3.isString()) {
-                fileName = std::unique_ptr<GooString>(obj3.getString()->copy());
+                fileName = obj3.takeString();
             }
         } else {
 #ifdef _WIN32
@@ -499,11 +510,11 @@ LinkLaunch::LinkLaunch(const Object *actionObj)
                 Object obj2 = obj1.dictLookup("F");
                 Object obj3 = getFileSpecNameForPlatform(&obj2);
                 if (obj3.isString()) {
-                    fileName = std::unique_ptr<GooString>(obj3.getString()->copy());
+                    fileName = obj3.takeString();
                 }
                 obj2 = obj1.dictLookup("P");
                 if (obj2.isString()) {
-                    params = std::unique_ptr<GooString>(obj2.getString()->copy());
+                    params = obj2.takeString();
                 }
             } else {
                 error(errSyntaxWarning, -1, "Bad launch-type link action");
@@ -523,7 +534,7 @@ LinkURI::LinkURI(const Object *uriObj, const std::optional<std::string> &baseURI
     hasURIFlag = false;
     if (uriObj->isString()) {
         hasURIFlag = true;
-        const std::string &uri2 = uriObj->getString()->toStr();
+        const std::string &uri2 = uriObj->getString();
         size_t n = strcspn(uri2.c_str(), "/:");
         if (n < uri2.size() && uri2[n] == ':') {
             // "http:..." etc.
@@ -535,7 +546,7 @@ LinkURI::LinkURI(const Object *uriObj, const std::optional<std::string> &baseURI
             // relative URI
             if (baseURI) {
                 uri = *baseURI;
-                if (uri.size() > 0) {
+                if (!uri.empty()) {
                     char c = uri.back();
                     if (c != '/' && c != '?') {
                         uri += '/';
@@ -565,7 +576,7 @@ LinkNamed::LinkNamed(const Object *nameObj)
 {
     hasNameFlag = false;
     if (nameObj->isName()) {
-        name = (nameObj->getName()) ? nameObj->getName() : "";
+        name = nameObj->getNameString();
         hasNameFlag = true;
     }
 }
@@ -588,7 +599,7 @@ LinkMovie::LinkMovie(const Object *obj)
 
     Object tmp = obj->dictLookup("T");
     if (tmp.isString()) {
-        annotTitle = tmp.getString()->toStr();
+        annotTitle = tmp.getString();
         hasAnnotTitleFlag = true;
     }
 
@@ -598,15 +609,15 @@ LinkMovie::LinkMovie(const Object *obj)
 
     tmp = obj->dictLookup("Operation");
     if (tmp.isName()) {
-        const char *name = tmp.getName();
+        const std::string &name = tmp.getNameString();
 
-        if (!strcmp(name, "Play")) {
+        if (name == "Play") {
             operation = operationTypePlay;
-        } else if (!strcmp(name, "Stop")) {
+        } else if (name == "Stop") {
             operation = operationTypeStop;
-        } else if (!strcmp(name, "Pause")) {
+        } else if (name == "Pause") {
             operation = operationTypePause;
-        } else if (!strcmp(name, "Resume")) {
+        } else if (name == "Resume") {
             operation = operationTypeResume;
         }
     }
@@ -648,7 +659,7 @@ LinkSound::LinkSound(const Object *soundObj)
         }
         // 'Sound' object
         tmp = soundObj->dictLookup("Sound");
-        sound = Sound::parseSound(&tmp);
+        sound = Sound::parseSound(tmp);
     }
 }
 
@@ -661,7 +672,6 @@ LinkSound::~LinkSound() = default;
 LinkRendition::LinkRendition(const Object *obj)
 {
     operation = NoRendition;
-    media = nullptr;
     int operationCode = -1;
 
     screenRef = Ref::INVALID();
@@ -670,7 +680,7 @@ LinkRendition::LinkRendition(const Object *obj)
         Object tmp = obj->dictLookup("JS");
         if (!tmp.isNull()) {
             if (tmp.isString()) {
-                js = tmp.getString()->toStr();
+                js = tmp.getString();
             } else if (tmp.isStream()) {
                 Stream *stream = tmp.getStream();
                 stream->fillString(js);
@@ -688,7 +698,7 @@ LinkRendition::LinkRendition(const Object *obj)
                 // retrieve rendition object
                 Object renditionObj = obj->dictLookup("R");
                 if (renditionObj.isDict()) {
-                    media = new MediaRendition(&renditionObj);
+                    media = std::make_unique<MediaRendition>(*renditionObj.getDict());
                 } else if (operationCode == 0 || operationCode == 4) {
                     error(errSyntaxWarning, -1, "Invalid Rendition Action: no R field with op = {0:d}", operationCode);
                     renditionObj.setToNull();
@@ -719,16 +729,13 @@ LinkRendition::LinkRendition(const Object *obj)
                 operation = PlayRendition;
                 break;
             }
-        } else if (js == "") {
+        } else if (js.empty()) {
             error(errSyntaxWarning, -1, "Invalid Rendition action: no OP or JS field defined");
         }
     }
 }
 
-LinkRendition::~LinkRendition()
-{
-    delete media;
-}
+LinkRendition::~LinkRendition() = default;
 
 //------------------------------------------------------------------------
 // LinkJavaScript
@@ -739,7 +746,7 @@ LinkJavaScript::LinkJavaScript(Object *jsObj)
     isValid = false;
 
     if (jsObj->isString()) {
-        js = jsObj->getString()->toStr();
+        js = jsObj->getString();
         isValid = true;
     } else if (jsObj->isStream()) {
         Stream *stream = jsObj->getStream();
@@ -752,39 +759,41 @@ LinkJavaScript::~LinkJavaScript() = default;
 
 Object LinkJavaScript::createObject(XRef *xref, const std::string &js)
 {
-    Dict *linkDict = new Dict(xref);
-    linkDict->add("S", Object(objName, "JavaScript"));
-    linkDict->add("JS", Object(new GooString(js)));
+    auto linkDict = std::make_unique<Dict>(xref);
+    linkDict->add("S", Object::name("JavaScript"));
+    linkDict->add("JS", Object(std::string { js }));
 
-    return Object(linkDict);
+    return Object(std::move(linkDict));
 }
 
 //------------------------------------------------------------------------
 // LinkOCGState
 //------------------------------------------------------------------------
-LinkOCGState::LinkOCGState(const Object *obj) : isValid(true)
+LinkOCGState::LinkOCGState(const Object *obj)
 {
     Object obj1 = obj->dictLookup("State");
     if (obj1.isArray()) {
+        Array *stateArray = obj1.getArray();
         StateList stList;
 
-        for (int i = 0; i < obj1.arrayGetLength(); ++i) {
-            const Object &obj2 = obj1.arrayGetNF(i);
+        for (int i = 0; i < stateArray->getLength(); ++i) {
+            const Object &obj2 = stateArray->getNF(i);
             if (obj2.isName()) {
                 if (!stList.list.empty()) {
                     stateList.push_back(stList);
                 }
 
-                const char *name = obj2.getName();
                 stList.list.clear();
-                if (!strcmp(name, "ON")) {
+
+                const std::string &name = obj2.getNameString();
+                if (name == "ON") {
                     stList.st = On;
-                } else if (!strcmp(name, "OFF")) {
+                } else if (name == "OFF") {
                     stList.st = Off;
-                } else if (!strcmp(name, "Toggle")) {
+                } else if (name == "Toggle") {
                     stList.st = Toggle;
                 } else {
-                    error(errSyntaxWarning, -1, "Invalid name '{0:s}' in OCG Action state array", name);
+                    error(errSyntaxWarning, -1, "Invalid name '{0:r}' in OCG Action state array", &name);
                     isValid = false;
                 }
             } else if (obj2.isRef()) {
@@ -820,7 +829,7 @@ LinkHide::LinkHide(const Object *hideObj)
     if (hideObj->isDict()) {
         const Object targetObj = hideObj->dictLookup("T");
         if (targetObj.isString()) {
-            targetName = targetObj.getString()->toStr();
+            targetName = targetObj.getString();
             hasTargetNameFlag = true;
         }
         const Object shouldHide = hideObj->dictLookup("H");
@@ -844,13 +853,14 @@ LinkResetForm::LinkResetForm(const Object *obj)
 
     obj1 = obj->dictLookup("Fields");
     if (obj1.isArray()) {
-        fields.resize(obj1.arrayGetLength());
-        for (int i = 0; i < obj1.arrayGetLength(); ++i) {
-            const Object &obj2 = obj1.arrayGetNF(i);
+        Array *fieldsArray = obj1.getArray();
+        fields.resize(fieldsArray->getLength());
+        for (int i = 0; i < fieldsArray->getLength(); ++i) {
+            const Object &obj2 = fieldsArray->getNF(i);
             if (obj2.isName()) {
-                fields[i] = std::string(obj2.getName());
+                fields[i] = obj2.getNameString();
             } else if (obj2.isString()) {
-                fields[i] = obj2.getString()->toStr();
+                fields[i] = obj2.getString();
             } else if (obj2.isRef()) {
                 fields[i] = std::to_string(obj2.getRef().num);
                 fields[i].append(" ");
@@ -886,13 +896,14 @@ LinkSubmitForm::LinkSubmitForm(const Object *obj)
 
     const Object objFields = obj->dictLookup("Fields");
     if (objFields.isArray()) {
-        fields.resize(objFields.arrayGetLength());
-        for (int i = 0; i < objFields.arrayGetLength(); ++i) {
-            const Object &objNF = objFields.arrayGetNF(i);
+        Array *fieldsArray = objFields.getArray();
+        fields.resize(fieldsArray->getLength());
+        for (int i = 0; i < fieldsArray->getLength(); ++i) {
+            const Object &objNF = fieldsArray->getNF(i);
             if (objNF.isName()) {
-                fields[i] = std::string(objNF.getName());
+                fields[i] = objNF.getNameString();
             } else if (objNF.isString()) {
-                fields[i] = objNF.getString()->toStr();
+                fields[i] = objNF.getString();
             } else if (objNF.isRef()) {
                 fields[i] = std::to_string(objNF.getRef().num);
                 fields[i].append(" ");
@@ -908,10 +919,10 @@ LinkSubmitForm::LinkSubmitForm(const Object *obj)
     if (objFileSpecification.isDict()) {
         objFileSpecification = objFileSpecification.dictLookup("F");
         if (objFileSpecification.isString()) {
-            url = objFileSpecification.getString()->toStr();
+            url = objFileSpecification.getString();
         }
     } else if (objFileSpecification.isString()) {
-        url = objFileSpecification.getString()->toStr();
+        url = objFileSpecification.getString();
     }
 
     const Object objFlags = obj->dictLookup("Flags");
@@ -927,10 +938,7 @@ LinkSubmitForm::~LinkSubmitForm() = default;
 // LinkUnknown
 //------------------------------------------------------------------------
 
-LinkUnknown::LinkUnknown(const char *actionA)
-{
-    action = std::string(actionA ? actionA : "");
-}
+LinkUnknown::LinkUnknown(std::string &&actionA) : action { actionA } { }
 
 LinkUnknown::~LinkUnknown() = default;
 
@@ -944,20 +952,13 @@ Links::Links(Annots *annots)
         return;
     }
 
-    for (Annot *annot : annots->getAnnots()) {
+    for (const std::shared_ptr<Annot> &annot : annots->getAnnots()) {
 
         if (annot->getType() != Annot::typeLink) {
             continue;
         }
-
-        annot->incRefCnt();
-        links.push_back(static_cast<AnnotLink *>(annot));
+        links.push_back(std::static_pointer_cast<AnnotLink>(annot));
     }
 }
 
-Links::~Links()
-{
-    for (AnnotLink *link : links) {
-        link->decRefCnt();
-    }
-}
+Links::~Links() = default;

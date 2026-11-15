@@ -25,7 +25,7 @@ set(poppler_cpp_SRCS
 
 add_library(poppler-cpp ${poppler_cpp_SRCS})
 generate_export_header(poppler-cpp BASE_NAME poppler-cpp EXPORT_FILE_NAME "${CMAKE_CURRENT_BINARY_DIR}/poppler_cpp_export.h")
-set_target_properties(poppler-cpp PROPERTIES VERSION 1.0.0 SOVERSION 1)
+set_target_properties(poppler-cpp PROPERTIES VERSION 3.1.0 SOVERSION 3)
 if(MINGW AND BUILD_SHARED_LIBS)
     get_target_property(POPPLER_CPP_SOVERSION poppler-cpp SOVERSION)
     set_target_properties(poppler-cpp PROPERTIES SUFFIX "-${POPPLER_CPP_SOVERSION}${CMAKE_SHARED_LIBRARY_SUFFIX}")
@@ -50,15 +50,11 @@ set(poppler_cpp_all_install_headers
   ${CMAKE_CURRENT_BINARY_DIR}/poppler-version.h
 )
 
-if (${CMAKE_VERSION} VERSION_LESS "3.23.0")
-  install(FILES ${poppler_cpp_all_install_headers} DESTINATION include/poppler/cpp)
-else()
-  target_sources(poppler-cpp
-    PUBLIC
-    FILE_SET HEADERS
-    BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR};${CMAKE_CURRENT_BINARY_DIR}
-    FILES
-    ${poppler_cpp_all_install_headers}
-  )
-  install(TARGETS poppler-cpp FILE_SET HEADERS DESTINATION include/poppler/cpp)
-endif()
+target_sources(poppler-cpp
+  PUBLIC
+  FILE_SET HEADERS
+  BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR};${CMAKE_CURRENT_BINARY_DIR}
+  FILES
+  ${poppler_cpp_all_install_headers}
+)
+install(TARGETS poppler-cpp FILE_SET HEADERS DESTINATION include/poppler/cpp)

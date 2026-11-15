@@ -13,7 +13,7 @@
 // All changes made under the Poppler project to this file are licensed
 // under GPL version 2 or later
 //
-// Copyright (C) 2007-2008, 2010, 2012, 2015-2020, 2022 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2007-2008, 2010, 2012, 2015-2020, 2022, 2024-2026 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2010 Hib Eris <hib@hiberis.nl>
 // Copyright (C) 2010 Mike Slegeir <tehpola@yahoo.com>
 // Copyright (C) 2010, 2013 Suzuki Toshiya <mpsuzuki@hiroshima-u.ac.jp>
@@ -30,7 +30,7 @@
 // Copyright (C) 2018 Adam Reichold <adam.reichold@t-online.de>
 // Copyright (C) 2019, 2021, 2024 Oliver Sander <oliver.sander@tu-dresden.de>
 // Copyright (C) 2021 Hubert Figuiere <hub@figuiere.net>
-// Copyright (C) 2024 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright (C) 2024-2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -41,20 +41,14 @@
 #include <poppler-config.h>
 #include <cstdio>
 #include <cstdlib>
-#include <cstddef>
 #include <cstring>
-#ifdef HAVE_DIRENT_H
-#    include <dirent.h>
-#endif
 #include <ctime>
 #include "parseargs.h"
 #include "goo/GooString.h"
 #include "goo/gbase64.h"
 #include "goo/gbasename.h"
-#include "goo/gmem.h"
 #include "Object.h"
 #include "Stream.h"
-#include "Array.h"
 #include "Dict.h"
 #include "XRef.h"
 #include "Catalog.h"
@@ -97,60 +91,59 @@ double wordBreakThreshold = 10; // 10%, below converted into a coefficient - 0.1
 bool showHidden = false;
 bool noMerge = false;
 bool fontFullName = false;
-static char ownerPassword[33] = "";
-static char userPassword[33] = "";
+static char ownerPassword[128] = "";
+static char userPassword[128] = "";
 static bool printVersion = false;
 
 static std::unique_ptr<GooString> getInfoString(Dict *infoDict, const char *key);
-static GooString *getInfoDate(Dict *infoDict, const char *key);
+static std::optional<std::string> getInfoDate(Dict *infoDict, const char *key);
 
 static char textEncName[128] = "";
 
-static const ArgDesc argDesc[] = { { "-f", argInt, &firstPage, 0, "first page to convert" },
-                                   { "-l", argInt, &lastPage, 0, "last page to convert" },
+static const ArgDesc argDesc[] = { { .arg = "-f", .kind = argInt, .val = &firstPage, .size = 0, .usage = "first page to convert" },
+                                   { .arg = "-l", .kind = argInt, .val = &lastPage, .size = 0, .usage = "last page to convert" },
                                    /*{"-raw",    argFlag,     &rawOrder,      0,
                                      "keep strings in content stream order"},*/
-                                   { "-q", argFlag, &errQuiet, 0, "don't print any messages or errors" },
-                                   { "-h", argFlag, &printHelp, 0, "print usage information" },
-                                   { "-?", argFlag, &printHelp, 0, "print usage information" },
-                                   { "-help", argFlag, &printHelp, 0, "print usage information" },
-                                   { "--help", argFlag, &printHelp, 0, "print usage information" },
-                                   { "-p", argFlag, &printHtml, 0, "exchange .pdf links by .html" },
-                                   { "-c", argFlag, &complexMode, 0, "generate complex document" },
-                                   { "-s", argFlag, &singleHtml, 0, "generate single document that includes all pages" },
+                                   { .arg = "-q", .kind = argFlag, .val = &errQuiet, .size = 0, .usage = "don't print any messages or errors" },
+                                   { .arg = "-h", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
+                                   { .arg = "-?", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
+                                   { .arg = "-help", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
+                                   { .arg = "--help", .kind = argFlag, .val = &printHelp, .size = 0, .usage = "print usage information" },
+                                   { .arg = "-p", .kind = argFlag, .val = &printHtml, .size = 0, .usage = "exchange .pdf links by .html" },
+                                   { .arg = "-c", .kind = argFlag, .val = &complexMode, .size = 0, .usage = "generate complex document" },
+                                   { .arg = "-s", .kind = argFlag, .val = &singleHtml, .size = 0, .usage = "generate single document that includes all pages" },
 #ifdef HAVE_IN_MEMORY_FILE
-                                   { "-dataurls", argFlag, &dataUrls, 0, "use data URLs instead of external images in HTML" },
+                                   { .arg = "-dataurls", .kind = argFlag, .val = &dataUrls, .size = 0, .usage = "use data URLs instead of external images in HTML" },
 #endif
-                                   { "-i", argFlag, &ignore, 0, "ignore images" },
-                                   { "-noframes", argFlag, &noframes, 0, "generate no frames" },
-                                   { "-stdout", argFlag, &stout, 0, "use standard output" },
-                                   { "-zoom", argFP, &scale, 0, "zoom the pdf document (default 1.5)" },
-                                   { "-xml", argFlag, &xml, 0, "output for XML post-processing" },
-                                   { "-noroundcoord", argFlag, &noRoundedCoordinates, 0, "do not round coordinates (with XML output only)" },
-                                   { "-hidden", argFlag, &showHidden, 0, "output hidden text" },
-                                   { "-nomerge", argFlag, &noMerge, 0, "do not merge paragraphs" },
-                                   { "-enc", argString, textEncName, sizeof(textEncName), "output text encoding name" },
-                                   { "-fmt", argString, extension, sizeof(extension), "image file format for Splash output (png or jpg)" },
-                                   { "-v", argFlag, &printVersion, 0, "print copyright and version info" },
-                                   { "-opw", argString, ownerPassword, sizeof(ownerPassword), "owner password (for encrypted files)" },
-                                   { "-upw", argString, userPassword, sizeof(userPassword), "user password (for encrypted files)" },
-                                   { "-nodrm", argFlag, &noDrm, 0, "override document DRM settings" },
-                                   { "-wbt", argFP, &wordBreakThreshold, 0, "word break threshold (default 10 percent)" },
-                                   { "-fontfullname", argFlag, &fontFullName, 0, "outputs font full name" },
+                                   { .arg = "-i", .kind = argFlag, .val = &ignore, .size = 0, .usage = "ignore images" },
+                                   { .arg = "-noframes", .kind = argFlag, .val = &noframes, .size = 0, .usage = "generate no frames" },
+                                   { .arg = "-stdout", .kind = argFlag, .val = &stout, .size = 0, .usage = "use standard output" },
+                                   { .arg = "-zoom", .kind = argFP, .val = &scale, .size = 0, .usage = "zoom the pdf document (default 1.5)" },
+                                   { .arg = "-xml", .kind = argFlag, .val = &xml, .size = 0, .usage = "output for XML post-processing" },
+                                   { .arg = "-noroundcoord", .kind = argFlag, .val = &noRoundedCoordinates, .size = 0, .usage = "do not round coordinates (with XML output only)" },
+                                   { .arg = "-hidden", .kind = argFlag, .val = &showHidden, .size = 0, .usage = "output hidden text" },
+                                   { .arg = "-nomerge", .kind = argFlag, .val = &noMerge, .size = 0, .usage = "do not merge paragraphs" },
+                                   { .arg = "-enc", .kind = argString, .val = textEncName, .size = sizeof(textEncName), .usage = "output text encoding name" },
+                                   { .arg = "-fmt", .kind = argString, .val = extension, .size = sizeof(extension), .usage = "image file format for Splash output (png or jpg)" },
+                                   { .arg = "-v", .kind = argFlag, .val = &printVersion, .size = 0, .usage = "print copyright and version info" },
+                                   { .arg = "-opw", .kind = argString, .val = ownerPassword, .size = sizeof(ownerPassword), .usage = "owner password (for encrypted files)" },
+                                   { .arg = "-upw", .kind = argString, .val = userPassword, .size = sizeof(userPassword), .usage = "user password (for encrypted files)" },
+                                   { .arg = "-nodrm", .kind = argFlag, .val = &noDrm, .size = 0, .usage = "override document DRM settings" },
+                                   { .arg = "-wbt", .kind = argFP, .val = &wordBreakThreshold, .size = 0, .usage = "word break threshold (default 10 percent)" },
+                                   { .arg = "-fontfullname", .kind = argFlag, .val = &fontFullName, .size = 0, .usage = "outputs font full name" },
                                    {} };
 
 class SplashOutputDevNoText : public SplashOutputDev
 {
 public:
-    SplashOutputDevNoText(SplashColorMode colorModeA, int bitmapRowPadA, bool reverseVideoA, SplashColorPtr paperColorA, bool bitmapTopDownA = true)
-        : SplashOutputDev(colorModeA, bitmapRowPadA, reverseVideoA, paperColorA, bitmapTopDownA) { }
+    SplashOutputDevNoText(SplashColorMode colorModeA, int bitmapRowPadA, SplashColorPtr paperColorA, bool bitmapTopDownA = true) : SplashOutputDev(colorModeA, bitmapRowPadA, paperColorA, bitmapTopDownA) { }
     ~SplashOutputDevNoText() override;
 
-    void drawChar(GfxState *state, double x, double y, double dx, double dy, double originX, double originY, CharCode code, int nBytes, const Unicode *u, int uLen) override { }
-    bool beginType3Char(GfxState *state, double x, double y, double dx, double dy, CharCode code, const Unicode *u, int uLen) override { return false; }
-    void endType3Char(GfxState *state) override { }
-    void beginTextObject(GfxState *state) override { }
-    void endTextObject(GfxState *state) override { }
+    void drawChar(GfxState * /*state*/, double /*x*/, double /*y*/, double /*dx*/, double /*dy*/, double /*originX*/, double /*originY*/, CharCode /*code*/, int /*nBytes*/, const Unicode * /*u*/, int /*uLen*/) override { }
+    bool beginType3Char(GfxState * /*state*/, double /*x*/, double /*y*/, double /*dx*/, double /*dy*/, CharCode /*code*/, const Unicode * /*u*/, int /*uLen*/) override { return false; }
+    void endType3Char(GfxState * /*state*/) override { }
+    void beginTextObject(GfxState * /*state*/) override { }
+    void endTextObject(GfxState * /*state*/) override { }
     bool interpretType3Chars() override { return false; }
 };
 
@@ -164,8 +157,8 @@ int main(int argc, char *argv[])
     std::unique_ptr<GooString> author;
     std::unique_ptr<GooString> keywords;
     std::unique_ptr<GooString> subject;
-    GooString *date = nullptr;
-    GooString *htmlFileName = nullptr;
+    std::optional<std::string> date;
+    std::unique_ptr<GooString> htmlFileName;
     HtmlOutputDev *htmlOut = nullptr;
     SplashOutputDev *splashOut = nullptr;
     bool doOutline;
@@ -219,7 +212,7 @@ int main(int argc, char *argv[])
 
     fileName = new GooString(argv[1]);
 
-    if (fileName->cmp("-") == 0) {
+    if (fileName->toStr() == "-") {
         delete fileName;
         fileName = new GooString("fd://0");
     }
@@ -241,33 +234,32 @@ int main(int argc, char *argv[])
 
     // construct text file name
     if (argc == 3) {
-        GooString *tmp = new GooString(argv[2]);
+        auto tmp = std::make_unique<GooString>(argv[2]);
         if (!xml) {
-            if (tmp->getLength() >= 5) {
-                const char *p = tmp->c_str() + tmp->getLength() - 5;
+            if (tmp->size() >= 5) {
+                const char *p = tmp->c_str() + tmp->size() - 5;
                 if (!strcmp(p, ".html") || !strcmp(p, ".HTML")) {
-                    htmlFileName = new GooString(tmp->c_str(), tmp->getLength() - 5);
+                    htmlFileName = std::make_unique<GooString>(tmp->c_str(), tmp->size() - 5);
                 }
             }
         } else {
-            if (tmp->getLength() >= 4) {
-                const char *p = tmp->c_str() + tmp->getLength() - 4;
+            if (tmp->size() >= 4) {
+                const char *p = tmp->c_str() + tmp->size() - 4;
                 if (!strcmp(p, ".xml") || !strcmp(p, ".XML")) {
-                    htmlFileName = new GooString(tmp->c_str(), tmp->getLength() - 4);
+                    htmlFileName = std::make_unique<GooString>(tmp->c_str(), tmp->size() - 4);
                 }
             }
         }
         if (!htmlFileName) {
-            htmlFileName = new GooString(tmp);
+            htmlFileName = std::move(tmp);
         }
-        delete tmp;
-    } else if (fileName->cmp("fd://0") == 0) {
+    } else if (fileName->toStr() == "fd://0") {
         error(errCommandLine, -1, "You have to provide an output filename when reading from stdin.");
         goto error;
     } else {
-        const char *p = fileName->c_str() + fileName->getLength() - 4;
+        const char *p = fileName->c_str() + fileName->size() - 4;
         if (!strcmp(p, ".pdf") || !strcmp(p, ".PDF")) {
-            htmlFileName = new GooString(fileName->c_str(), fileName->getLength() - 4);
+            htmlFileName = std::make_unique<GooString>(fileName->c_str(), fileName->size() - 4);
         } else {
             htmlFileName = fileName->copy();
         }
@@ -322,7 +314,7 @@ int main(int argc, char *argv[])
         }
     }
     if (!docTitle) {
-        docTitle = std::make_unique<GooString>(htmlFileName);
+        docTitle = htmlFileName->copy();
     }
 
     if (!singleHtml) {
@@ -335,9 +327,6 @@ int main(int argc, char *argv[])
     // write text file
     htmlOut = new HtmlOutputDev(doc->getCatalog(), htmlFileName->c_str(), docTitle->c_str(), author ? author->c_str() : nullptr, keywords ? keywords->c_str() : nullptr, subject ? subject->c_str() : nullptr, date ? date->c_str() : nullptr,
                                 rawOrder, firstPage, doOutline);
-    if (date) {
-        delete date;
-    }
 
     if ((complexMode || singleHtml) && !xml && !ignore) {
         // White paper color
@@ -346,7 +335,7 @@ int main(int argc, char *argv[])
         // If the user specified "jpg" use JPEG, otherwise PNG
         SplashImageFileFormat format = strcmp(extension, "jpg") ? splashFormatPng : splashFormatJpeg;
 
-        splashOut = new SplashOutputDevNoText(splashModeRGB8, 4, false, color);
+        splashOut = new SplashOutputDevNoText(splashModeRGB8, 4, color);
         splashOut->startDoc(doc.get());
 
         for (int pg = firstPage; pg <= lastPage; ++pg) {
@@ -355,7 +344,7 @@ int main(int argc, char *argv[])
             SplashBitmap *bitmap = splashOut->getBitmap();
 
             const std::string imgFileName = GooString::format("{0:s}{1:03d}.{2:s}", htmlFileName->c_str(), pg, extension);
-            auto f1 = dataUrls ? imf.open("wb") : fopen(imgFileName.c_str(), "wb");
+            auto *f1 = dataUrls ? imf.open("wb") : fopen(imgFileName.c_str(), "wb");
             if (!f1) {
                 fprintf(stderr, "Could not open %s\n", imgFileName.c_str());
                 continue;
@@ -385,18 +374,12 @@ int main(int argc, char *argv[])
 error:
     delete fileName;
 
-    if (htmlFileName) {
-        delete htmlFileName;
-    }
-
     return exit_status;
 }
 
 static std::unique_ptr<GooString> getInfoString(Dict *infoDict, const char *key)
 {
     Object obj;
-    // Raw value as read from PDF (may be in pdfDocEncoding or UCS2)
-    const GooString *rawString;
     // Value converted to unicode
     Unicode *unicodeString;
     int unicodeLength;
@@ -407,23 +390,23 @@ static std::unique_ptr<GooString> getInfoString(Dict *infoDict, const char *key)
 
     obj = infoDict->lookup(key);
     if (obj.isString()) {
-        rawString = obj.getString();
+        const std::string &rawString = obj.getString();
 
         // Convert rawString to unicode
-        if (hasUnicodeByteOrderMark(rawString->toStr())) {
+        if (hasUnicodeByteOrderMark(rawString)) {
             isUnicode = true;
-            unicodeLength = (obj.getString()->getLength() - 2) / 2;
+            unicodeLength = (obj.getString().size() - 2) / 2;
         } else {
             isUnicode = false;
-            unicodeLength = obj.getString()->getLength();
+            unicodeLength = obj.getString().size();
         }
         unicodeString = new Unicode[unicodeLength];
 
         for (int i = 0; i < unicodeLength; i++) {
             if (isUnicode) {
-                unicodeString[i] = ((rawString->getChar((i + 1) * 2) & 0xff) << 8) | (rawString->getChar(((i + 1) * 2) + 1) & 0xff);
+                unicodeString[i] = ((rawString.at((i + 1) * 2) & 0xff) << 8) | (rawString.at(((i + 1) * 2) + 1) & 0xff);
             } else {
-                unicodeString[i] = pdfDocEncoding[rawString->getChar(i) & 0xff];
+                unicodeString[i] = pdfDocEncoding[rawString.at(i) & 0xff];
             }
         }
 
@@ -435,18 +418,17 @@ static std::unique_ptr<GooString> getInfoString(Dict *infoDict, const char *key)
     return encodedString;
 }
 
-static GooString *getInfoDate(Dict *infoDict, const char *key)
+static std::optional<std::string> getInfoDate(Dict *infoDict, const char *key)
 {
     Object obj;
     int year, mon, day, hour, min, sec, tz_hour, tz_minute;
     char tz;
     struct tm tmStruct;
-    GooString *result = nullptr;
     char buf[256];
 
     obj = infoDict->lookup(key);
     if (obj.isString()) {
-        const GooString *s = obj.getString();
+        const std::string &s = obj.getString();
         // TODO do something with the timezone info
         if (parseDateString(s, &year, &mon, &day, &hour, &min, &sec, &tz, &tz_hour, &tz_minute)) {
             tmStruct.tm_year = year - 1900;
@@ -460,13 +442,11 @@ static GooString *getInfoDate(Dict *infoDict, const char *key)
             tmStruct.tm_isdst = -1;
             mktime(&tmStruct); // compute the tm_wday and tm_yday fields
             if (strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S+00:00", &tmStruct)) {
-                result = new GooString(buf);
-            } else {
-                result = new GooString(s);
+                return std::string(buf);
             }
-        } else {
-            result = new GooString(s);
+            return s;
         }
+        return s;
     }
-    return result;
+    return {};
 }

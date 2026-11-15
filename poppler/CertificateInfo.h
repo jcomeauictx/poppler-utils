@@ -5,20 +5,33 @@
 // This file is licensed under the GPLv2 or later
 //
 // Copyright 2018 Chinmoy Ranjan Pradhan <chinmoyrp65@gmail.com>
-// Copyright 2018, 2019 Albert Astals Cid <aacid@kde.org>
+// Copyright 2018, 2019, 2025 Albert Astals Cid <aacid@kde.org>
 // Copyright 2018 Oliver Sander <oliver.sander@tu-dresden.de>
 // Copyright 2020 Thorsten Behrens <Thorsten.Behrens@CIB.de>
-// Copyright 2023, 2024 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright 2023, 2024, 2026 g10 Code GmbH, Author: Sune Stolborg Vuorela <sune@vuorela.dk>
+// Copyright 2026 Sune Stolborg Vuorela <sune@vuorela.dk>, work sponsored by the Direction Interministérielle du Numérique
 //
 //========================================================================
 
 #ifndef CERTIFICATEINFO_H
 #define CERTIFICATEINFO_H
 
-#include <memory>
-#include <ctime>
+#include <chrono>
+#include <vector>
 #include "goo/GooString.h"
 #include "poppler_private_export.h"
+
+namespace CryptoSign {
+enum class SMimeSignatureType
+{
+    none, /* nothing specified; do something sane, probably adbe_pkcs7_detached - this comes either from 'older software versions' or via a g10c_pgp_signature_detached signature*/
+    adbe_pkcs7_detached,
+    ETSI_CAdES_B, // Simplest cades
+    ETSI_CAdES_T, // B + Time stamp
+    ETSI_CAdES_LT, // T + Long term validation
+    ETSI_CAdES_LTA, // LT + support for periodical timestamping
+};
+}
 
 enum CertificateKeyUsageExtension
 {
@@ -57,7 +70,17 @@ enum class KeyLocation
     HardwareToken /** The key is on a dedicated hardware token, either a smartcard or a dedicated usb token (e.g. gnuk, nitrokey or yubikey) */
 };
 
-class POPPLER_PRIVATE_EXPORT X509CertificateInfo
+enum class CertificateType
+{
+    X509,
+    PGP
+};
+
+namespace Certificate {
+using timePointSeconds = std::chrono::time_point<std::chrono::system_clock, std::chrono::seconds>;
+}
+
+class POPPLER_PRIVATE_EXPORT X509CertificateInfo // TODO consider rename to just CertificateInfo
 {
 public:
     X509CertificateInfo();
@@ -100,10 +123,8 @@ public:
 
     struct Validity
     {
-        Validity() : notBefore(0), notAfter(0) { }
-
-        time_t notBefore;
-        time_t notAfter;
+        Certificate::timePointSeconds notBefore;
+        Certificate::timePointSeconds notAfter;
     };
 
     /* GETTERS */
@@ -115,24 +136,28 @@ public:
     const EntityInfo &getSubjectInfo() const;
     const PublicKeyInfo &getPublicKeyInfo() const;
     unsigned int getKeyUsageExtensions() const;
-    const GooString &getCertificateDER() const;
+    const std::vector<unsigned char> &getCertificateDER() const;
     bool getIsSelfSigned() const;
     bool isQualified() const;
     void setQualified(bool qualified);
     KeyLocation getKeyLocation() const;
+    CertificateType getCertificateType() const;
+    const std::vector<CryptoSign::SMimeSignatureType> &supportedSMimeSignatureTypes() const;
 
     /* SETTERS */
-    void setVersion(int);
-    void setSerialNumber(const GooString &);
-    void setNickName(const GooString &);
-    void setIssuerInfo(EntityInfo &&);
-    void setValidity(Validity);
-    void setSubjectInfo(EntityInfo &&);
-    void setPublicKeyInfo(PublicKeyInfo &&);
-    void setKeyUsageExtensions(unsigned int);
-    void setCertificateDER(const GooString &);
-    void setIsSelfSigned(bool);
+    void setVersion(int version);
+    void setSerialNumber(const GooString &serialNumber);
+    void setNickName(const GooString &nickName);
+    void setIssuerInfo(EntityInfo &&issuerInfo);
+    void setValidity(Validity validity);
+    void setSubjectInfo(EntityInfo &&subjectInfo);
+    void setPublicKeyInfo(PublicKeyInfo &&pkInfo);
+    void setKeyUsageExtensions(unsigned int keyUsages);
+    void setCertificateDER(std::vector<unsigned char> &&certDer);
+    void setIsSelfSigned(bool isSelfSigned);
     void setKeyLocation(KeyLocation location);
+    void setCertificateType(CertificateType type);
+    void setSupportedSMimeSignatureTypes(std::vector<CryptoSign::SMimeSignatureType> &&supported);
 
 private:
     EntityInfo issuer_info;
@@ -140,13 +165,15 @@ private:
     PublicKeyInfo public_key_info;
     Validity cert_validity;
     GooString cert_serial;
-    GooString cert_der;
+    std::vector<unsigned char> cert_der;
     GooString cert_nick;
-    unsigned int ku_extensions;
-    int cert_version;
-    bool is_qualified;
-    bool is_self_signed;
-    KeyLocation keyLocation;
+    unsigned int ku_extensions = KU_NONE;
+    int cert_version = -1;
+    bool is_qualified = false;
+    bool is_self_signed = false;
+    KeyLocation keyLocation = KeyLocation::Unknown;
+    CertificateType certificate_type = CertificateType::X509;
+    std::vector<CryptoSign::SMimeSignatureType> m_supportedTypes = { CryptoSign::SMimeSignatureType::none };
 };
 
 #endif
