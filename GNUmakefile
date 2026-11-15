@@ -18,7 +18,7 @@ $(TARGET): $(BUILD)/Makefile
 $(BUILD)/Makefile: $(BUILD)
 	cd $< && cmake .. $(OPTIONS)
 $(BUILD):
-	mkdir $<
+	mkdir $@
 %.writeaccess:
 	[ -w $* ] || (echo 'Cannot write to $*; try sudo?' >&2; false)
 $(PREFIX): $(dir $(PREFIX)).writeaccess
