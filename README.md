@@ -119,3 +119,8 @@ wrong, depending on the context.
 
 But I'm keeping it around in case I happen to pop back into the universe that
 incorporated those glyphs into Latin-1... I'll be ready.
+
+# jc's additional notes
+
++ need to fix GNUmakefile to install, among others:
+  libfreetype-dev libfontconfig-dev libtiff-dev
